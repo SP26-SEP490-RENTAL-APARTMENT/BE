@@ -1,0 +1,19 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace Short_termApartmentAPI.Models;
+
+public partial class ApartmentMedium
+{
+    public Guid MediaId { get; set; }
+
+    public Guid ApartmentId { get; set; }
+
+    public string Url { get; set; } = null!;
+
+    public string Type { get; set; } = null!;
+
+    public bool? IsPrimary { get; set; }
+
+    public virtual Apartment Apartment { get; set; } = null!;
+}

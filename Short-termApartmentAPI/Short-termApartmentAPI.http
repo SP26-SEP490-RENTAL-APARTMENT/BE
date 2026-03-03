@@ -1,0 +1,6 @@
+@Short_termApartmentAPI_HostAddress = http://localhost:5288
+
+GET {{Short_termApartmentAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
