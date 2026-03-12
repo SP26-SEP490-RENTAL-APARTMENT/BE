@@ -4,7 +4,7 @@ namespace BLL.DependencyInjection
 {
     public static class DependencyInjection
     {
-        public static IServiceCollection AddBLLDependencies(this IServiceCollection services)
+        public static IServiceCollection AddBLLDependencies(this IServiceCollection services, Microsoft.Extensions.Configuration.ConfigurationManager configuration)
         {
             services.AddConfigurationRegistration();
             services.AddMappingProfileRegistration();

@@ -1,3 +1,5 @@
+using DAL.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BLL.DependencyInjection
