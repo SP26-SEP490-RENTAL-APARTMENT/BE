@@ -1,3 +1,4 @@
+using BCrypt.Net;
 using DAL.Data;
 using DAL.Models;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,7 @@ public static class UserSeed
         var tenantEmail = "seed.tenant@example.com";
         var adminEmail = "seed.admin@example.com";
         var staffEmail = "seed.staff@example.com";
+        
 
         var landlordUser = await context.Users.SingleOrDefaultAsync(u => u.Email == landlordEmail, cancellationToken);
         if (landlordUser is null)
@@ -22,7 +24,7 @@ public static class UserSeed
                 Email = landlordEmail,
                 FullName = "Seed Landlord",
                 IdentityVerified = true,
-                PasswordHash = "seed",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000000",
                 Role = "landlord",
                 CreatedAt = DateTime.UtcNow
@@ -39,7 +41,7 @@ public static class UserSeed
                 Email = tenantEmail,
                 FullName = "Seed Tenant",
                 IdentityVerified = false,
-                PasswordHash = "seed",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000001",
                 Role = "tenant",
                 CreatedAt = DateTime.UtcNow
@@ -55,7 +57,7 @@ public static class UserSeed
                 Email = adminEmail,
                 FullName = "Seed Admin",
                 IdentityVerified = true,
-                PasswordHash = "seed",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000002",
                 Role = "admin",
                 CreatedAt = DateTime.UtcNow
@@ -70,7 +72,7 @@ public static class UserSeed
                 Email = staffEmail,
                 FullName = "Seed Staff",
                 IdentityVerified = true,
-                PasswordHash = "seed",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000003",
                 Role = "staff",
                 CreatedAt = DateTime.UtcNow
