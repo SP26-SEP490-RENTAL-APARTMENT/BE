@@ -1,5 +1,6 @@
 using BLL.DependencyInjection;
 using DAL.Data;
+using DAL.Seeds;
 using Common.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -57,7 +58,7 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString))
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), mySqlOptions => mySqlOptions.UseNetTopologySuite())
                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
@@ -111,6 +112,12 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await DbInitializer.SeedAsync(dbContext);
+}
 
 app.UseSwagger();
 app.UseSwaggerUI();
