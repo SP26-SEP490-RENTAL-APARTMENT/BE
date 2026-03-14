@@ -361,3 +361,5 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Short-termApartmentAPI/appsettings.json
+/Short-termApartmentAPI/appsettings.Development.json
