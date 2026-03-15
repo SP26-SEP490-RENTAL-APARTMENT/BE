@@ -12,13 +12,12 @@ namespace BLL.DependencyInjection
         {
             services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
-            services.AddScoped<JwtTokenGenerator>();
-            services.AddSingleton<PasswordResetTokenStore>();
 
             services.AddScoped<IAmenityService, AmenityService>();
             services.AddScoped<IAdminActionService, AdminActionService>();
             services.AddScoped<IApartmentService, ApartmentService>();
             services.AddScoped<IApartmentMediumService, ApartmentMediumService>();
+            services.AddScoped<IAuthService, AuthService>();    
             services.AddScoped<IApartmentPriceCalendarService, ApartmentPriceCalendarService>();
             services.AddScoped<IBookingService, BookingService>();
             services.AddScoped<IHolidaysEventService, HolidaysEventService>();
