@@ -1,7 +1,11 @@
+using AutoMapper;
 using BLL.Services.Interfaces;
+using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Short_termApartmentAPI.Middlewares;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -11,10 +15,12 @@ namespace Short_termApartmentAPI.Controllers
     public class SupportTicketController : ControllerBase
     {
         private readonly ISupportTicketService _supportTicketService;
+        private readonly IMapper _mapper;
 
-        public SupportTicketController(ISupportTicketService supportTicketService)
+        public SupportTicketController(ISupportTicketService supportTicketService, IMapper mapper)
         {
             _supportTicketService = supportTicketService;
+            _mapper = mapper;
         }
 
         [HttpGet("{id:guid}")]
@@ -25,7 +31,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return NotFound();
             }
-            return Ok(result);
+            return Ok(_mapper.Map<SupportTicketDto>(result));
         }
 
         [HttpGet]
@@ -37,28 +43,50 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] string? search = null)
         {
             var (items, totalCount) = await _supportTicketService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
-            return Ok(new { Items = items, TotalCount = totalCount });
+            var itemDtos = _mapper.Map<IEnumerable<SupportTicketDto>>(items);
+            return Ok(new { Items = itemDtos, TotalCount = totalCount });
         }
 
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] SupportTicket ticket)
+        public async Task<IActionResult> Create([FromBody] CreateSupportTicketDto ticketDto)
         {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
+
+            var ticket = _mapper.Map<SupportTicket>(ticketDto);
+            ticket.UserId = userId; // Ensure the ticket is associated with the authenticated user
+
+            ticket.CreatedAt = DateTime.UtcNow; // Set created date or rely on DB
+            ticket.UpdatedAt = DateTime.UtcNow;
+
             var created = await _supportTicketService.CreateAsync(ticket);
-            return CreatedAtAction(nameof(GetById), new { id = created.TicketId }, created);
+            return CreatedAtAction(nameof(GetById), new { id = created.TicketId }, _mapper.Map<SupportTicketDto>(created));
         }
 
         [HttpPut("{id:guid}")]
-        public async Task<IActionResult> Update(Guid id, [FromBody] SupportTicket ticket)
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSupportTicketDto ticketDto)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
-            ticket.TicketId = id;
+            var ticket = await _supportTicketService.GetByIdAsync(id);
+            if (ticket == null)
+            {
+                return NotFound();
+            }
+
+            _mapper.Map(ticketDto, ticket);
+            ticket.UpdatedAt = DateTime.UtcNow;
+
             await _supportTicketService.UpdateAsync(ticket);
             return NoContent();
         }

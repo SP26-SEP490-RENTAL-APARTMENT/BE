@@ -15,6 +15,13 @@ public class ApartmentProfile : Profile
             .ForMember(dest => dest.ApartmentId, opt => opt.Ignore())
             .ForMember(dest => dest.LandlordId, opt => opt.Ignore());
 
+        CreateMap<UpdateApartmentRequestDto, Apartment>()
+            .ForMember(dest => dest.Location, opt => opt.Condition(src => src.Latitude.HasValue && src.Longitude.HasValue))
+            .ForMember(dest => dest.Location, opt => opt.MapFrom(src => src.Longitude.HasValue && src.Latitude.HasValue 
+                ? new NetTopologySuite.Geometries.Point((double)src.Longitude.Value, (double)src.Latitude.Value) { SRID = 4326 } 
+                : null))
+            .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+
         CreateMap<Apartment, CreateApartmentResponseDto>()
             .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
         CreateMap<CreateApartmentResponseDto, Apartment>(MemberList.Source);

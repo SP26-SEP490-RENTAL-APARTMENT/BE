@@ -1,4 +1,6 @@
+using AutoMapper;
 using BLL.Services.Interfaces;
+using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,10 +13,12 @@ namespace Short_termApartmentAPI.Controllers
     public class SubscriptionPlanController : ControllerBase
     {
         private readonly ISubscriptionPlanService _subscriptionPlanService;
+        private readonly IMapper _mapper;
 
-        public SubscriptionPlanController(ISubscriptionPlanService subscriptionPlanService)
+        public SubscriptionPlanController(ISubscriptionPlanService subscriptionPlanService, IMapper mapper)
         {
             _subscriptionPlanService = subscriptionPlanService;
+            _mapper = mapper;
         }
 
         [HttpGet("{id:guid}")]
@@ -25,7 +29,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return NotFound();
             }
-            return Ok(result);
+            return Ok(_mapper.Map<SubscriptionPlanDto>(result));
         }
 
         [HttpGet]
@@ -37,28 +41,36 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] string? search = null)
         {
             var (items, totalCount) = await _subscriptionPlanService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
-            return Ok(new { Items = items, TotalCount = totalCount });
+            var itemDtos = _mapper.Map<IEnumerable<SubscriptionPlanDto>>(items);
+            return Ok(new { Items = itemDtos, TotalCount = totalCount });
         }
 
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] SubscriptionPlan plan)
+        public async Task<IActionResult> Create([FromBody] CreateSubscriptionPlanDto planDto)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
+            var plan = _mapper.Map<SubscriptionPlan>(planDto);
+            plan.CreatedAt = DateTime.UtcNow; // Or omit if handled by DB
             var created = await _subscriptionPlanService.CreateAsync(plan);
-            return CreatedAtAction(nameof(GetById), new { id = created.PlanId }, created);
+            return CreatedAtAction(nameof(GetById), new { id = created.PlanId }, _mapper.Map<SubscriptionPlanDto>(created));
         }
 
         [HttpPut("{id:guid}")]
-        public async Task<IActionResult> Update(Guid id, [FromBody] SubscriptionPlan plan)
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSubscriptionPlanDto planDto)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
-            plan.PlanId = id;
+            var plan = await _subscriptionPlanService.GetByIdAsync(id);
+            if (plan == null)
+            {
+                return NotFound();
+            }
+            _mapper.Map(planDto, plan);
             await _subscriptionPlanService.UpdateAsync(plan);
             return NoContent();
         }

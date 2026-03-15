@@ -1,3 +1,4 @@
+using AutoMapper;
 using System.Security.Claims;
 using BLL.Services.Interfaces;
 using Common.DTOs;
@@ -10,8 +11,43 @@ namespace Short_termApartmentAPI.Controllers;
 
 [ApiController]
 [Route("api/apartments")]
-public sealed class ApartmentsController(IApartmentService apartmentService) : ControllerBase
+public sealed class ApartmentsController : ControllerBase
 {
+    private readonly IApartmentService _apartmentService;
+    private readonly IMapper _mapper;
+
+    public ApartmentsController(IApartmentService apartmentService, IMapper mapper)
+    {
+        _apartmentService = apartmentService;
+        _mapper = mapper;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null)
+    {
+        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
+        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        return Ok(new { Items = mappedItems, TotalCount = totalCount });
+    }
+
+    [HttpGet("{id:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var apartment = await _apartmentService.GetApartmentWithDetailsAsync(id);
+        if (apartment == null)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        return Ok(new ApiResponse<ApartmentResponseDto>(apartment));
+    }
+
     [HttpPost]
     [Authorize(Roles = "landlord")]
     public async Task<IActionResult> Create([FromForm] CreateApartmentRequestDto requestDto)
@@ -24,7 +60,7 @@ public sealed class ApartmentsController(IApartmentService apartmentService) : C
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
 
-            var created = await apartmentService.CreateApartmentWithPhotosAsync(requestDto, landlordId);
+            var created = await _apartmentService.CreateApartmentWithPhotosAsync(requestDto, landlordId);
             return CreatedAtAction(nameof(GetById), new { id = created.ApartmentId }, new ApiResponse<CreateApartmentResponseDto>(created));
         }
         catch (ArgumentException ex)
@@ -33,16 +69,29 @@ public sealed class ApartmentsController(IApartmentService apartmentService) : C
         }
     }
 
-    [HttpGet("{id:guid}")]
-    [AllowAnonymous]
-    public async Task<IActionResult> GetById(Guid id)
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateApartmentRequestDto requestDto)
     {
-        var apartment = await apartmentService.GetApartmentWithDetailsAsync(id);
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var apartment = await _apartmentService.GetByIdAsync(id);
         if (apartment == null)
         {
             return NotFound(new ApiResponse<string>("Apartment not found."));
         }
 
-        return Ok(new ApiResponse<ApartmentResponseDto>(apartment));
+        _mapper.Map(requestDto, apartment);
+        await _apartmentService.UpdateAsync(apartment);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _apartmentService.DeleteAsync(id);
+        return NoContent();
     }
 }

@@ -82,7 +82,7 @@ namespace BLL.Services.Implements
                 PasswordHash = passwordHash,
                 FullName = dto.FullName,
                 Phone = dto.Phone,
-                Role = "Tenant", // Default role
+                Role = dto.Role,
                 CreatedAt = DateTime.UtcNow
             };
 

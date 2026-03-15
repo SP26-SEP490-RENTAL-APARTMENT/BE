@@ -52,7 +52,6 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                     Type = "photo",
                 };
                 await _apartmentMediumService.CreateAsync(medium);
-                created.ApartmentMedia.Add(medium);
             }
         }
 

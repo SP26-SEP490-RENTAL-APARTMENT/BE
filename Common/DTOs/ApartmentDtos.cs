@@ -42,6 +42,20 @@ public class CreateApartmentRequestDto
     public List<IFormFile> Photos { get; set; } = new List<IFormFile>();
 }
 
+public class UpdateApartmentRequestDto
+{
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+    public sbyte? MaxOccupants { get; set; }
+    public bool? IsPetAllowed { get; set; }
+    public string? Address { get; set; }
+    public string? District { get; set; }
+    public string? City { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    public decimal? BasePricePerNight { get; set; }
+}
+
 public class CreateApartmentResponseDto
 {
     public Guid ApartmentId { get; set; }

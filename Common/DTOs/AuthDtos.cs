@@ -63,7 +63,11 @@ namespace Common.DTOs
         
         [Required]
         public required string FullName { get; set; }
-        
+
+        [Required]
+        [RegularExpression("^(tenant|landlord)$", ErrorMessage = "Role must be 'tenant' or 'landlord'")]
+        public required string Role { get; set; }
+
         public string? Phone { get; set; }
     }
 }
