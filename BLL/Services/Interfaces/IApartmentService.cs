@@ -7,4 +7,5 @@ public interface IApartmentService : IBaseService<Apartment>
 {
     Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId);
     Task<ApartmentResponseDto?> GetApartmentWithDetailsAsync(Guid id);
+    Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds);
 }

@@ -6,6 +6,7 @@ using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Middlewares;
+using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Short_termApartmentAPI.Controllers;
 
@@ -85,7 +86,7 @@ public sealed class ApartmentsController : ControllerBase
 
         _mapper.Map(requestDto, apartment);
         await _apartmentService.UpdateAsync(apartment);
-        return NoContent();
+        return Ok();
     }
 
     [HttpDelete("{id:guid}")]
@@ -93,5 +94,20 @@ public sealed class ApartmentsController : ControllerBase
     {
         await _apartmentService.DeleteAsync(id);
         return NoContent();
+    }
+
+    [HttpPost("{id:guid}/amenities")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> AddAmenities(Guid id, [FromBody] List<Guid> amenityIds)
+    {
+        try
+        {
+            await _apartmentService.AddAmenitiesAsync(id, amenityIds);
+            return Ok("Amenity Added!");
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
     }
 }

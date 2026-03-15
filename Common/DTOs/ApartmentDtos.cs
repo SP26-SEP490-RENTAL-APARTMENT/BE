@@ -8,33 +8,42 @@ namespace Common.DTOs;
 public class CreateApartmentRequestDto
 {
     [Required]
+    [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
     [Required]
+    [MaxLength(2000)]
     public string Description { get; set; } = string.Empty;
 
     [Required]
+    [Range(1, sbyte.MaxValue, ErrorMessage = "MaxOccupants must be at least 1.")]
     public sbyte? MaxOccupants { get; set; }
 
     [Required]
     public bool? IsPetAllowed { get; set; }
 
     [Required]
+    [MaxLength(255)]
     public string? Address { get; set; }
 
     [Required]
+    [MaxLength(100)]
     public string? District { get; set; }
 
     [Required]
+    [MaxLength(100)]
     public string? City { get; set; }
 
     [Required]
+    [Range(-90.0, 90.0, ErrorMessage = "Latitude must be between -90 and 90.")]
     public decimal? Latitude { get; set; }
     
     [Required]
+    [Range(-180.0, 180.0, ErrorMessage = "Longitude must be between -180 and 180.")]
     public decimal? Longitude { get; set; }
 
     [Required]
+    [Range(0, double.MaxValue, ErrorMessage = "BasePricePerNight must be a positive value.")]
     public decimal BasePricePerNight { get; set; }
 
     [Required]
@@ -44,15 +53,33 @@ public class CreateApartmentRequestDto
 
 public class UpdateApartmentRequestDto
 {
+    [MaxLength(200)]
     public string? Title { get; set; }
+    
+    [MaxLength(2000)]
     public string? Description { get; set; }
+    
+    [Range(1, sbyte.MaxValue, ErrorMessage = "MaxOccupants must be at least 1.")]
     public sbyte? MaxOccupants { get; set; }
+    
     public bool? IsPetAllowed { get; set; }
+    
+    [MaxLength(255)]
     public string? Address { get; set; }
+    
+    [MaxLength(100)]
     public string? District { get; set; }
+    
+    [MaxLength(100)]
     public string? City { get; set; }
+    
+    [Range(-90.0, 90.0, ErrorMessage = "Latitude must be between -90 and 90.")]
     public decimal? Latitude { get; set; }
+    
+    [Range(-180.0, 180.0, ErrorMessage = "Longitude must be between -180 and 180.")]
     public decimal? Longitude { get; set; }
+    
+    [Range(0, double.MaxValue, ErrorMessage = "BasePricePerNight must be a positive value.")]
     public decimal? BasePricePerNight { get; set; }
 }
 

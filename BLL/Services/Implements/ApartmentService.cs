@@ -13,18 +13,45 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IMapper _mapper;
 
     private readonly IApartmentRepository _apartmentRepository;
+    private readonly IAmenityRepository _amenityRepository;
 
     public ApartmentService(
         IApartmentRepository repository,
+        IAmenityRepository amenityRepository,
         IImageService imageService,
         IApartmentMediumService apartmentMediumService,
         IMapper mapper)
         : base(repository)
     {
         _apartmentRepository = repository;
+        _amenityRepository = amenityRepository;
         _imageService = imageService;
         _apartmentMediumService = apartmentMediumService;
         _mapper = mapper;
+    }
+
+    public async Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)
+    {
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+        {
+            throw new ArgumentException("Apartment not found.");
+        }
+
+        foreach (var amenityId in amenityIds)
+        {
+            if (!apartment.Amenities.Any(a => a.AmenityId == amenityId))
+            {
+                var amenity = await _amenityRepository.GetByIdAsync(amenityId);
+                if (amenity != null)
+                {
+                    apartment.Amenities.Add(amenity);
+                }
+            }
+        }
+
+        _apartmentRepository.Update(apartment);
+        await _apartmentRepository.SaveChangesAsync();
     }
 
     public async Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId)

@@ -28,7 +28,8 @@ namespace BLL.DependencyInjection
             services.AddScoped<IRoomRepository, RoomRepository>();
             services.AddScoped<ISmartPricingHistoryRepository, SmartPricingHistoryRepository>();
             services.AddScoped<IUserRepository, UserRepository>();
-
+            services.AddScoped<ISupportTicketRepository, SupportTicketRepository>();
+            services.AddScoped<ISubscriptionPlanRepository, SubscriptionPlanRepository>();
             return services;
         }
     }

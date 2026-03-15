@@ -15,11 +15,13 @@ namespace Short_termApartmentAPI.Controllers
     public class SupportTicketController : ControllerBase
     {
         private readonly ISupportTicketService _supportTicketService;
+        private readonly IUserService _userService;
         private readonly IMapper _mapper;
 
-        public SupportTicketController(ISupportTicketService supportTicketService, IMapper mapper)
+        public SupportTicketController(ISupportTicketService supportTicketService, IUserService userService, IMapper mapper)
         {
             _supportTicketService = supportTicketService;
+            _userService = userService;
             _mapper = mapper;
         }
 
@@ -78,6 +80,16 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            if (ticketDto.ResolvedBy.HasValue)
+            {
+                var resolvedByUser = await _userService.GetByIdAsync(ticketDto.ResolvedBy.Value);
+                if (resolvedByUser == null || !resolvedByUser.Role.Equals("staff", StringComparison.OrdinalIgnoreCase))
+                {
+                    return BadRequest(new ApiResponse<string>("Only accept by StaffId"));
+                }
+            }
+
             var ticket = await _supportTicketService.GetByIdAsync(id);
             if (ticket == null)
             {
