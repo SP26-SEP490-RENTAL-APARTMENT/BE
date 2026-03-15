@@ -8,6 +8,7 @@ namespace BLL.DependencyInjection
         public static IServiceCollection AddConfigurationRegistration(this IServiceCollection services, IConfiguration configuration)
         {
             services.Configure<Common.Settings.JwtSettings>(configuration.GetSection("Jwt"));
+            services.Configure<Common.Settings.CloudinarySettings>(configuration.GetSection("CloudinarySettings"));
             return services;
         }
     }

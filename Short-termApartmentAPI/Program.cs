@@ -1,12 +1,13 @@
 using BLL.DependencyInjection;
+using Common.Settings;
 using DAL.Data;
 using DAL.Seeds;
-using Common.Settings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +19,7 @@ builder
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
@@ -40,17 +42,17 @@ builder.Services.AddSwaggerGen(c =>
     c.AddSecurityRequirement(
         new OpenApiSecurityRequirement
         {
-                        {
-                            new OpenApiSecurityScheme
-                            {
-                                Reference = new OpenApiReference
-                                {
-                                    Type = ReferenceType.SecurityScheme,
-                                    Id = "Bearer",
-                                },
-                            },
-                            Array.Empty<string>()
-                        },
+            {
+                new OpenApiSecurityScheme
+                {
+                    Reference = new OpenApiReference
+                    {
+                        Type = ReferenceType.SecurityScheme,
+                        Id = "Bearer",
+                    },
+                },
+                Array.Empty<string>()
+            },
         }
     );
 });
@@ -62,32 +64,31 @@ builder.Services.AddDbContext<AppDbContext>(options =>
                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
-builder
-                .Services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-                })
-                .AddJwtBearer(options =>
-                {
-                    var jwtSettings =
-                        builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
-                        ?? throw new InvalidOperationException(
-                            "JWT settings are not configured properly."
-                        );
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidIssuer = jwtSettings.Issuer,
-                        ValidAudience = jwtSettings.Audience,
-                        IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(jwtSettings.Key)
-                        ),
-                    };
-                });
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        var jwtSettings =
+            builder.Configuration.GetSection("Jwt").Get<JwtSettings>()
+            ?? throw new InvalidOperationException(
+                "JWT settings are not configured properly."
+            );
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwtSettings.Key)
+            ),
+        };
+    });
 
 builder.Services.AddBLLDependencies(builder.Configuration);
 
@@ -98,11 +99,7 @@ builder.Services.AddCors(options =>
         builder =>
         {
             builder
-                .WithOrigins(
-                    "http://localhost:5173",
-                    "http://localhost:3000"
-                    //"applink"
-                )
+                .SetIsOriginAllowed(origin => true)
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials()

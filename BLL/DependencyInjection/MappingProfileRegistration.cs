@@ -1,3 +1,4 @@
+using BLL.Mappings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BLL.DependencyInjection
@@ -6,7 +7,7 @@ namespace BLL.DependencyInjection
     {
         public static IServiceCollection AddMappingProfileRegistration(this IServiceCollection services)
         {
-            // Add mapping profile registrations here
+            services.AddAutoMapper(cfg => cfg.AddProfile<ApartmentProfile>());
             return services;
         }
     }
