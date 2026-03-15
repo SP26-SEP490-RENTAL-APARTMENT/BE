@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
@@ -63,6 +64,33 @@ namespace BLL.Services.Implements
                 RefreshToken = string.Empty, // Placeholder for actual refresh token logic
                 IsActive = true
             };
+        }
+
+        public async Task<LoginResponseDto?> RegisterAsync(RegisterRequestDto dto)
+        {
+            var existingUsers = await _userRepository.FindAsync(u => u.Email == dto.Email);
+            if (existingUsers.Any())
+            {
+                return null;
+            }
+
+            var passwordHash = PasswordHasher.HashPassword(dto.Password);
+
+            var newUser = new User
+            {
+                Email = dto.Email,
+                PasswordHash = passwordHash,
+                FullName = dto.FullName,
+                Phone = dto.Phone,
+                Role = "Tenant", // Default role
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _userRepository.AddAsync(newUser);
+            await _userRepository.SaveChangesAsync();
+
+
+            return await LoginAsync(new LoginRequestDto { Email = dto.Email, Password = dto.Password });
         }
 
         public Task<RefreshTokenResponseDto?> RefreshTokenAsync(RefreshTokenRequestDto dto)

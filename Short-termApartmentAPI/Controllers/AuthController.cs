@@ -34,6 +34,24 @@ namespace Short_termApartmentAPI.Controllers
             return Ok(response);
         }
 
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var response = await _authService.RegisterAsync(request);
+
+            if (response == null)
+            {
+                return BadRequest(new { message = "Email is already registered." });
+            }
+
+            return Ok(response);
+        }
+
         [HttpPost("refresh-token")]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto request)
         {
