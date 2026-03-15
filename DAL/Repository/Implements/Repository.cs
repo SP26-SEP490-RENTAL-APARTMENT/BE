@@ -160,6 +160,28 @@ namespace DAL.Repository.Implements
 
         protected IQueryable<T> ApplySorting(IQueryable<T> query, string? sortBy, string? sortOrder)
         {
+            static string? ResolveDefaultSortPropertyName()
+            {
+                var type = typeof(T);
+
+                var idProp = type.GetProperty("Id");
+                if (idProp != null)
+                    return idProp.Name;
+
+                var typeIdName = type.Name + "Id";
+                var typeIdProp = type.GetProperties().FirstOrDefault(p => string.Equals(p.Name, typeIdName, StringComparison.OrdinalIgnoreCase));
+                if (typeIdProp != null)
+                    return typeIdProp.Name;
+
+                var guidIdProp = type.GetProperties().FirstOrDefault(p =>
+                    p.PropertyType == typeof(Guid) && p.Name.EndsWith("Id", StringComparison.OrdinalIgnoreCase));
+                if (guidIdProp != null)
+                    return guidIdProp.Name;
+
+                var anyIdProp = type.GetProperties().FirstOrDefault(p => p.Name.EndsWith("Id", StringComparison.OrdinalIgnoreCase));
+                return anyIdProp?.Name;
+            }
+
             if (!string.IsNullOrEmpty(sortBy))
             {
                 var prop = typeof(T)
@@ -178,7 +200,9 @@ namespace DAL.Repository.Implements
             }
             else
             {
-                query = query.OrderBy(e => EF.Property<object>(e, "Id"));
+                var defaultSortBy = ResolveDefaultSortPropertyName();
+                if (!string.IsNullOrEmpty(defaultSortBy))
+                    query = query.OrderBy(e => EF.Property<object>(e, defaultSortBy));
             }
             return query;
         }

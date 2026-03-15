@@ -9,4 +9,7 @@ public static class SeedConstants
     public static readonly Guid SeedApartmentId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     public static readonly Guid SeedApartment2Id = Guid.Parse("66666666-6666-6666-6666-666666666666");
     public static readonly Guid SeedApartment3Id = Guid.Parse("77777777-7777-7777-7777-777777777777");
+    public static readonly Guid SeedRoom1Id = Guid.Parse("88888888-8888-8888-8888-888888888888");
+    public static readonly Guid SeedRoom2Id = Guid.Parse("99999999-9999-9999-9999-999999999999");
+    public static readonly Guid SeedRoom3Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 }

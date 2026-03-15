@@ -10,7 +10,9 @@ public static class DbInitializer
         await context.Database.MigrateAsync(cancellationToken);
 
         await UserSeed.SeedAsync(context, cancellationToken);
+        await AmenitySeed.SeedAsync(context, cancellationToken);
         await LandlordSeed.SeedAsync(context, cancellationToken);
         await ApartmentSeed.SeedAsync(context, cancellationToken);
+        await RoomSeed.SeedAsync(context, cancellationToken);
     }
 }

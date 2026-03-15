@@ -12,9 +12,6 @@ namespace BLL.DependencyInjection
         {
             services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
-            services.AddScoped<JwtTokenGenerator>();
-            services.AddSingleton<PasswordResetTokenStore>();
-
             services.AddScoped<IAmenityService, AmenityService>();
             services.AddScoped<IAdminActionService, AdminActionService>();
             services.AddScoped<IApartmentService, ApartmentService>();
