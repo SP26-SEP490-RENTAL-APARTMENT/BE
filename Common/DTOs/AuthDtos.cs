@@ -50,4 +50,20 @@ namespace Common.DTOs
         [Compare("NewPassword", ErrorMessage = "Passwords do not match.")]
         public required string ConfirmNewPassword { get; set; }
     }
+
+    public class RegisterRequestDto
+    {
+        [Required]
+        [EmailAddress]
+        public required string Email { get; set; }
+
+        [Required]
+        [MinLength(6)]
+        public required string Password { get; set; }
+        
+        [Required]
+        public required string FullName { get; set; }
+        
+        public string? Phone { get; set; }
+    }
 }
