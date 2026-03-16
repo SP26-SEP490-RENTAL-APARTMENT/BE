@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.DataAnnotations;
 
 namespace Common.DTOs;
 
@@ -25,11 +26,12 @@ public class CreateRoomRequestDto
 
     [System.ComponentModel.DataAnnotations.MaxLength(500)]
     public string? Description { get; set; }
-
-    [System.ComponentModel.DataAnnotations.MaxLength(50)]
+    [Required]
+    [RegularExpression("^(private_single|private_double|shared_bed|studio|other)$", ErrorMessage = "Must be 'private_single','private_double','shared_bed','studio','other'")]
     public string? RoomType { get; set; }
 
-    [System.ComponentModel.DataAnnotations.MaxLength(50)]
+    [Required]
+    [RegularExpression("^(single|double|queen|king|bunk|shared)$", ErrorMessage = "Must be 'single','double','queen','king','bunk','shared'")]
     public string? BedType { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, double.MaxValue, ErrorMessage = "Size must be a positive value.")]
@@ -46,10 +48,12 @@ public class UpdateRoomRequestDto
     [System.ComponentModel.DataAnnotations.MaxLength(500)]
     public string? Description { get; set; }
 
-    [System.ComponentModel.DataAnnotations.MaxLength(50)]
+    [Required]
+    [RegularExpression("^(private_single|private_double|shared_bed|studio|other)$", ErrorMessage = "Must be 'private_single','private_double','shared_bed','studio','other'")]
     public string? RoomType { get; set; }
 
-    [System.ComponentModel.DataAnnotations.MaxLength(50)]
+    [Required]
+    [RegularExpression("^(single|double|queen|king|bunk|shared)$", ErrorMessage = "Must be 'single','double','queen','king','bunk','shared'")]
     public string? BedType { get; set; }
 
     [System.ComponentModel.DataAnnotations.Range(1, double.MaxValue, ErrorMessage = "Size must be a positive value.")]

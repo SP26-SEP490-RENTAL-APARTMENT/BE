@@ -41,7 +41,7 @@ public sealed class AmenitiesController(IAmenityService amenityService) : Contro
     }
 
     [HttpPost]
-    //[Authorize(Roles = "admin,staff")]
+    [Authorize(Roles = "admin,staff")]
     public async Task<IActionResult> Create([FromBody] CreateAmenityRequestDto requestDto)
     {
         var created = await amenityService.CreateAmenityAsync(requestDto);
@@ -49,7 +49,7 @@ public sealed class AmenitiesController(IAmenityService amenityService) : Contro
     }
 
     [HttpPut("{id:guid}")]
-    //[Authorize(Roles = "admin,staff")]
+    [Authorize(Roles = "admin,staff")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateAmenityRequestDto requestDto)
     {
         try
@@ -64,7 +64,7 @@ public sealed class AmenitiesController(IAmenityService amenityService) : Contro
     }
 
     [HttpDelete("{id:guid}")]
-    //[Authorize(Roles = "admin,staff")]
+    [Authorize(Roles = "admin,staff")]
     public async Task<IActionResult> Delete(Guid id)
     {
         await amenityService.DeleteAsync(id);

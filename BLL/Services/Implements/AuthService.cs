@@ -59,6 +59,7 @@ namespace BLL.Services.Implements
             {
                 Id = user.UserId,
                 FullName = user.FullName ?? string.Empty,
+                Role = user.Role,
                 Email = user.Email,
                 AccessToken = tokenString,
                 RefreshToken = string.Empty, // Placeholder for actual refresh token logic

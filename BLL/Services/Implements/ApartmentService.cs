@@ -54,6 +54,36 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         await _apartmentRepository.SaveChangesAsync();
     }
 
+    public async Task UpdateApartmentPhotosAsync(Guid apartmentId, List<Microsoft.AspNetCore.Http.IFormFile> photos)
+    {
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        // remove existing apartment media entries
+        var existingMedia = apartment.ApartmentMedia.ToList();
+        foreach (var m in existingMedia)
+        {
+            _apartmentMediumService.DeleteAsync(m.MediaId).Wait();
+        }
+
+        // upload new photos
+        foreach (var photo in photos)
+        {
+            var url = await _imageService.UploadImageAsync(photo);
+            if (!string.IsNullOrEmpty(url))
+            {
+                var medium = new ApartmentMedium
+                {
+                    ApartmentId = apartment.ApartmentId,
+                    Url = url,
+                    Type = "photo",
+                };
+                await _apartmentMediumService.CreateAsync(medium);
+            }
+        }
+    }
+
     public async Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId)
     {
         if (requestDto.Photos == null || !requestDto.Photos.Any())

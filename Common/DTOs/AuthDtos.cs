@@ -26,6 +26,7 @@ namespace Common.DTOs
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public bool IsActive { get; set; }
+        public string Role { get; set; }
     }
 
     public class PasswordResetRequestDto

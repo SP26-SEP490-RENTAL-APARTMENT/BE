@@ -55,6 +55,17 @@ builder.Services.AddSwaggerGen(c =>
             },
         }
     );
+
+    var xmlFile = $"{System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile ?? string.Empty);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
+
+    c.EnableAnnotations();
+
+    c.OperationFilter<Short_termApartmentAPI.Swagger.AuthorizeCheckOperationFilter>();
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>

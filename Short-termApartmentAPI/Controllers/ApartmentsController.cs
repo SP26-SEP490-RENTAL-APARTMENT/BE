@@ -15,11 +15,13 @@ namespace Short_termApartmentAPI.Controllers;
 public sealed class ApartmentsController : ControllerBase
 {
     private readonly IApartmentService _apartmentService;
+    private readonly ILandlordService _landlordService;
     private readonly IMapper _mapper;
 
-    public ApartmentsController(IApartmentService apartmentService, IMapper mapper)
+    public ApartmentsController(IApartmentService apartmentService, ILandlordService landlordService, IMapper mapper)
     {
         _apartmentService = apartmentService;
+        _landlordService = landlordService;
         _mapper = mapper;
     }
 
@@ -71,6 +73,7 @@ public sealed class ApartmentsController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Roles = "landlord")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateApartmentRequestDto requestDto)
     {
         if (!ModelState.IsValid)
@@ -81,6 +84,20 @@ public sealed class ApartmentsController : ControllerBase
         var apartment = await _apartmentService.GetByIdAsync(id);
         if (apartment == null)
         {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        // Ensure the authenticated landlord owns this apartment
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            // Hide existence to unauthorized landlords
             return NotFound(new ApiResponse<string>("Apartment not found."));
         }
 
@@ -108,6 +125,39 @@ public sealed class ApartmentsController : ControllerBase
         catch (ArgumentException ex)
         {
             return NotFound(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpPut("{id:guid}/photos")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> UpdatePhotos(Guid id, [FromForm] List<Microsoft.AspNetCore.Http.IFormFile> photos)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var apartment = await _apartmentService.GetByIdAsync(id);
+        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        try
+        {
+            await _apartmentService.UpdateApartmentPhotosAsync(id, photos);
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
         }
     }
 }
