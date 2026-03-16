@@ -13,6 +13,8 @@ namespace BLL.DependencyInjection
             services.AddAutoMapper(cfg => cfg.AddProfile<SupportTicketProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<UserProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<RoomProfile>());
+            services.AddAutoMapper(cfg => cfg.AddProfile<PackageProfile>());
+            services.AddAutoMapper(cfg => cfg.AddProfile<PropertyInspectionProfile>());
             return services;
         }
     }
