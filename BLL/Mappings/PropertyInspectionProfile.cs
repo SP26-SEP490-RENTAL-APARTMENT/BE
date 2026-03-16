@@ -1,0 +1,15 @@
+using AutoMapper;
+using Common.DTOs;
+using DAL.Models;
+
+namespace BLL.Mappings;
+
+public class PropertyInspectionProfile : Profile
+{
+    public PropertyInspectionProfile()
+    {
+        CreateMap<PropertyInspection, PropertyInspectionResponseDto>();
+        CreateMap<PropertyInspectionRequestDto, PropertyInspection>()
+            .ForMember(dest => dest.InspectionId, opt => opt.Ignore());
+    }
+}

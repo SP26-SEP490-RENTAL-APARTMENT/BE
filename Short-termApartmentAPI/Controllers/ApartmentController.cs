@@ -12,12 +12,12 @@ namespace Short_termApartmentAPI.Controllers;
 
 [ApiController]
 [Route("api/apartments")]
-public sealed class ApartmentsController : ControllerBase
+public sealed class ApartmentController : ControllerBase
 {
     private readonly IApartmentService _apartmentService;
     private readonly IMapper _mapper;
 
-    public ApartmentsController(IApartmentService apartmentService, IMapper mapper)
+    public ApartmentController(IApartmentService apartmentService, IMapper mapper)
     {
         _apartmentService = apartmentService;
         _mapper = mapper;

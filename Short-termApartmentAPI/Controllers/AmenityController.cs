@@ -9,7 +9,7 @@ namespace Short_termApartmentAPI.Controllers;
 
 [ApiController]
 [Route("api/amenities")]
-public sealed class AmenitiesController(IAmenityService amenityService) : ControllerBase
+public sealed class AmenityController(IAmenityService amenityService) : ControllerBase
 {
     [HttpGet]
     [AllowAnonymous]

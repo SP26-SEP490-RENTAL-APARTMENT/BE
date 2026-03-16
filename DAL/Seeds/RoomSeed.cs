@@ -31,7 +31,7 @@ public static class RoomSeed
             new()
             {
                 RoomId = SeedConstants.SeedRoom2Id,
-                ApartmentId = SeedConstants.SeedApartmentId,
+                ApartmentId = SeedConstants.SeedApartment2Id,
                 Title = "Standard Single Room",
                 Description = "A standard single room, well-furnished.",
                 RoomType = RoomTypes.private_single.ToString(),
@@ -43,7 +43,7 @@ public static class RoomSeed
             new()
             {
                 RoomId = SeedConstants.SeedRoom3Id,
-                ApartmentId = SeedConstants.SeedApartment2Id,
+                ApartmentId = SeedConstants.SeedApartment3Id,
                 Title = "Spacious Double Room",
                 Description = "A double room suitable for couples.",
                 RoomType = RoomTypes.private_double.ToString(),
