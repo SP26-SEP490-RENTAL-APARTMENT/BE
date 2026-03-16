@@ -13,11 +13,15 @@ namespace Short_termApartmentAPI.Controllers
     public class PropertyInspectionController : ControllerBase
     {
         private readonly IPropertyInspectionService _propertyInspectionService;
+        private readonly IApartmentService _apartmentService;
+        private readonly IUserService _userService;
         private readonly IMapper _mapper;
 
-        public PropertyInspectionController(IPropertyInspectionService propertyInspectionService, IMapper mapper)
+        public PropertyInspectionController(IPropertyInspectionService propertyInspectionService, IApartmentService apartmentService, IUserService userService, IMapper mapper)
         {
             _propertyInspectionService = propertyInspectionService;
+            _apartmentService = apartmentService;
+            _userService = userService;
             _mapper = mapper;
         }
 
@@ -46,13 +50,27 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] PropertyInspectionRequestDto propertyInspectionDto)
+        public async Task<IActionResult> Create([FromBody] CreatePropertyInspectionDto propertyInspectionDto)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
+            // verify referenced apartment and inspector exist
+            var apartment = await _apartmentService.GetByIdAsync(propertyInspectionDto.ApartmentId);
+            if (apartment == null)
+            {
+                return NotFound($"Apartment with id '{propertyInspectionDto.ApartmentId}' not found.");
+            }
+
+            var inspector = await _userService.GetByIdAsync(propertyInspectionDto.InspectorId);
+            if (inspector == null)
+            {
+                return NotFound($"Inspector with id '{propertyInspectionDto.InspectorId}' not found.");
+            }
+
             var propertyInspection = _mapper.Map<PropertyInspection>(propertyInspectionDto);
+            propertyInspection.Status = "scheduled";
             var created = await _propertyInspectionService.CreateAsync(propertyInspection);
             return CreatedAtAction(nameof(GetById), new { id = created.InspectionId }, _mapper.Map<PropertyInspectionResponseDto>(created));
         }
@@ -69,6 +87,13 @@ namespace Short_termApartmentAPI.Controllers
             if (propertyInspection == null)
             {
                 return NotFound();
+            }
+            
+
+            var inspector = await _userService.GetByIdAsync(propertyInspectionDto.InspectorId);
+            if (inspector == null)
+            {
+                return NotFound($"Inspector with id '{propertyInspectionDto.InspectorId}' not found.");
             }
 
             _mapper.Map(propertyInspectionDto, propertyInspection);

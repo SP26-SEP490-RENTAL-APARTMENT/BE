@@ -107,8 +107,28 @@ public sealed class ApartmentsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "landlord")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var apartment = await _apartmentService.GetByIdAsync(id);
+        if (apartment == null)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            // Hide existence to unauthorized landlords
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
         await _apartmentService.DeleteAsync(id);
         return NoContent();
     }

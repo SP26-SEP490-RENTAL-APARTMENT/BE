@@ -11,5 +11,7 @@ public class PropertyInspectionProfile : Profile
         CreateMap<PropertyInspection, PropertyInspectionResponseDto>();
         CreateMap<PropertyInspectionRequestDto, PropertyInspection>()
             .ForMember(dest => dest.InspectionId, opt => opt.Ignore());
+        CreateMap<CreatePropertyInspectionDto, PropertyInspection>()
+            .ForMember(dest => dest.InspectionId, opt => opt.Ignore());
     }
 }
