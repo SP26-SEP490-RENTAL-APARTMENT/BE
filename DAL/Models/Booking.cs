@@ -41,6 +41,8 @@ public partial class Booking
 
     public virtual Apartment Apartment { get; set; } = null!;
 
+    public virtual BookingCheckTime? BookingCheckTime { get; set; }
+
     public virtual Package? Package { get; set; }
 
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();

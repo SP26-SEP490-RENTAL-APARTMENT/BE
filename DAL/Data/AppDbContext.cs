@@ -1,10 +1,8 @@
-﻿using DAL.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
-using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using DAL.Models;
+using Microsoft.EntityFrameworkCore;
+using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
 
 namespace DAL.Data;
 
@@ -31,6 +29,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Booking> Bookings { get; set; }
 
+    public virtual DbSet<BookingCheckTime> BookingCheckTimes { get; set; }
+
     public virtual DbSet<HolidaysEvent> HolidaysEvents { get; set; }
 
     public virtual DbSet<InspectionPhoto> InspectionPhotos { get; set; }
@@ -39,6 +39,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<LandlordSubscription> LandlordSubscriptions { get; set; }
 
+    public virtual DbSet<MomoTransaction> MomoTransactions { get; set; }
+
     public virtual DbSet<NearbyAttraction> NearbyAttractions { get; set; }
 
     public virtual DbSet<Notification> Notifications { get; set; }
@@ -46,6 +48,8 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<Package> Packages { get; set; }
 
     public virtual DbSet<PackageItem> PackageItems { get; set; }
+
+    public virtual DbSet<PackagePackage> PackagePackages { get; set; }
 
     public virtual DbSet<Payment> Payments { get; set; }
 
@@ -70,6 +74,7 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<UserIdentityDocument> UserIdentityDocuments { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -345,6 +350,77 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("bookings_ibfk_1");
         });
 
+        modelBuilder.Entity<BookingCheckTime>(entity =>
+        {
+            entity.HasKey(e => e.CheckTimeId).HasName("PRIMARY");
+
+            entity.ToTable("booking_check_times");
+
+            entity.HasIndex(e => e.ActualCheckIn, "idx_actual_in");
+
+            entity.HasIndex(e => e.BookingId, "idx_booking").IsUnique();
+
+            entity.HasIndex(e => e.ScheduledCheckIn, "idx_scheduled_in");
+
+            entity.Property(e => e.CheckTimeId).HasColumnName("check_time_id");
+            entity.Property(e => e.ActualCheckIn)
+                .HasColumnType("datetime")
+                .HasColumnName("actual_check_in");
+            entity.Property(e => e.ActualCheckOut)
+                .HasColumnType("datetime")
+                .HasColumnName("actual_check_out");
+            entity.Property(e => e.BookingId).HasColumnName("booking_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.EarlyCheckInFee)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("early_check_in_fee");
+            entity.Property(e => e.IsEarlyCheckIn)
+                .HasDefaultValueSql("'0'")
+                .HasColumnName("is_early_check_in");
+            entity.Property(e => e.IsLateCheckOut)
+                .HasDefaultValueSql("'0'")
+                .HasColumnName("is_late_check_out");
+            entity.Property(e => e.LateCheckOutFee)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("late_check_out_fee");
+            entity.Property(e => e.Notes)
+                .HasColumnType("text")
+                .HasColumnName("notes");
+            entity.Property(e => e.RecordedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("recorded_at");
+            entity.Property(e => e.RecordedBy).HasColumnName("recorded_by");
+            entity.Property(e => e.ReportReference)
+                .HasMaxLength(100)
+                .HasColumnName("report_reference");
+            entity.Property(e => e.ReportedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("reported_at");
+            entity.Property(e => e.ScheduledCheckIn)
+                .HasColumnType("datetime")
+                .HasColumnName("scheduled_check_in");
+            entity.Property(e => e.ScheduledCheckOut)
+                .HasColumnType("datetime")
+                .HasColumnName("scheduled_check_out");
+            entity.Property(e => e.TempResidenceReported)
+                .HasDefaultValueSql("'0'")
+                .HasColumnName("temp_residence_reported");
+            entity.Property(e => e.UpdatedAt)
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Booking).WithOne(p => p.BookingCheckTime)
+                .HasForeignKey<BookingCheckTime>(d => d.BookingId)
+                .HasConstraintName("booking_check_times_ibfk_1");
+        });
+
         modelBuilder.Entity<HolidaysEvent>(entity =>
         {
             entity.HasKey(e => e.EventId).HasName("PRIMARY");
@@ -521,6 +597,52 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("landlord_subscriptions_ibfk_2");
         });
 
+        modelBuilder.Entity<MomoTransaction>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PRIMARY");
+
+            entity.ToTable("momo_transactions");
+
+            entity.HasIndex(e => e.PaymentId, "ix_momo_transactions_payment_id");
+
+            entity.HasIndex(e => e.RequestId, "ix_momo_transactions_request_id");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Amount).HasColumnName("amount");
+            entity.Property(e => e.CreatedAt)
+                .HasMaxLength(6)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP(6)")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Message)
+                .HasMaxLength(1024)
+                .HasColumnName("message");
+            entity.Property(e => e.PartnerCode)
+                .HasMaxLength(50)
+                .HasColumnName("partner_code");
+            entity.Property(e => e.PaymentId).HasColumnName("payment_id");
+            entity.Property(e => e.RequestBody).HasColumnName("request_body");
+            entity.Property(e => e.RequestId)
+                .HasMaxLength(100)
+                .HasColumnName("request_id");
+            entity.Property(e => e.ResponseBody).HasColumnName("response_body");
+            entity.Property(e => e.ResultCode).HasColumnName("result_code");
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasColumnName("status");
+            entity.Property(e => e.Type)
+                .HasMaxLength(50)
+                .HasColumnName("type");
+            entity.Property(e => e.UpdatedAt)
+                .HasMaxLength(6)
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("CURRENT_TIMESTAMP(6)")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Payment).WithMany(p => p.MomoTransactions)
+                .HasForeignKey(d => d.PaymentId)
+                .HasConstraintName("fk_momo_transactions_payment");
+        });
+
         modelBuilder.Entity<NearbyAttraction>(entity =>
         {
             entity.HasKey(e => e.AttractionId).HasName("PRIMARY");
@@ -640,8 +762,6 @@ public partial class AppDbContext : DbContext
 
             entity.ToTable("package_items");
 
-            entity.HasIndex(e => e.PackageId, "idx_package");
-
             entity.Property(e => e.PackageItemId).HasColumnName("package_item_id");
             entity.Property(e => e.EstimatedValue)
                 .HasPrecision(12, 2)
@@ -653,7 +773,6 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ItemName)
                 .HasMaxLength(150)
                 .HasColumnName("item_name");
-            entity.Property(e => e.PackageId).HasColumnName("package_id");
             entity.Property(e => e.Quantity)
                 .HasPrecision(10, 2)
                 .HasDefaultValueSql("'1.00'")
@@ -661,10 +780,31 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.SortOrder)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("sort_order");
+        });
 
-            entity.HasOne(d => d.Package).WithMany(p => p.PackageItems)
+        modelBuilder.Entity<PackagePackage>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PRIMARY");
+
+            entity.ToTable("package_packages");
+
+            entity.HasIndex(e => e.PackageId, "package_packages_ibfk_1");
+
+            entity.HasIndex(e => e.PackageItemId, "package_packages_ibfk_2");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.PackageId).HasColumnName("package_id");
+            entity.Property(e => e.PackageItemId).HasColumnName("package_item_id");
+
+            entity.HasOne(d => d.Package).WithMany(p => p.PackagePackages)
                 .HasForeignKey(d => d.PackageId)
-                .HasConstraintName("package_items_ibfk_1");
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("package_packages_ibfk_1");
+
+            entity.HasOne(d => d.PackageItem).WithMany(p => p.PackagePackages)
+                .HasForeignKey(d => d.PackageItemId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("package_packages_ibfk_2");
         });
 
         modelBuilder.Entity<Payment>(entity =>

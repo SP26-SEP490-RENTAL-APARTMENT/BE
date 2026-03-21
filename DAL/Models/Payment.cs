@@ -26,4 +26,6 @@ public partial class Payment
     public DateTime? PaidAt { get; set; }
 
     public virtual ICollection<LandlordSubscription> LandlordSubscriptions { get; set; } = new List<LandlordSubscription>();
+
+    public virtual ICollection<MomoTransaction> MomoTransactions { get; set; } = new List<MomoTransaction>();
 }

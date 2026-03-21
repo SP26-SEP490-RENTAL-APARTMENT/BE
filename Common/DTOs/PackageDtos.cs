@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace Common.DTOs
@@ -18,7 +19,7 @@ namespace Common.DTOs
         [Range(0, (double)decimal.MaxValue, ErrorMessage = "Price cannot be negative.")]
         public decimal Price { get; set; }
 
-        [MaxLength(10)]
+        [MaxLength(3, ErrorMessage = "Only 3 characters")]
         public string? Currency { get; set; }
 
         public bool? IsActive { get; set; }
@@ -44,13 +45,11 @@ namespace Common.DTOs
         public bool? IsActive { get; set; }
         public int? MaxBookings { get; set; }
         public DateTime? CreatedAt { get; set; }
+        public List<PackageItemResponseDto>? Items { get; set; }
     }
 
-    public class PackageItemRequestDto : IValidatableObject
+    public class PackageItemRequestDto
     {
-        [Required]
-        public Guid PackageId { get; set; }
-
         [Required]
         [MaxLength(255)]
         public string ItemName { get; set; } = null!;
@@ -64,18 +63,11 @@ namespace Common.DTOs
         public decimal? EstimatedValue { get; set; }
 
         public int? SortOrder { get; set; }
-
-        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-        {
-            // Add custom validation here if needed
-            yield break;
-        }
     }
 
     public class PackageItemResponseDto
     {
         public Guid PackageItemId { get; set; }
-        public Guid PackageId { get; set; }
         public string ItemName { get; set; } = null!;
         public string? ItemDescription { get; set; }
         public decimal? Quantity { get; set; }

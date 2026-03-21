@@ -27,5 +27,5 @@ public partial class Package
 
     public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 
-    public virtual ICollection<PackageItem> PackageItems { get; set; } = new List<PackageItem>();
+    public virtual ICollection<PackagePackage> PackagePackages { get; set; } = new List<PackagePackage>();
 }

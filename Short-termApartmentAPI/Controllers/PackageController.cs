@@ -1,4 +1,6 @@
 using AutoMapper;
+using System.Collections.Generic;
+using System.Linq;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
@@ -40,7 +42,8 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] string? sortOrder = null,
             [FromQuery] string? search = null)
         {
-            var (items, totalCount) = await _packageService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
+            // use service method that includes package items
+            var (items, totalCount) = await _packageService.GetAllWithDetailsAsync(page, pageSize, sortBy, sortOrder, search);
             var mappedItems = _mapper.Map<IEnumerable<PackageResponseDto>>(items);
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }
@@ -55,6 +58,37 @@ namespace Short_termApartmentAPI.Controllers
             var package = _mapper.Map<Package>(packageDto);
             var created = await _packageService.CreateAsync(package);
             return CreatedAtAction(nameof(GetById), new { id = created.PackageId }, _mapper.Map<PackageResponseDto>(created));
+        }
+
+        [HttpPost("{id:guid}/items")]
+        public async Task<IActionResult> AddItems(Guid id, [FromBody] List<Guid> packageItemIds)
+        {
+            if (packageItemIds == null || !packageItemIds.Any())
+                return BadRequest("No package item ids provided.");
+
+            try
+            {
+                await _packageService.AddItemsAsync(id, packageItemIds);
+                return NoContent();
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(ex.Message);
+            }
+        }
+
+        [HttpDelete("{id:guid}/items/{itemId:guid}")]
+        public async Task<IActionResult> RemoveItem(Guid id, Guid itemId)
+        {
+            try
+            {
+                await _packageService.RemoveItemAsync(id, itemId);
+                return NoContent();
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(ex.Message);
+            }
         }
 
         [HttpPut("{id:guid}")]
