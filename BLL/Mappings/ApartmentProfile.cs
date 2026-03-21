@@ -30,6 +30,13 @@ public class ApartmentProfile : Profile
             .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
 
         CreateMap<Room, RoomResponseDto>();
+        CreateMap<CreateRoomRequestDto, Room>()
+            .ForMember(dest => dest.RoomId, opt => opt.Ignore())
+            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => System.DateTime.UtcNow));
+
+        CreateMap<UpdateRoomRequestDto, Room>()
+            .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+
         CreateMap<Amenity, AmenityResponseDto>();
     }
 }
