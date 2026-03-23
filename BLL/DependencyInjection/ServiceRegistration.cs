@@ -38,6 +38,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<ISupportTicketService, SupportTicketService>();
             services.AddScoped<ISubscriptionPlanService, SubscriptionPlanService>();
+            services.AddScoped<IMomoTransactionService, MomoTransactionService>();
             return services;
         }
     }
