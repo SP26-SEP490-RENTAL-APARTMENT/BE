@@ -1,7 +1,7 @@
 ﻿using BLL.Services.Interfaces;
 using Common.DTOs;
+using Common.Enums;
 using DAL.Models;
-using BLL.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MoMoApi;
@@ -42,12 +42,13 @@ namespace Short_termApartmentAPI.Controllers
                 {
                     Amount = Convert.ToDecimal(request.Amount),
                     PaymentType = "deposit",
-                    PaymentPurpose = request.OrderInfo,
                     RelatedEntityId = (Guid.TryParse(request.ExtraData, out var reId) ? reId : (Guid?)null),
-                    RelatedEntityType = "other",
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "momo_wallet",
                     Status = "pending"
                 };
+
+                Console.WriteLine($"[MoMo] Saving payment with type='{payment.PaymentType}' (DB default purpose expected)");
 
                 await _paymentService.CreateAsync(payment);
 
@@ -58,6 +59,7 @@ namespace Short_termApartmentAPI.Controllers
                     Amount = request.Amount,
                     Type = "create_wallet_payment",
                     RequestBody = result.RequestRaw ?? string.Empty,
+                    ResponseBody = result.ResponseRaw ?? string.Empty,
                     Status = "pending",
                     ResultCode = result.ResultCode,
                     Message = result.Message,
