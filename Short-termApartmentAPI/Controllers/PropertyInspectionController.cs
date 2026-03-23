@@ -4,12 +4,13 @@ using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "admin")]
+    [Authorize]
     public class PropertyInspectionController : ControllerBase
     {
         private readonly IPropertyInspectionService _propertyInspectionService;
@@ -25,7 +26,14 @@ namespace Short_termApartmentAPI.Controllers
             _mapper = mapper;
         }
 
+        private bool TryGetCurrentUserId(out Guid userId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Guid.TryParse(userIdClaim, out userId);
+        }
+
         [HttpGet("{id:guid}")]
+        [Authorize(Roles = "admin,staff")]
         public async Task<IActionResult> GetById(Guid id)
         {
             var result = await _propertyInspectionService.GetByIdAsync(id);
@@ -37,6 +45,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "admin,staff")]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -50,6 +59,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Create([FromBody] CreatePropertyInspectionDto propertyInspectionDto)
         {
             if (!ModelState.IsValid)
@@ -69,13 +79,130 @@ namespace Short_termApartmentAPI.Controllers
                 return NotFound($"Inspector with id '{propertyInspectionDto.InspectorId}' not found.");
             }
 
+            if (!string.Equals(inspector.Role, "staff", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Inspector must be a staff user.");
+            }
+
             var propertyInspection = _mapper.Map<PropertyInspection>(propertyInspectionDto);
             propertyInspection.Status = "scheduled";
             var created = await _propertyInspectionService.CreateAsync(propertyInspection);
             return CreatedAtAction(nameof(GetById), new { id = created.InspectionId }, _mapper.Map<PropertyInspectionResponseDto>(created));
         }
 
+        [HttpPost("{id:guid}/start")]
+        [Authorize(Roles = "staff")]
+        public async Task<IActionResult> StartInspection(Guid id)
+        {
+            if (!TryGetCurrentUserId(out var staffId))
+            {
+                return Unauthorized("Invalid user token.");
+            }
+
+            try
+            {
+                var updated = await _propertyInspectionService.StartInspectionAsync(id, staffId);
+                return Ok(_mapper.Map<PropertyInspectionResponseDto>(updated));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpPost("{id:guid}/complete")]
+        [Authorize(Roles = "staff")]
+        public async Task<IActionResult> CompleteInspection(Guid id, [FromBody] CompletePropertyInspectionDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (!TryGetCurrentUserId(out var staffId))
+            {
+                return Unauthorized("Invalid user token.");
+            }
+
+            try
+            {
+                var updated = await _propertyInspectionService.CompleteInspectionAsync(id, staffId, dto);
+                return Ok(_mapper.Map<PropertyInspectionResponseDto>(updated));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpPost("{id:guid}/cancel")]
+        [Authorize(Roles = "staff")]
+        public async Task<IActionResult> CancelInspection(Guid id, [FromBody] CancelPropertyInspectionDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (!TryGetCurrentUserId(out var staffId))
+            {
+                return Unauthorized("Invalid user token.");
+            }
+
+            try
+            {
+                var updated = await _propertyInspectionService.CancelInspectionAsync(id, staffId, dto.Reason);
+                return Ok(_mapper.Map<PropertyInspectionResponseDto>(updated));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpPost("{id:guid}/review")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> ReviewInspection(Guid id, [FromBody] ReviewPropertyInspectionDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (!TryGetCurrentUserId(out var adminId))
+            {
+                return Unauthorized("Invalid user token.");
+            }
+
+            try
+            {
+                var updated = await _propertyInspectionService.ReviewInspectionAsync(id, adminId, dto.Decision, dto.Reason);
+                return Ok(_mapper.Map<PropertyInspectionResponseDto>(updated));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] PropertyInspectionRequestDto propertyInspectionDto)
         {
             if (!ModelState.IsValid)
@@ -102,6 +229,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _propertyInspectionService.DeleteAsync(id);

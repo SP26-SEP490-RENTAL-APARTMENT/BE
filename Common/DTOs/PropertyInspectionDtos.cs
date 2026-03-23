@@ -86,4 +86,56 @@ namespace Common.DTOs
         public DateTime? ApprovedAt { get; set; }
         public Guid? ApprovedBy { get; set; }
     }
+
+    public class InspectionPhotoCreateDto
+    {
+        [Required]
+        [MaxLength(500)]
+        public string FileUrl { get; set; } = null!;
+
+        [MaxLength(255)]
+        public string? FileKey { get; set; }
+
+        [MaxLength(200)]
+        public string? Description { get; set; }
+
+        public bool? IsIssue { get; set; }
+    }
+
+    public class CompletePropertyInspectionDto
+    {
+        public string? OverallCondition { get; set; }
+
+        public string? IssuesFound { get; set; }
+
+        public string? Recommendations { get; set; }
+
+        public List<InspectionPhotoCreateDto> Photos { get; set; } = new();
+    }
+
+    public class CancelPropertyInspectionDto
+    {
+        [Required]
+        [MaxLength(1000)]
+        public string Reason { get; set; } = null!;
+    }
+
+    public class ReviewPropertyInspectionDto : IValidatableObject
+    {
+        [Required]
+        [RegularExpression("^(approve|reject)$", ErrorMessage = "Decision must be 'approve' or 'reject'.")]
+        public string Decision { get; set; } = null!;
+
+        [MaxLength(1000)]
+        public string? Reason { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (string.Equals(Decision, "reject", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(Reason))
+            {
+                yield return new ValidationResult("Reason is required when rejecting an inspection.", new[] { nameof(Reason) });
+            }
+        }
+    }
 }
