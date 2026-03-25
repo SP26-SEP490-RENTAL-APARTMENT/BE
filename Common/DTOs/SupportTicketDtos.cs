@@ -65,4 +65,11 @@ namespace Common.DTOs
         
         public DateTime? ResolvedAt { get; set; }
     }
+
+    public class ReportPersistingIssueDto
+    {
+        [Required]
+        [StringLength(2000)]
+        public string Details { get; set; } = null!;
+    }
 }

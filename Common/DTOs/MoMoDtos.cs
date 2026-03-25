@@ -11,6 +11,8 @@ namespace Common.DTOs
         public long Amount { get; set; }
         public string OrderInfo { get; set; } = string.Empty;
         public string? ExtraData { get; set; }
+        public string? PaymentType { get; set; }
+        public string? PaymentPurpose { get; set; }
     }
 
     public class MomoCreatePaymentResponse

@@ -18,6 +18,12 @@ public class PackageService : BaseService<Package>, IPackageService
         _packageRepository = packageRepository;
     }
 
+    public override async Task<Package?> GetByIdAsync(Guid id)
+    {
+        // use repository implementation that includes related PackageItems
+        return await _packageRepository.GetByIdAsync(id);
+    }
+
     public async Task AddItemsAsync(Guid packageId, List<Guid> packageItemIds)
     {
         // ensure package exists

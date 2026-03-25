@@ -135,3 +135,57 @@ public class BookingResponseDto
     public string? Status { get; set; }
     public DateTime? CreatedAt { get; set; }
 }
+
+public class BookingQuoteRequestDto : IValidatableObject
+{
+    [Required]
+    public Guid ApartmentId { get; set; }
+
+    public Guid? PackageId { get; set; }
+
+    [Required]
+    public DateOnly CheckInDate { get; set; }
+
+    [Required]
+    public DateOnly CheckOutDate { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (CheckInDate < today)
+        {
+            yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });
+        }
+
+        if (CheckInDate >= CheckOutDate)
+        {
+            yield return new ValidationResult("Check-out date must be later than check-in date.", new[] { nameof(CheckOutDate) });
+        }
+    }
+}
+
+public class BookingQuoteResponseDto
+{
+    public Guid ApartmentId { get; set; }
+    public Guid? PackageId { get; set; }
+    public int Nights { get; set; }
+    public decimal BasePricePerNight { get; set; }
+    public decimal BaseAmount { get; set; }
+    public decimal PackageAmount { get; set; }
+    public decimal TotalPrice { get; set; }
+    public decimal SuggestedDeposit { get; set; }
+    public decimal RemainingBalance { get; set; }
+}
+
+public class SubmitResidenceReportDto
+{
+    [Required]
+    public bool ReportedToPolice { get; set; }
+
+    public DateOnly? ReportDate { get; set; }
+
+    [MaxLength(100)]
+    public string? ReportNumber { get; set; }
+
+    public DateTime? ActualCheckIn { get; set; }
+}

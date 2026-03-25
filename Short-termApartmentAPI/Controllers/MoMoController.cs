@@ -14,13 +14,15 @@ namespace Short_termApartmentAPI.Controllers
     {
         private readonly IMomoService _momoService;
         private readonly IPaymentService _paymentService;
+        private readonly IBookingService _bookingService;
         private readonly IMomoTransactionService _momoTransactionService;
         private readonly MomoOptions _options;
 
-        public MomoController(IMomoService momoService, IPaymentService paymentService, IMomoTransactionService momoTransactionService, IOptions<MomoOptions> options)
+        public MomoController(IMomoService momoService, IPaymentService paymentService, IBookingService bookingService, IMomoTransactionService momoTransactionService, IOptions<MomoOptions> options)
         {
             _momoService = momoService;
             _paymentService = paymentService;
+            _bookingService = bookingService;
             _momoTransactionService = momoTransactionService;
             _options = options.Value;
         }
@@ -38,10 +40,28 @@ namespace Short_termApartmentAPI.Controllers
             // Only persist payment and request log if MoMo accepted the create request
             if (result.ResultCode == 0)
             {
+                var paymentType = (request.PaymentType ?? "deposit").Trim().ToLowerInvariant();
+                if (paymentType != "deposit" && paymentType != "balance" && paymentType != "addon" && paymentType != "refund")
+                {
+                    paymentType = "deposit";
+                }
+
+                var paymentPurpose = request.PaymentPurpose;
+                if (string.IsNullOrWhiteSpace(paymentPurpose))
+                {
+                    paymentPurpose = paymentType switch
+                    {
+                        "balance" => "booking_balance",
+                        "addon" => "booking_addon_or_package",
+                        _ => "booking_deposit"
+                    };
+                }
+
                 var payment = new Payment
                 {
                     Amount = Convert.ToDecimal(request.Amount),
-                    PaymentType = "deposit",
+                    PaymentType = paymentType,
+                    PaymentPurpose = paymentPurpose,
                     RelatedEntityId = (Guid.TryParse(request.ExtraData, out var reId) ? reId : (Guid?)null),
                     RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "momo_wallet",
@@ -156,6 +176,27 @@ namespace Short_termApartmentAPI.Controllers
                                 payment.PaidAt = DateTime.UtcNow;
 
                             await _paymentService.UpdateAsync(payment);
+
+                            if (resultCode == 0
+                                && payment.RelatedEntityId.HasValue
+                                && string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    if (string.Equals(payment.PaymentType, "deposit", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                    }
+                                    else if (string.Equals(payment.PaymentType, "balance", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"[MoMo] Booking payment side-effect failed: {ex.Message}");
+                                }
+                            }
                         }
                     }
                 }

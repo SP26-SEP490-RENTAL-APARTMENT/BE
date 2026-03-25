@@ -69,16 +69,23 @@ namespace Short_termApartmentAPI.Controllers
             ticket.CreatedAt = DateTime.UtcNow; // Set created date or rely on DB
             ticket.UpdatedAt = DateTime.UtcNow;
 
-            var created = await _supportTicketService.CreateAsync(ticket);
+            var created = await _supportTicketService.CreateTicketAsync(ticket);
             return CreatedAtAction(nameof(GetById), new { id = created.TicketId }, _mapper.Map<SupportTicketDto>(created));
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "staff,admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSupportTicketDto ticketDto)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
+            }
+
+            var actorClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actorClaim, out var actorUserId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
 
             if (ticketDto.ResolvedBy.HasValue)
@@ -90,17 +97,45 @@ namespace Short_termApartmentAPI.Controllers
                 }
             }
 
-            var ticket = await _supportTicketService.GetByIdAsync(id);
-            if (ticket == null)
+            var existing = await _supportTicketService.GetByIdAsync(id);
+            if (existing == null)
             {
                 return NotFound();
             }
 
-            _mapper.Map(ticketDto, ticket);
-            ticket.UpdatedAt = DateTime.UtcNow;
-
-            await _supportTicketService.UpdateAsync(ticket);
+            await _supportTicketService.UpdateTicketByStaffAsync(id, ticketDto, actorUserId);
             return NoContent();
+        }
+
+        [HttpPost("{id:guid}/report-persisting")]
+        public async Task<IActionResult> ReportPersisting(Guid id, [FromBody] ReportPersistingIssueDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var followUp = await _supportTicketService.CreateFollowUpTicketAsync(id, userId, dto.Details);
+                var response = _mapper.Map<SupportTicketDto>(followUp);
+                return CreatedAtAction(nameof(GetById), new { id = followUp.TicketId },
+                    new ApiResponse<SupportTicketDto>(response, "Follow-up ticket created and routed to staff."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
         }
 
         [HttpDelete("{id:guid}")]

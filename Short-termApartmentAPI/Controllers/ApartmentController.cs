@@ -180,4 +180,85 @@ public sealed class ApartmentsController : ControllerBase
             return BadRequest(new ApiResponse<string>(ex.Message));
         }
     }
+
+    /// <summary>
+    /// Landlord submits apartment for admin review. Validates ownership and listing details.
+    /// Transitions apartment from 'draft' to 'pending_review'.
+    /// </summary>
+    [HttpPost("{id:guid}/submit-for-review")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> SubmitForReview(Guid id, [FromBody] SubmitForReviewDto dto)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var landlord = await _landlordService.GetByUserIdAsync(userId);
+            if (landlord == null)
+            {
+                return NotFound(new ApiResponse<string>("Landlord profile not found."));
+            }
+
+            var apartment = await _apartmentService.GetByIdAsync(id);
+            if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+            {
+                return NotFound(new ApiResponse<string>("Apartment not found."));
+            }
+
+            var updated = await _apartmentService.SubmitForReviewAsync(id, landlord.LandlordId, dto);
+            var response = _mapper.Map<ApartmentResponseDto>(updated);
+            return Ok(new ApiResponse<ApartmentResponseDto>(response, "Apartment submitted for review successfully."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Admin approves or rejects a pending_review apartment.
+    /// Transitions from 'pending_review' to 'posted' (approved) or 'blocked' (rejected).
+    /// </summary>
+    [HttpPost("{id:guid}/approve")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> ApproveListing(Guid id, [FromBody] ApproveListingDto dto)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var adminId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var apartment = await _apartmentService.GetByIdAsync(id);
+            if (apartment == null)
+            {
+                return NotFound(new ApiResponse<string>("Apartment not found."));
+            }
+
+            var updated = await _apartmentService.ApproveListingAsync(id, adminId, dto);
+            var response = _mapper.Map<ApartmentResponseDto>(updated);
+            string message = dto.Approved 
+                ? "Apartment approved and posted successfully." 
+                : "Apartment rejected.";
+            return Ok(new ApiResponse<ApartmentResponseDto>(response, message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
 }

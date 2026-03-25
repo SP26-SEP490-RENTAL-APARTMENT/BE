@@ -1,29 +1,40 @@
 using AutoMapper;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Short_termApartmentAPI.Middlewares;
 
 namespace Short_termApartmentAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "admin")]
+    [Authorize]
     public class PackageController : ControllerBase
     {
         private readonly IPackageService _packageService;
+        private readonly IApartmentService _apartmentService;
+        private readonly ILandlordService _landlordService;
         private readonly IMapper _mapper;
 
-        public PackageController(IPackageService packageService, IMapper mapper)
+        public PackageController(
+            IPackageService packageService,
+            IApartmentService apartmentService,
+            ILandlordService landlordService,
+            IMapper mapper)
         {
             _packageService = packageService;
+            _apartmentService = apartmentService;
+            _landlordService = landlordService;
             _mapper = mapper;
         }
 
         [HttpGet("{id:guid}")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetById(Guid id)
         {
             var result = await _packageService.GetByIdAsync(id);
@@ -35,6 +46,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -49,6 +61,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Create([FromBody] PackageRequestDto packageDto)
         {
             if (!ModelState.IsValid)
@@ -60,15 +73,16 @@ namespace Short_termApartmentAPI.Controllers
             return CreatedAtAction(nameof(GetById), new { id = created.PackageId }, _mapper.Map<PackageResponseDto>(created));
         }
 
-        [HttpPost("{id:guid}/items")]
-        public async Task<IActionResult> AddItems(Guid id, [FromBody] List<Guid> packageItemIds)
+        [HttpPost("{packageId:guid}/items")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> AdminAddItems(Guid packageId, [FromBody] List<Guid> packageItemIds)
         {
             if (packageItemIds == null || !packageItemIds.Any())
                 return BadRequest("No package item ids provided.");
 
             try
             {
-                await _packageService.AddItemsAsync(id, packageItemIds);
+                await _packageService.AddItemsAsync(packageId, packageItemIds);
                 return NoContent();
             }
             catch (ArgumentException ex)
@@ -78,11 +92,12 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}/items/{itemId:guid}")]
-        public async Task<IActionResult> RemoveItem(Guid id, Guid itemId)
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> AdminRemoveItem(Guid packageId, Guid packageItemId)
         {
             try
             {
-                await _packageService.RemoveItemAsync(id, itemId);
+                await _packageService.RemoveItemAsync(packageId, packageItemId);
                 return NoContent();
             }
             catch (ArgumentException ex)
@@ -92,6 +107,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] PackageRequestDto packageDto)
         {
             if (!ModelState.IsValid)
@@ -111,10 +127,89 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _packageService.DeleteAsync(id);
             return NoContent();
+        }
+
+        ///// <summary>
+        ///// Landlord adds a package to their apartment.
+        ///// </summary>
+        //[HttpPost("apartments/{apartmentId:guid}/packages/{packageId:guid}")]
+        //[Authorize(Roles = "landlord")]
+        //public async Task<IActionResult> LandlordAddPackageToApartment(Guid apartmentId, Guid packageId)
+        //{
+        //    try
+        //    {
+        //        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        //        if (!Guid.TryParse(userIdClaim, out var userId))
+        //        {
+        //            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        //        }
+
+        //        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        //        if (landlord == null)
+        //        {
+        //            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        //        }
+
+        //        var apartment = await _apartmentService.GetByIdAsync(apartmentId);
+        //        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+        //        {
+        //            return NotFound(new ApiResponse<string>("Apartment not found or permission denied."));
+        //        }
+
+        //        var package = await _packageService.GetByIdAsync(packageId);
+        //        if (package == null)
+        //        {
+        //            return NotFound(new ApiResponse<string>("Package not found."));
+        //        }
+
+        //        await _packageService.AddItemsAsync(packageId, new List<Guid> { apartmentId });
+        //        return Ok(new ApiResponse<string>("Package added to apartment successfully."));
+        //    }
+        //    catch (ArgumentException ex)
+        //    {
+        //        return BadRequest(new ApiResponse<string>(ex.Message));
+        //    }
+        //}
+
+        /// <summary>
+        /// Landlord removes a package from their apartment.
+        /// </summary>
+        [HttpDelete("apartments/{apartmentId:guid}/packages/{packageId:guid}")]
+        [Authorize(Roles = "landlord")]
+        public async Task<IActionResult> LandlordRemovePackageFromApartment(Guid apartmentId, Guid packageId)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (!Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new ApiResponse<string>("Invalid user token."));
+                }
+
+                var landlord = await _landlordService.GetByUserIdAsync(userId);
+                if (landlord == null)
+                {
+                    return NotFound(new ApiResponse<string>("Landlord profile not found."));
+                }
+
+                var apartment = await _apartmentService.GetByIdAsync(apartmentId);
+                if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+                {
+                    return NotFound(new ApiResponse<string>("Apartment not found or permission denied."));
+                }
+
+                await _packageService.RemoveItemAsync(packageId, apartmentId);
+                return NoContent();
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
         }
     }
 }
