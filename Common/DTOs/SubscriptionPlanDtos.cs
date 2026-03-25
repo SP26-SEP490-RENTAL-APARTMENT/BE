@@ -11,7 +11,6 @@ namespace Common.DTOs
         public decimal PriceMonthly { get; set; }
         public decimal? PriceAnnual { get; set; }
         public int? MaxApartments { get; set; }
-        public int? MaxApartmentsPerApartment { get; set; }
         public string? Features { get; set; }
         public bool? IsActive { get; set; }
         public DateTime? CreatedAt { get; set; }
@@ -30,8 +29,6 @@ namespace Common.DTOs
         public decimal? PriceAnnual { get; set; }
         [Range(1, 100, ErrorMessage = "MaxApartments must be at least 1-100.")]
         public int? MaxApartments { get; set; }
-        [Range(1, 100, ErrorMessage = "MaxApartmentsPerApartment must be at least 1-100.")]
-        public int? MaxApartmentsPerApartment { get; set; }
         public string? Features { get; set; }
         public bool? IsActive { get; set; }
     }
@@ -49,8 +46,6 @@ namespace Common.DTOs
         public decimal? PriceAnnual { get; set; }
         [Range(1, 100, ErrorMessage = "MaxApartments must be at least 1-100.")]
         public int? MaxApartments { get; set; }
-        [Range(1, 100, ErrorMessage = "MaxApartmentsPerApartment must be at least 1-100.")]
-        public int? MaxApartmentsPerApartment { get; set; }
         public string? Features { get; set; }
         public bool? IsActive { get; set; }
     }

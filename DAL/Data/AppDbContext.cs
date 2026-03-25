@@ -1057,9 +1057,6 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.MaxApartments)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("max_apartments");
-            entity.Property(e => e.MaxApartmentsPerApartment)
-                .HasDefaultValueSql("'5'")
-                .HasColumnName("max_apartments_per_apartment");
             entity.Property(e => e.Name)
                 .HasMaxLength(100)
                 .HasColumnName("name");

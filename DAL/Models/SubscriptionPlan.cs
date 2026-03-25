@@ -17,8 +17,6 @@ public partial class SubscriptionPlan
 
     public int? MaxApartments { get; set; }
 
-    public int? MaxApartmentsPerApartment { get; set; }
-
     public string? Features { get; set; }
 
     public bool? IsActive { get; set; }

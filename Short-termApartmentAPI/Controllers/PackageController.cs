@@ -61,7 +61,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "admin")]
+        [Authorize(Roles = "admin,landlord")]
         public async Task<IActionResult> Create([FromBody] PackageRequestDto packageDto)
         {
             if (!ModelState.IsValid)
@@ -133,48 +133,6 @@ namespace Short_termApartmentAPI.Controllers
             await _packageService.DeleteAsync(id);
             return NoContent();
         }
-
-        ///// <summary>
-        ///// Landlord adds a package to their apartment.
-        ///// </summary>
-        //[HttpPost("apartments/{apartmentId:guid}/packages/{packageId:guid}")]
-        //[Authorize(Roles = "landlord")]
-        //public async Task<IActionResult> LandlordAddPackageToApartment(Guid apartmentId, Guid packageId)
-        //{
-        //    try
-        //    {
-        //        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        //        if (!Guid.TryParse(userIdClaim, out var userId))
-        //        {
-        //            return Unauthorized(new ApiResponse<string>("Invalid user token."));
-        //        }
-
-        //        var landlord = await _landlordService.GetByUserIdAsync(userId);
-        //        if (landlord == null)
-        //        {
-        //            return NotFound(new ApiResponse<string>("Landlord profile not found."));
-        //        }
-
-        //        var apartment = await _apartmentService.GetByIdAsync(apartmentId);
-        //        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
-        //        {
-        //            return NotFound(new ApiResponse<string>("Apartment not found or permission denied."));
-        //        }
-
-        //        var package = await _packageService.GetByIdAsync(packageId);
-        //        if (package == null)
-        //        {
-        //            return NotFound(new ApiResponse<string>("Package not found."));
-        //        }
-
-        //        await _packageService.AddItemsAsync(packageId, new List<Guid> { apartmentId });
-        //        return Ok(new ApiResponse<string>("Package added to apartment successfully."));
-        //    }
-        //    catch (ArgumentException ex)
-        //    {
-        //        return BadRequest(new ApiResponse<string>(ex.Message));
-        //    }
-        //}
 
         /// <summary>
         /// Landlord removes a package from their apartment.
