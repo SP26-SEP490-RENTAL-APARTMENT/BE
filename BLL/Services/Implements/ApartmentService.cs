@@ -86,7 +86,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
     public async Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId)
     {
-        if (requestDto.Photos == null || !requestDto.Photos.Any())
+        if (requestDto.photos == null || !requestDto.photos.Any())
         {
             throw new ArgumentException("At least one photo is required to submit an apartment.");
         }
@@ -96,7 +96,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         var created = await CreateAsync(apartment);
 
-        foreach (var photo in requestDto.Photos)
+        foreach (var photo in requestDto.photos)
         {
             var url = await _imageService.UploadImageAsync(photo);
 
@@ -119,5 +119,81 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     {
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(id);
         return apartment == null ? null : _mapper.Map<ApartmentResponseDto>(apartment);
+    }
+
+    public async Task<bool> ValidateListingDetailsAsync(Guid apartmentId)
+    {
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        // Validate at least one photo exists
+        if (!apartment.ApartmentMedia.Any())
+            throw new InvalidOperationException("Apartment must have at least one photo before submission.");
+
+        // Validate at least one amenity exists
+        if (!apartment.Amenities.Any())
+            throw new InvalidOperationException("Apartment must have at least one amenity before submission.");
+
+        // Validate base price is set
+        if (apartment.BasePricePerNight <= 0)
+            throw new InvalidOperationException("Apartment must have a valid base price before submission.");
+
+        return true;
+    }
+
+    public async Task<Apartment> SubmitForReviewAsync(Guid apartmentId, Guid landlordId, SubmitForReviewDto dto)
+    {
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        // Validate ownership
+        if (apartment.LandlordId != landlordId)
+            throw new InvalidOperationException("Only the apartment landlord can submit for review.");
+
+        // Validate status is draft
+        if (!string.Equals(apartment.Status, "draft", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Only draft apartments can be submitted for review.");
+
+        // Validate listing details
+        await ValidateListingDetailsAsync(apartmentId);
+
+        // Transition to pending_review
+        apartment.Status = "pending_review";
+        _apartmentRepository.Update(apartment);
+        await _apartmentRepository.SaveChangesAsync();
+
+        return apartment;
+    }
+
+    public async Task<Apartment> ApproveListingAsync(Guid apartmentId, Guid adminId, ApproveListingDto dto)
+    {
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        // Validate status is pending_review
+        if (!string.Equals(apartment.Status, "pending_review", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Only pending_review apartments can be approved or rejected.");
+
+        if (dto.Approved)
+        {
+            // Approve: transition to posted
+            apartment.Status = "posted";
+        }
+        else
+        {
+            // Reject: transition to blocked with reason
+            if (string.IsNullOrWhiteSpace(dto.RejectionReason))
+                throw new InvalidOperationException("A rejection reason must be provided when rejecting a listing.");
+
+            apartment.Status = "blocked";
+        }
+
+        _apartmentRepository.Update(apartment);
+        await _apartmentRepository.SaveChangesAsync();
+
+        return apartment;
     }
 }

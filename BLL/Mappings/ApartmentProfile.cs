@@ -9,7 +9,7 @@ public class ApartmentProfile : Profile
     public ApartmentProfile()
     {
         CreateMap<CreateApartmentRequestDto, Apartment>()
-            .ForMember(dest => dest.Location, opt => opt.MapFrom(src => new NetTopologySuite.Geometries.Point((double)src.Longitude.GetValueOrDefault(), (double)src.Latitude.GetValueOrDefault()) { SRID = 4326 }))
+            .ForMember(dest => dest.Location, opt => opt.MapFrom(src => new NetTopologySuite.Geometries.Point((double)src.longitude.GetValueOrDefault(), (double)src.latitude.GetValueOrDefault()) { SRID = 4326 }))
             .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => System.DateTime.UtcNow))
             .ForMember(dest => dest.Status, opt => opt.MapFrom(src => "draft"))
             .ForMember(dest => dest.ApartmentId, opt => opt.Ignore())

@@ -189,7 +189,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("max_occupants");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'draft'")
-                .HasColumnType("enum('draft','posted','blocked','archived')")
+                .HasColumnType("enum('draft','pending_review','posted','blocked','archived')")
                 .HasColumnName("status");
             entity.Property(e => e.Title)
                 .HasMaxLength(200)

@@ -8,6 +8,6 @@ namespace Common.Enums
 {
     public enum ApartmentStatus
     {
-        draft, posted, blocked, archived
+        draft, pending_review, posted, blocked, archived
     }
 }

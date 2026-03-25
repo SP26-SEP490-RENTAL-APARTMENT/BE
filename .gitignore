@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 /Short-termApartmentAPI/appsettings.json
 /Short-termApartmentAPI/appsettings.Development.json
+LISTING_WORKFLOW_IMPLEMENTATION.md
