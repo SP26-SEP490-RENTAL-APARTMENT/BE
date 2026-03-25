@@ -48,7 +48,21 @@ namespace Short_termApartmentAPI.Controllers
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }
 
+        [HttpGet("apartment/{apartmentId:guid}/average-rating")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetApartmentAverageRating(Guid apartmentId)
+        {
+            var (averageRating, totalReviews) = await _reviewService.GetApartmentAverageRatingAsync(apartmentId);
+            return Ok(new
+            {
+                ApartmentId = apartmentId,
+                AverageRating = averageRating,
+                TotalReviews = totalReviews
+            });
+        }
+
         [HttpPost]
+        [Authorize(Roles = "tenant")]
         public async Task<IActionResult> Create([FromBody] CreateReviewRequestDto requestDto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -62,9 +76,22 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            try
+            {
+                await _reviewService.ValidateTenantReviewEligibilityAsync(requestDto.BookingId, userId, requestDto.ApartmentId);
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+
             var review = _mapper.Map<Review>(requestDto);
             review.ReviewerId = userId; // Attach the authenticated user making the request
-            
+
             var created = await _reviewService.CreateAsync(review);
             return CreatedAtAction(nameof(GetById), new { id = created.ReviewId }, _mapper.Map<ReviewResponseDto>(created));
         }

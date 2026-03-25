@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MoMoApi;
+using Common.Settings;
 
 namespace BLL.DependencyInjection
 {
@@ -8,9 +9,10 @@ namespace BLL.DependencyInjection
     {
         public static IServiceCollection AddConfigurationRegistration(this IServiceCollection services, IConfiguration configuration)
         {
-            services.Configure<Common.Settings.JwtSettings>(configuration.GetSection("Jwt"));
-            services.Configure<Common.Settings.CloudinarySettings>(configuration.GetSection("CloudinarySettings"));
+            services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+            services.Configure<CloudinarySettings>(configuration.GetSection("CloudinarySettings"));
             services.Configure<MomoOptions>(configuration.GetSection(MomoOptions.SectionName));
+            services.Configure<StripeSettings>(configuration.GetSection(StripeSettings.SectionName));
             return services;
         }
     }

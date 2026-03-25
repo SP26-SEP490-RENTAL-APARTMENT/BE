@@ -1,14 +1,8 @@
 ﻿using Common.DTOs;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace BLL.Services.Interfaces
+namespace BLL.Services.Interfaces;
+
+public interface IMomoService
 {
-    public interface IMomoService
-    {
-        Task<MomoCreatePaymentResponse> CreateWalletPaymentAsync(MomoCreatePaymentRequest request, CancellationToken cancellationToken = default);
-    }
+    Task<MomoCreatePaymentResponse> CreateWalletPaymentAsync(MomoCreatePaymentRequest request, CancellationToken cancellationToken = default);
 }

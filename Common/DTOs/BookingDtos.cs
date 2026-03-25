@@ -50,6 +50,9 @@ public class CreateBookingRequestDto : IValidatableObject
     [MaxLength(50)]
     public string? Status { get; set; }
 
+    [MaxLength(20)]
+    public string? PaymentProvider { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);

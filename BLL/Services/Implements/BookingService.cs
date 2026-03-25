@@ -2,6 +2,7 @@ using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using System.Linq;
 
 namespace BLL.Services.Implements;
 
@@ -11,6 +12,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private readonly IBookingRepository _bookingRepository;
     private readonly IApartmentRepository _apartmentRepository;
+    private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IRepository<Package> _packageRepository;
     private readonly IRepository<Notification> _notificationRepository;
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
@@ -20,6 +22,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     public BookingService(
         IBookingRepository repository,
         IApartmentRepository apartmentRepository,
+        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
         IRepository<Package> packageRepository,
         IRepository<Notification> notificationRepository,
         IRepository<BookingCheckTime> bookingCheckTimeRepository,
@@ -28,6 +31,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     {
         _bookingRepository = repository;
         _apartmentRepository = apartmentRepository;
+        _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _packageRepository = packageRepository;
         _notificationRepository = notificationRepository;
         _bookingCheckTimeRepository = bookingCheckTimeRepository;
@@ -44,7 +48,27 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (apartment == null)
             throw new ArgumentException("Apartment not found.");
 
+        if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("This apartment is not currently available for booking.");
+
+        await EnsureNoConflictingBookingsAsync(dto.ApartmentId, dto.CheckInDate, dto.CheckOutDate);
         var nights = dto.CheckOutDate.DayNumber - dto.CheckInDate.DayNumber;
+
+        // Enforce minimum stay based on apartment price calendar rules
+        var calendars = await _apartmentPriceCalendarRepository.FindAsync(c =>
+            c.ApartmentId == dto.ApartmentId &&
+            c.StartDate <= dto.CheckOutDate &&
+            c.EndDate >= dto.CheckInDate);
+
+        if (calendars.Any())
+        {
+            var minRequiredNights = calendars.Max(c => c.MinNights ?? 1);
+            if (nights < minRequiredNights)
+            {
+                throw new InvalidOperationException($"Booking must be at least {minRequiredNights} night(s) for the selected dates.");
+            }
+        }
+
         var baseAmount = apartment.BasePricePerNight * nights;
 
         decimal packageAmount = 0m;
@@ -235,5 +259,22 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return report;
+    }
+
+    private async Task EnsureNoConflictingBookingsAsync(Guid apartmentId, DateOnly checkInDate, DateOnly checkOutDate)
+    {
+        var blockingStatuses = new[] { "pending", "negotiating", "confirmed", "paid", "completed", "disputed" };
+
+        var conflicts = await _bookingRepository.FindAsync(b =>
+            b.ApartmentId == apartmentId &&
+            b.Status != null &&
+            blockingStatuses.Contains(b.Status) &&
+            b.CheckInDate < checkOutDate &&
+            b.CheckOutDate > checkInDate);
+
+        if (conflicts.Any())
+        {
+            throw new InvalidOperationException("Apartment is not available for the selected dates.");
+        }
     }
 }

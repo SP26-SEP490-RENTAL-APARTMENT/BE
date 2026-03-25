@@ -40,6 +40,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<ISubscriptionPlanService, SubscriptionPlanService>();
             services.AddScoped<IMomoTransactionService, MomoTransactionService>();
             services.AddHttpClient<IMomoService, MomoService>();
+            services.AddScoped<IStripeService, StripeService>();
             return services;
         }
     }

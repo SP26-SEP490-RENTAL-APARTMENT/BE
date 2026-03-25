@@ -1,6 +1,8 @@
 using AutoMapper;
 using BLL.Services.Interfaces;
 using Common.DTOs;
+using Common.Enums;
+using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Middlewares;
@@ -14,11 +16,13 @@ namespace Short_termApartmentAPI.Controllers
 	public class BookingController : ControllerBase
 	{
 		private readonly IBookingService _bookingService;
+		private readonly IPaymentService _paymentService;
 		private readonly IMapper _mapper;
 
-		public BookingController(IBookingService bookingService, IMapper mapper)
+		public BookingController(IBookingService bookingService, IPaymentService paymentService, IMapper mapper)
 		{
 			_bookingService = bookingService;
+			_paymentService = paymentService;
 			_mapper = mapper;
 		}
 
@@ -61,6 +65,10 @@ namespace Short_termApartmentAPI.Controllers
 				var quote = await _bookingService.GetQuoteAsync(dto);
 				return Ok(new ApiResponse<BookingQuoteResponseDto>(quote));
 			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
 			catch (ArgumentException ex)
 			{
 				return BadRequest(new ApiResponse<string>(ex.Message));
@@ -85,13 +93,52 @@ namespace Short_termApartmentAPI.Controllers
 			try
 			{
 				var created = await _bookingService.CreateWithQuoteAsync(requestDto, userId);
+				await CreateInitialPaymentIfRequestedAsync(created, requestDto.PaymentProvider);
 				return CreatedAtAction(nameof(GetById), new { id = created.BookingId },
 					new ApiResponse<BookingResponseDto>(_mapper.Map<BookingResponseDto>(created), "Booking created. Please complete deposit payment to confirm."));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
 			}
 			catch (ArgumentException ex)
 			{
 				return BadRequest(new ApiResponse<string>(ex.Message));
 			}
+		}
+
+		private async Task CreateInitialPaymentIfRequestedAsync(Booking booking, string? paymentProvider)
+		{
+			if (string.IsNullOrWhiteSpace(paymentProvider))
+			{
+				return;
+			}
+
+			var normalized = paymentProvider.Trim().ToLowerInvariant();
+			var method = normalized switch
+			{
+				"stripe" => "stripe",
+				"momo" => "momo_wallet",
+				_ => null
+			};
+
+			if (method == null)
+			{
+				return;
+			}
+
+			var payment = new Payment
+			{
+				Amount = booking.DepositAmount,
+				PaymentType = PaymentTypes.deposit.ToString(),
+				PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
+				RelatedEntityId = booking.BookingId,
+				RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+				Method = method,
+				Status = PaymentStatus.pending.ToString()
+			};
+
+			await _paymentService.CreateAsync(payment);
 		}
 
 		[HttpPost("{id:guid}/residence-report")]
