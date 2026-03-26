@@ -1,0 +1,381 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Threading.Tasks;
+using BLL.Services.Implements;
+using DAL.Models;
+using DAL.Repository.Interfaces;
+using NetTopologySuite.Geometries;
+
+namespace BLL.Tests;
+
+public class SmartPricingHistoryServiceTests
+{
+    private static Apartment CreateDefaultApartment(Guid apartmentId, decimal basePrice, string city)
+    {
+        return new Apartment
+        {
+            ApartmentId = apartmentId,
+            LandlordId = Guid.NewGuid(),
+            Title = "Test Apartment",
+            City = city,
+            BasePricePerNight = basePrice,
+            Location = new Point(0, 0)
+        };
+    }
+
+    [Fact]
+    public async Task SuggestPriceAsync_NoHoliday_NoAttractions_UsesOccupancyOnly()
+    {
+        // Arrange
+        var apartmentId = Guid.NewGuid();
+        var basePrice = 100m;
+        var city = "Hanoi";
+        var date = new DateOnly(2026, 3, 27);
+        var occupancyRate = 0.7m;
+
+        var apartment = CreateDefaultApartment(apartmentId, basePrice, city);
+
+        var pricingRepo = new InMemorySmartPricingHistoryRepository();
+        var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var holidaysRepo = new InMemoryHolidaysEventRepository();
+        var attractionsRepo = new InMemoryNearbyAttractionRepository();
+
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, holidaysRepo, attractionsRepo);
+
+        // Act
+        var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
+
+        // Assert
+        var expectedMultiplier = 1 + (occupancyRate * 0.25m); // no holiday/location impact
+        var expectedPrice = basePrice * expectedMultiplier;
+
+        Assert.Equal(expectedMultiplier, pricing.Multiplier);
+        Assert.Equal(expectedPrice, pricing.SuggestedPrice);
+    }
+
+    [Fact]
+    public async Task SuggestPriceAsync_WithNationalHoliday_AppliesHolidayMultiplier()
+    {
+        // Arrange
+        var apartmentId = Guid.NewGuid();
+        var basePrice = 100m;
+        var city = "Hanoi";
+        var date = new DateOnly(2026, 4, 30); // sample holiday date
+        var occupancyRate = 0.7m;
+
+        var apartment = CreateDefaultApartment(apartmentId, basePrice, city);
+
+        var pricingRepo = new InMemorySmartPricingHistoryRepository();
+        var apartmentRepo = new InMemoryApartmentRepository(apartment);
+
+        var holidaysRepo = new InMemoryHolidaysEventRepository(new List<HolidaysEvent>
+        {
+            new HolidaysEvent
+            {
+                EventId = Guid.NewGuid(),
+                EventName = "National Holiday",
+                EventType = "national_holiday",
+                StartDate = date,
+                EndDate = date,
+                LocationScope = city
+            }
+        });
+
+        var attractionsRepo = new InMemoryNearbyAttractionRepository();
+
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, holidaysRepo, attractionsRepo);
+
+        // Act
+        var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
+
+        // Assert
+        var occupancyComponent = 1 + (occupancyRate * 0.25m);
+        var expectedMultiplier = occupancyComponent * 1.25m; // national holiday multiplier
+        var expectedPrice = basePrice * expectedMultiplier;
+
+        Assert.Equal(expectedMultiplier, pricing.Multiplier);
+        Assert.Equal(expectedPrice, pricing.SuggestedPrice);
+        Assert.Contains("holiday", pricing.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SuggestPriceAsync_WithHighAttractionDensity_AppliesLocationMultiplier()
+    {
+        // Arrange
+        var apartmentId = Guid.NewGuid();
+        var basePrice = 100m;
+        var city = "Hanoi";
+        var date = new DateOnly(2026, 5, 10);
+        var occupancyRate = 0.7m;
+
+        var apartment = CreateDefaultApartment(apartmentId, basePrice, city);
+
+        var pricingRepo = new InMemorySmartPricingHistoryRepository();
+        var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var holidaysRepo = new InMemoryHolidaysEventRepository();
+
+        var attractions = Enumerable.Range(0, 20)
+            .Select(i => new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = $"Attraction {i}",
+                NameVi = $"Điểm tham quan {i}",
+                Type = "generic",
+                City = city,
+                Location = new Point(0, 0)
+            })
+            .ToList();
+
+        var attractionsRepo = new InMemoryNearbyAttractionRepository(attractions);
+
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, holidaysRepo, attractionsRepo);
+
+        // Act
+        var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
+
+        // Assert
+        var occupancyComponent = 1 + (occupancyRate * 0.25m);
+        var expectedMultiplier = occupancyComponent * 1.15m; // high-density location multiplier
+        var expectedPrice = basePrice * expectedMultiplier;
+
+        Assert.Equal(expectedMultiplier, pricing.Multiplier);
+        Assert.Equal(expectedPrice, pricing.SuggestedPrice);
+        Assert.Contains("location", pricing.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+internal sealed class InMemorySmartPricingHistoryRepository : IRepository<SmartPricingHistory>
+{
+    private readonly List<SmartPricingHistory> _items = new();
+
+    public Task AddAsync(SmartPricingHistory entity)
+    {
+        _items.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<SmartPricingHistory>> FindAsync(Expression<Func<SmartPricingHistory, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<SmartPricingHistory> result = _items.Where(compiled);
+        return Task.FromResult(result);
+    }
+
+    public Task<(IEnumerable<SmartPricingHistory> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((_items.AsEnumerable(), _items.Count));
+    }
+
+    public Task<SmartPricingHistory?> GetByIdAsync(Guid id)
+    {
+        SmartPricingHistory? result = _items.FirstOrDefault(p => p.PricingId == id);
+        return Task.FromResult(result);
+    }
+
+    public void Remove(SmartPricingHistory entity)
+    {
+        _items.Remove(entity);
+    }
+
+    public void Update(SmartPricingHistory entity)
+    {
+        // No-op: entity is already updated by reference in the list
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+}
+
+internal sealed class InMemoryApartmentRepository : IApartmentRepository
+{
+    private readonly List<Apartment> _apartments;
+
+    public InMemoryApartmentRepository(params Apartment[] apartments)
+    {
+        _apartments = apartments.ToList();
+    }
+
+    public Task AddAsync(Apartment entity)
+    {
+        _apartments.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<Apartment>> FindAsync(Expression<Func<Apartment, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<Apartment> result = _apartments.Where(compiled);
+        return Task.FromResult(result);
+    }
+
+    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((_apartments.AsEnumerable(), _apartments.Count));
+    }
+
+    public Task<Apartment?> GetByIdAsync(Guid id)
+    {
+        Apartment? result = _apartments.FirstOrDefault(a => a.ApartmentId == id);
+        return Task.FromResult(result);
+    }
+
+    public Task<Apartment?> GetApartmentWithDetailsAsync(Guid id)
+    {
+        return GetByIdAsync(id);
+    }
+
+    public void Remove(Apartment entity)
+    {
+        _apartments.Remove(entity);
+    }
+
+    public void Update(Apartment entity)
+    {
+        // No special handling needed for in-memory list
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+}
+
+internal sealed class InMemoryHolidaysEventRepository : IHolidaysEventRepository
+{
+    private readonly List<HolidaysEvent> _events;
+
+    public InMemoryHolidaysEventRepository()
+    {
+        _events = new List<HolidaysEvent>();
+    }
+
+    public InMemoryHolidaysEventRepository(IEnumerable<HolidaysEvent> events)
+    {
+        _events = events.ToList();
+    }
+
+    public Task AddAsync(HolidaysEvent entity)
+    {
+        _events.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<HolidaysEvent>> FindAsync(Expression<Func<HolidaysEvent, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<HolidaysEvent> result = _events.Where(compiled);
+        return Task.FromResult(result);
+    }
+
+    public Task<(IEnumerable<HolidaysEvent> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((_events.AsEnumerable(), _events.Count));
+    }
+
+    public Task<HolidaysEvent?> GetByIdAsync(Guid id)
+    {
+        HolidaysEvent? result = _events.FirstOrDefault(e => e.EventId == id);
+        return Task.FromResult(result);
+    }
+
+    public void Remove(HolidaysEvent entity)
+    {
+        _events.Remove(entity);
+    }
+
+    public void Update(HolidaysEvent entity)
+    {
+        // No special handling needed for in-memory list
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+}
+
+internal sealed class InMemoryNearbyAttractionRepository : INearbyAttractionRepository
+{
+    private readonly List<NearbyAttraction> _attractions;
+
+    public InMemoryNearbyAttractionRepository()
+    {
+        _attractions = new List<NearbyAttraction>();
+    }
+
+    public InMemoryNearbyAttractionRepository(IEnumerable<NearbyAttraction> attractions)
+    {
+        _attractions = attractions.ToList();
+    }
+
+    public Task AddAsync(NearbyAttraction entity)
+    {
+        _attractions.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<NearbyAttraction>> FindAsync(Expression<Func<NearbyAttraction, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<NearbyAttraction> result = _attractions.Where(compiled);
+        return Task.FromResult(result);
+    }
+
+    public Task<(IEnumerable<NearbyAttraction> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((_attractions.AsEnumerable(), _attractions.Count));
+    }
+
+    public Task<NearbyAttraction?> GetByIdAsync(Guid id)
+    {
+        NearbyAttraction? result = _attractions.FirstOrDefault(a => a.AttractionId == id);
+        return Task.FromResult(result);
+    }
+
+    public void Remove(NearbyAttraction entity)
+    {
+        _attractions.Remove(entity);
+    }
+
+    public void Update(NearbyAttraction entity)
+    {
+        // No special handling needed for in-memory list
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+}
