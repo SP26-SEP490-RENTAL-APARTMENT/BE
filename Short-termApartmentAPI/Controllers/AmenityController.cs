@@ -18,14 +18,16 @@ public sealed class AmenityController(IAmenityService amenityService) : Controll
         [FromQuery] int pageSize = 20,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortOrder = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
     {
         var (items, totalCount) = await amenityService.GetAllAmenitiesAsync(
             page,
             pageSize,
             sortBy,
             sortOrder,
-            search);
+            search,
+            filters);
 
         return Ok(new ApiResponse<object>(new { items, totalCount, page, pageSize }));
     }

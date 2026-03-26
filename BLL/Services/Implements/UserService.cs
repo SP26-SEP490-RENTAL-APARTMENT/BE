@@ -12,5 +12,28 @@ namespace BLL.Services.Implements
         {
             _userRepository = userRepository;
         }
+
+        public override async Task<(IEnumerable<User> Items, int TotalCount)> GetAllAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null)
+        {
+            var effectiveAllowedColumns = new[]
+            {
+                "UserId",
+                "Email",
+                "Role",
+                "FullName",
+                "Phone",
+                "IdentityVerified",
+                "CreatedAt"
+            };
+
+            return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+        }
     }
 }

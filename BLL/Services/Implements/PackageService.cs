@@ -75,6 +75,17 @@ public class PackageService : BaseService<Package>, IPackageService
         Dictionary<string, string>? filters = null,
         IEnumerable<string>? allowedColumns = null)
     {
-        return await _packageRepository.GetAllWithDetailsAsync(page, pageSize, sortBy, sortOrder, search, filters, allowedColumns);
+        var effectiveAllowedColumns = new[]
+        {
+            "PackageId",
+            "ApartmentId",
+            "Name",
+            "Description",
+            "Currency",
+            "IsActive",
+            "CreatedAt"
+        };
+
+        return await _packageRepository.GetAllWithDetailsAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
     }
 }

@@ -24,6 +24,32 @@ namespace BLL.Services.Implements
             _notificationRepository = notificationRepository;
         }
 
+        public override async Task<(IEnumerable<SupportTicket> Items, int TotalCount)> GetAllAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null)
+        {
+            var effectiveAllowedColumns = new[]
+            {
+                "TicketId",
+                "UserId",
+                "Subject",
+                "Description",
+                "Category",
+                "Priority",
+                "Status",
+                "CreatedAt",
+                "ResolvedAt",
+                "ResolvedBy"
+            };
+
+            return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+        }
+
         public async Task<SupportTicket> CreateTicketAsync(SupportTicket ticket)
         {
             ticket.Status ??= "open";

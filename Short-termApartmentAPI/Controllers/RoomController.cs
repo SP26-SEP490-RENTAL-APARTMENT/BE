@@ -38,9 +38,10 @@ public sealed class RoomController : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortOrder = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var (items, total) = await _roomService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
+        var (items, total) = await _roomService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
         var dtos = _mapper.Map<IEnumerable<RoomResponseDto>>(items);
         return Ok(new { Items = dtos, TotalCount = total });
     }

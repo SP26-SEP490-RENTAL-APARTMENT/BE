@@ -45,6 +45,29 @@ public class BookingService : BaseService<Booking>, IBookingService
         _identityVerificationService = identityVerificationService;
     }
 
+    public override async Task<(IEnumerable<Booking> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        var effectiveAllowedColumns = new[]
+        {
+            "BookingId",
+            "TenantId",
+            "ApartmentId",
+            "CheckInDate",
+            "CheckOutDate",
+            "Status",
+            "CreatedAt"
+        };
+
+        return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+    }
+
     public async Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto)
     {
         if (dto.CheckInDate >= dto.CheckOutDate)

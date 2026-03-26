@@ -38,9 +38,10 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] int pageSize = 10,
             [FromQuery] string? sortBy = null,
             [FromQuery] string? sortOrder = null,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
         {
-            var (items, totalCount) = await _userService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
+            var (items, totalCount) = await _userService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
             var itemDtos = _mapper.Map<IEnumerable<UserDto>>(items);
             return Ok(new { Items = itemDtos, TotalCount = totalCount });
         }

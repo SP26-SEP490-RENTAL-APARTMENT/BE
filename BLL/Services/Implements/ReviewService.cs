@@ -16,6 +16,31 @@ public sealed class ReviewService : BaseService<Review>, IReviewService
         _bookingRepository = bookingRepository;
     }
 
+    public override async Task<(IEnumerable<Review> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        var effectiveAllowedColumns = new[]
+        {
+            "ReviewId",
+            "BookingId",
+            "ReviewerId",
+            "ReviewedId",
+            "ApartmentId",
+            "Rating",
+            "CommentEn",
+            "CommentVi",
+            "CreatedAt"
+        };
+
+        return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+    }
+
     public async Task ValidateTenantReviewEligibilityAsync(Guid bookingId, Guid reviewerUserId, Guid? apartmentId = null)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId);

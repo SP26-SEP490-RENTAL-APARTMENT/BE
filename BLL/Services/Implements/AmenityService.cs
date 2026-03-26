@@ -63,10 +63,11 @@ namespace BLL.Services.Implements
             int pageSize,
             string? sortBy = null,
             string? sortOrder = null,
-            string? search = null)
+            string? search = null,
+            Dictionary<string, string>? filters = null)
         {
             var allowedColumns = new[] { "AmenityId", "NameEn", "NameVi" };
-            var result = await _repository.GetAllAsync(page, pageSize, sortBy, sortOrder, search, null, allowedColumns);
+            var result = await _repository.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, allowedColumns);
 
             var items = result.Items.Select(a => new AmenityResponseDto
             {

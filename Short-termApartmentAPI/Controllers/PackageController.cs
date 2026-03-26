@@ -52,10 +52,11 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] int pageSize = 10,
             [FromQuery] string? sortBy = null,
             [FromQuery] string? sortOrder = null,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
         {
             // use service method that includes package items
-            var (items, totalCount) = await _packageService.GetAllWithDetailsAsync(page, pageSize, sortBy, sortOrder, search);
+            var (items, totalCount) = await _packageService.GetAllWithDetailsAsync(page, pageSize, sortBy, sortOrder, search, filters);
             var mappedItems = _mapper.Map<IEnumerable<PackageResponseDto>>(items);
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }

@@ -31,9 +31,10 @@ public sealed class ApartmentsController : ControllerBase
             [FromQuery] int pageSize = 10,
             [FromQuery] string? sortBy = null,
             [FromQuery] string? sortOrder = null,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search);
+        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
         var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
