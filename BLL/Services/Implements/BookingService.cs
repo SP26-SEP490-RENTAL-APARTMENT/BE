@@ -19,6 +19,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
     private readonly IRepository<Tenant> _tenantRepository;
     private readonly IRepository<User> _userRepository;
+    private readonly IIdentityVerificationService _identityVerificationService;
 
     public BookingService(
         IBookingRepository repository,
@@ -29,7 +30,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<BookingCheckTime> bookingCheckTimeRepository,
         IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
         IRepository<Tenant> tenantRepository,
-        IRepository<User> userRepository) : base(repository)
+        IRepository<User> userRepository,
+        IIdentityVerificationService identityVerificationService) : base(repository)
     {
         _bookingRepository = repository;
         _apartmentRepository = apartmentRepository;
@@ -40,6 +42,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _temporaryResidenceReportRepository = temporaryResidenceReportRepository;
         _tenantRepository = tenantRepository;
         _userRepository = userRepository;
+        _identityVerificationService = identityVerificationService;
     }
 
     public async Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto)
@@ -104,6 +107,8 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     public async Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId)
     {
+        await _identityVerificationService.EnsureUserVerifiedForBookingAsync(tenantId);
+
         var quote = await GetQuoteAsync(new BookingQuoteRequestDto
         {
             ApartmentId = requestDto.ApartmentId,
@@ -161,6 +166,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         var booking = await _bookingRepository.GetByIdAsync(bookingId);
         if (booking == null)
             throw new ArgumentException("Booking not found.");
+
+        await _identityVerificationService.EnsureUserVerifiedForBookingAsync(booking.TenantId);
 
         booking.DepositPaid = true;
         if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase)
