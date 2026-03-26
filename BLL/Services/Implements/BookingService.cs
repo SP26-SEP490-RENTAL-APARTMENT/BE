@@ -239,6 +239,19 @@ public class BookingService : BaseService<Booking>, IBookingService
         return booking;
     }
 
+    public async Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(
+        Guid landlordId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        return await _bookingRepository.GetByLandlordAsync(landlordId, page, pageSize, sortBy, sortOrder, search, fromDate, toDate);
+    }
+
     public async Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId);

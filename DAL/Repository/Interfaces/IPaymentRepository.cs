@@ -5,5 +5,13 @@ namespace DAL.Repository.Interfaces
 {
     public interface IPaymentRepository : IRepository<Payment>
     {
+        Task<(IEnumerable<Payment> Items, int TotalCount)> GetByLandlordAsync(
+            Guid landlordId,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null);
     }
 }

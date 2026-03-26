@@ -16,14 +16,25 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IPaymentService _paymentService;
         private readonly IBookingService _bookingService;
         private readonly IMomoTransactionService _momoTransactionService;
+        private readonly ILandlordSubscriptionService _landlordSubscriptionService;
+        private readonly ILandlordService _landlordService;
         private readonly MomoOptions _options;
 
-        public MomoController(IMomoService momoService, IPaymentService paymentService, IBookingService bookingService, IMomoTransactionService momoTransactionService, IOptions<MomoOptions> options)
+        public MomoController(
+            IMomoService momoService,
+            IPaymentService paymentService,
+            IBookingService bookingService,
+            IMomoTransactionService momoTransactionService,
+            ILandlordSubscriptionService landlordSubscriptionService,
+            ILandlordService landlordService,
+            IOptions<MomoOptions> options)
         {
             _momoService = momoService;
             _paymentService = paymentService;
             _bookingService = bookingService;
             _momoTransactionService = momoTransactionService;
+            _landlordSubscriptionService = landlordSubscriptionService;
+            _landlordService = landlordService;
             _options = options.Value;
         }
 
@@ -177,24 +188,64 @@ namespace Short_termApartmentAPI.Controllers
 
                             await _paymentService.UpdateAsync(payment);
 
-                            if (resultCode == 0
-                                && payment.RelatedEntityId.HasValue
-                                && string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
+                            if (resultCode == 0 && payment.RelatedEntityId.HasValue)
                             {
-                                try
+                                if (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
                                 {
-                                    if (string.Equals(payment.PaymentType, "deposit", StringComparison.OrdinalIgnoreCase))
+                                    try
                                     {
-                                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                        if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                        }
+                                        else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                                        }
                                     }
-                                    else if (string.Equals(payment.PaymentType, "balance", StringComparison.OrdinalIgnoreCase))
+                                    catch (Exception ex)
                                     {
-                                        await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                                        Console.WriteLine($"[MoMo] Booking payment side-effect failed: {ex.Message}");
                                     }
                                 }
-                                catch (Exception ex)
+                                else if (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.host_subscription.ToString(), StringComparison.OrdinalIgnoreCase))
                                 {
-                                    Console.WriteLine($"[MoMo] Booking payment side-effect failed: {ex.Message}");
+                                    try
+                                    {
+                                        var subscription = await _landlordSubscriptionService.GetByIdAsync(payment.RelatedEntityId.Value);
+                                        if (subscription != null && !string.Equals(subscription.Status, Status.active.ToString(), StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                                            subscription.Status = Status.active.ToString();
+                                            subscription.StartDate = nowDate;
+
+                                            var months = 1;
+                                            if (string.Equals(subscription.RenewalType, RenewalType.annual.ToString(), StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                months = 12;
+                                            }
+
+                                            subscription.EndDate = nowDate.AddMonths(months);
+                                            subscription.PaymentMethod = payment.Method;
+                                            subscription.LastPaymentId = payment.PaymentId;
+                                            subscription.UpdatedAt = DateTime.UtcNow;
+
+                                            await _landlordSubscriptionService.UpdateAsync(subscription);
+
+                                            var landlord = await _landlordService.GetByIdAsync(subscription.LandlordId);
+                                            if (landlord != null)
+                                            {
+                                                landlord.CurrentPlanId = subscription.PlanId;
+                                                landlord.SubscriptionStatus = SubscriptionStatus.active.ToString();
+                                                landlord.SubscriptionExpiresAt = subscription.EndDate;
+                                                await _landlordService.UpdateAsync(landlord);
+                                            }
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"[MoMo] Subscription payment side-effect failed: {ex.Message}");
+                                    }
                                 }
                             }
                         }
