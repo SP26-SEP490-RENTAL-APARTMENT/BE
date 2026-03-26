@@ -41,6 +41,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IMomoTransactionService, MomoTransactionService>();
             services.AddHttpClient<IMomoService, MomoService>();
             services.AddScoped<IStripeService, StripeService>();
+            services.AddScoped<IResidenceReportPdfGenerator, ResidenceReportPdfGenerator>();
             return services;
         }
     }

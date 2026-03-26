@@ -10,4 +10,5 @@ public interface IBookingService : IBaseService<Booking>
 	Task<Booking> MarkDepositPaidAsync(Guid bookingId);
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
 	Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto);
+	Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId);
 }

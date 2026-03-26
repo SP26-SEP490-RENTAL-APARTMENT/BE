@@ -17,12 +17,14 @@ namespace Short_termApartmentAPI.Controllers
 	{
 		private readonly IBookingService _bookingService;
 		private readonly IPaymentService _paymentService;
+		private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
 		private readonly IMapper _mapper;
 
-		public BookingController(IBookingService bookingService, IPaymentService paymentService, IMapper mapper)
+		public BookingController(IBookingService bookingService, IPaymentService paymentService, IResidenceReportPdfGenerator residenceReportPdfGenerator, IMapper mapper)
 		{
 			_bookingService = bookingService;
 			_paymentService = paymentService;
+			_residenceReportPdfGenerator = residenceReportPdfGenerator;
 			_mapper = mapper;
 		}
 
@@ -167,6 +169,33 @@ namespace Short_termApartmentAPI.Controllers
 					report.ReportDate,
 					report.ReportNumber
 				}, "Residence report submitted successfully."));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpGet("{id:guid}/residence-report/pdf")]
+		[Authorize(Roles = "landlord")]
+		public async Task<IActionResult> ExportResidenceReportPdf(Guid id)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var landlordUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var details = await _bookingService.GetResidenceReportDetailsAsync(id, landlordUserId);
+				var pdfBytes = await _residenceReportPdfGenerator.GenerateAsync(details);
+				var fileName = $"residence-report-{id}.pdf";
+				return File(pdfBytes, "application/pdf", fileName);
 			}
 			catch (InvalidOperationException ex)
 			{

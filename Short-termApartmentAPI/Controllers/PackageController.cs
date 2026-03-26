@@ -74,7 +74,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("{packageId:guid}/items")]
-        [Authorize(Roles = "admin")]
+        [Authorize(Roles = "admin, landlord")]
         public async Task<IActionResult> AdminAddItems(Guid packageId, [FromBody] List<Guid> packageItemIds)
         {
             if (packageItemIds == null || !packageItemIds.Any())
@@ -92,7 +92,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}/items/{itemId:guid}")]
-        [Authorize(Roles = "admin")]
+        [Authorize(Roles = "admin, landlord")]
         public async Task<IActionResult> AdminRemoveItem(Guid packageId, Guid packageItemId)
         {
             try
@@ -107,7 +107,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPut("{id:guid}")]
-        [Authorize(Roles = "admin")]
+        [Authorize(Roles = "admin, landlord")]
         public async Task<IActionResult> Update(Guid id, [FromBody] PackageRequestDto packageDto)
         {
             if (!ModelState.IsValid)

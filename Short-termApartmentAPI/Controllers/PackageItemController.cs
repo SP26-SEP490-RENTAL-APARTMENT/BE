@@ -22,6 +22,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet("{id:guid}")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetById(Guid id)
         {
             var result = await _packageItemService.GetByIdAsync(id);
@@ -33,6 +34,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,

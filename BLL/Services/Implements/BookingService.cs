@@ -18,6 +18,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
     private readonly IRepository<Tenant> _tenantRepository;
+    private readonly IRepository<User> _userRepository;
 
     public BookingService(
         IBookingRepository repository,
@@ -27,7 +28,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<Notification> notificationRepository,
         IRepository<BookingCheckTime> bookingCheckTimeRepository,
         IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
-        IRepository<Tenant> tenantRepository) : base(repository)
+        IRepository<Tenant> tenantRepository,
+        IRepository<User> userRepository) : base(repository)
     {
         _bookingRepository = repository;
         _apartmentRepository = apartmentRepository;
@@ -37,6 +39,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingCheckTimeRepository = bookingCheckTimeRepository;
         _temporaryResidenceReportRepository = temporaryResidenceReportRepository;
         _tenantRepository = tenantRepository;
+        _userRepository = userRepository;
     }
 
     public async Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto)
@@ -259,6 +262,58 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return report;
+    }
+
+    public async Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId);
+        if (booking == null)
+        {
+            throw new ArgumentException("Booking not found.");
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment == null)
+        {
+            throw new ArgumentException("Apartment not found for this booking.");
+        }
+
+        if (apartment.LandlordId != requesterUserId)
+        {
+            throw new InvalidOperationException("You are not allowed to view this residence report.");
+        }
+
+        var report = (await _temporaryResidenceReportRepository.FindAsync(r => r.BookingId == bookingId)).FirstOrDefault();
+        if (report == null)
+        {
+            throw new InvalidOperationException("Residence report has not been submitted for this booking.");
+        }
+
+        var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+        var landlordUser = await _userRepository.GetByIdAsync(apartment.LandlordId);
+
+        return new TemporaryResidenceReportDetailsDto
+        {
+            ReportId = report.ReportId,
+            BookingId = report.BookingId,
+            LandlordId = report.LandlordId,
+            TenantId = booking.TenantId,
+            TenantFullName = tenantUser?.FullName,
+            TenantPassportId = report.TenantPassportId,
+            TenantNationality = report.TenantNationality,
+            TenantPhone = tenantUser?.Phone,
+            LandlordFullName = landlordUser?.FullName,
+            LandlordPhone = landlordUser?.Phone,
+            ApartmentTitle = apartment.Title,
+            ApartmentAddress = apartment.Address,
+            ApartmentDistrict = apartment.District,
+            ApartmentCity = apartment.City,
+            CheckInDate = booking.CheckInDate,
+            CheckOutDate = booking.CheckOutDate,
+            ReportedToPolice = report.ReportedToPolice,
+            ReportDate = report.ReportDate,
+            ReportNumber = report.ReportNumber
+        };
     }
 
     private async Task EnsureNoConflictingBookingsAsync(Guid apartmentId, DateOnly checkInDate, DateOnly checkOutDate)

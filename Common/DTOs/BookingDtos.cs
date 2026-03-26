@@ -192,3 +192,44 @@ public class SubmitResidenceReportDto
 
     public DateTime? ActualCheckIn { get; set; }
 }
+
+public class TemporaryResidenceReportDetailsDto
+{
+    public Guid ReportId { get; set; }
+
+    public Guid BookingId { get; set; }
+
+    public Guid LandlordId { get; set; }
+
+    public Guid TenantId { get; set; }
+
+    public string? TenantFullName { get; set; }
+
+    public string TenantPassportId { get; set; } = null!;
+
+    public string TenantNationality { get; set; } = null!;
+
+    public string? TenantPhone { get; set; }
+
+    public string? LandlordFullName { get; set; }
+
+    public string? LandlordPhone { get; set; }
+
+    public string ApartmentTitle { get; set; } = null!;
+
+    public string? ApartmentAddress { get; set; }
+
+    public string? ApartmentDistrict { get; set; }
+
+    public string? ApartmentCity { get; set; }
+
+    public DateOnly CheckInDate { get; set; }
+
+    public DateOnly CheckOutDate { get; set; }
+
+    public bool? ReportedToPolice { get; set; }
+
+    public DateOnly? ReportDate { get; set; }
+
+    public string? ReportNumber { get; set; }
+}
