@@ -3,6 +3,7 @@ using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using NotificationType = Common.Enums.Notification;
 
 namespace BLL.Services.Implements;
 
@@ -14,13 +15,17 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
     private readonly IApartmentRepository _apartmentRepository;
     private readonly IAmenityRepository _amenityRepository;
+    private readonly IUserRepository _userRepository;
+    private readonly IRepository<Notification> _notificationRepository;
 
     public ApartmentService(
         IApartmentRepository repository,
         IAmenityRepository amenityRepository,
         IImageService imageService,
         IApartmentMediumService apartmentMediumService,
-        IMapper mapper)
+        IMapper mapper,
+        IUserRepository userRepository,
+        IRepository<Notification> notificationRepository)
         : base(repository)
     {
         _apartmentRepository = repository;
@@ -28,6 +33,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _imageService = imageService;
         _apartmentMediumService = apartmentMediumService;
         _mapper = mapper;
+        _userRepository = userRepository;
+        _notificationRepository = notificationRepository;
     }
 
     public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
@@ -168,6 +175,33 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         return true;
     }
 
+    private async Task CreateListingNotificationAsync(
+        Guid userId,
+        string type,
+        string title,
+        string message,
+        Guid apartmentId,
+        bool saveChanges = true)
+    {
+        await _notificationRepository.AddAsync(new Notification
+        {
+            NotificationId = Guid.NewGuid(),
+            UserId = userId,
+            Type = type,
+            Title = title,
+            Message = message,
+            ReferenceId = apartmentId,
+            ReferenceType = "apartment",
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        if (saveChanges)
+        {
+            await _notificationRepository.SaveChangesAsync();
+        }
+    }
+
     public async Task<Apartment> SubmitForReviewAsync(Guid apartmentId, Guid landlordId, SubmitForReviewDto dto)
     {
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
@@ -190,6 +224,32 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _apartmentRepository.Update(apartment);
         await _apartmentRepository.SaveChangesAsync();
 
+        // Notify landlord that the listing was submitted for review
+        await CreateListingNotificationAsync(
+            landlordId,
+            NotificationType.system_announcement.ToString(),
+            "Listing submitted for review",
+            $"Your listing '{apartment.Title}' has been submitted for review.",
+            apartment.ApartmentId);
+
+        // Notify staff users that a new listing is pending review
+        var staffUsers = (await _userRepository.FindAsync(u => u.Role.ToLower() == "staff")).ToList();
+        if (staffUsers.Count > 0)
+        {
+            foreach (var staff in staffUsers)
+            {
+                await CreateListingNotificationAsync(
+                    staff.UserId,
+                    NotificationType.system_announcement.ToString(),
+                    "New listing pending review",
+                    $"Listing '{apartment.Title}' has been submitted and is pending review.",
+                    apartment.ApartmentId,
+                    saveChanges: false);
+            }
+
+            await _notificationRepository.SaveChangesAsync();
+        }
+
         return apartment;
     }
 
@@ -203,10 +263,18 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         if (!string.Equals(apartment.Status, "pending_review", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Only pending_review apartments can be approved or rejected.");
 
+        string type;
+        string title;
+        string message;
+
         if (dto.Approved)
         {
             // Approve: transition to posted
             apartment.Status = "posted";
+
+            type = NotificationType.listing_approved.ToString();
+            title = "Listing approved";
+            message = $"Your listing '{apartment.Title}' has been approved and is now posted.";
         }
         else
         {
@@ -215,10 +283,21 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 throw new InvalidOperationException("A rejection reason must be provided when rejecting a listing.");
 
             apartment.Status = "blocked";
+
+            type = NotificationType.listing_rejected.ToString();
+            title = "Listing rejected";
+            message = $"Your listing '{apartment.Title}' was rejected. Reason: {dto.RejectionReason}.";
         }
 
         _apartmentRepository.Update(apartment);
         await _apartmentRepository.SaveChangesAsync();
+
+        await CreateListingNotificationAsync(
+            apartment.LandlordId,
+            type,
+            title,
+            message,
+            apartment.ApartmentId);
 
         return apartment;
     }
