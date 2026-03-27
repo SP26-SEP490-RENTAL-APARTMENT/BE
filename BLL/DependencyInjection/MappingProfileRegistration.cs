@@ -17,6 +17,7 @@ namespace BLL.DependencyInjection
             services.AddAutoMapper(cfg => cfg.AddProfile<PropertyInspectionProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<ReviewProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<NearbyAttractionProfile>());
+            services.AddAutoMapper(cfg => cfg.AddProfile<ReportProfile>());
             return services;
         }
     }

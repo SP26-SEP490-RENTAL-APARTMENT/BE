@@ -75,6 +75,14 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserIdentityDocument> UserIdentityDocuments { get; set; }
 
+    public virtual DbSet<ReportDefinition> ReportDefinitions { get; set; }
+
+    public virtual DbSet<ReportQueryConfig> ReportQueryConfigs { get; set; }
+
+    public virtual DbSet<ScheduledReport> ScheduledReports { get; set; }
+
+    public virtual DbSet<GeneratedReport> GeneratedReports { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
