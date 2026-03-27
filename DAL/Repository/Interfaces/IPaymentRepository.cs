@@ -13,5 +13,14 @@ namespace DAL.Repository.Interfaces
             string? sortOrder = null,
             DateTime? fromDate = null,
             DateTime? toDate = null);
+
+        Task<(IEnumerable<Payment> Items, int TotalCount)> GetByTenantAsync(
+            Guid tenantId,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null);
     }
 }

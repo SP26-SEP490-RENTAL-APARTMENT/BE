@@ -12,4 +12,13 @@ public interface IPaymentService : IBaseService<Payment>
 		string? sortOrder = null,
 		DateTime? fromDate = null,
 		DateTime? toDate = null);
+
+	Task<(IEnumerable<Payment> Items, int TotalCount)> GetTenantPaymentsAsync(
+		Guid tenantId,
+		int page,
+		int pageSize,
+		string? sortBy = null,
+		string? sortOrder = null,
+		DateTime? fromDate = null,
+		DateTime? toDate = null);
 }

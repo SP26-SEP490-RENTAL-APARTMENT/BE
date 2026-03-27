@@ -59,5 +59,41 @@ namespace DAL.Repository.Implements
 
             return (items, totalCount);
         }
+
+        public async Task<(IEnumerable<Payment> Items, int TotalCount)> GetByTenantAsync(
+            Guid tenantId,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null)
+        {
+            var query =
+                from p in _context.Payments
+                join b in _context.Bookings on p.RelatedEntityId equals (Guid?)b.BookingId
+                where p.RelatedEntityType == "booking" && b.TenantId == tenantId
+                select p;
+
+            if (fromDate.HasValue)
+            {
+                query = query.Where(p => p.PaidAt >= fromDate.Value);
+            }
+
+            if (toDate.HasValue)
+            {
+                query = query.Where(p => p.PaidAt <= toDate.Value);
+            }
+
+            query = ApplySorting(query, sortBy, sortOrder);
+
+            var totalCount = await query.CountAsync();
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (items, totalCount);
+        }
     }
 }

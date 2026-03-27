@@ -24,4 +24,16 @@ public sealed class PaymentService : BaseService<Payment>, IPaymentService
     {
         return _paymentRepository.GetByLandlordAsync(landlordId, page, pageSize, sortBy, sortOrder, fromDate, toDate);
     }
+
+    public Task<(IEnumerable<Payment> Items, int TotalCount)> GetTenantPaymentsAsync(
+        Guid tenantId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        return _paymentRepository.GetByTenantAsync(tenantId, page, pageSize, sortBy, sortOrder, fromDate, toDate);
+    }
 }
