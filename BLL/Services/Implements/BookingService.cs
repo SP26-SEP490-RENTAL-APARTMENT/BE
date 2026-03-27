@@ -21,6 +21,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<Tenant> _tenantRepository;
     private readonly IRepository<User> _userRepository;
     private readonly IIdentityVerificationService _identityVerificationService;
+    private readonly ILandlordWalletService _landlordWalletService;
 
     public BookingService(
         IBookingRepository repository,
@@ -32,7 +33,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
         IRepository<Tenant> tenantRepository,
         IRepository<User> userRepository,
-        IIdentityVerificationService identityVerificationService) : base(repository)
+        IIdentityVerificationService identityVerificationService,
+        ILandlordWalletService landlordWalletService) : base(repository)
     {
         _bookingRepository = repository;
         _apartmentRepository = apartmentRepository;
@@ -44,6 +46,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _tenantRepository = tenantRepository;
         _userRepository = userRepository;
         _identityVerificationService = identityVerificationService;
+        _landlordWalletService = landlordWalletService;
     }
 
     private async Task CreateBookingNotificationAsync(
@@ -233,6 +236,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new ArgumentException("Booking not found.");
 
+        if (booking.DepositPaid == true)
+            return booking;
+
         await _identityVerificationService.EnsureUserVerifiedForBookingAsync(booking.TenantId);
 
         booking.DepositPaid = true;
@@ -248,6 +254,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
         {
+            await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, booking.DepositAmount);
+
             await CreateBookingNotificationAsync(
                 apartment.LandlordId,
                 NotificationType.booking_confirmed.ToString(),
@@ -272,6 +280,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new ArgumentException("Booking not found.");
 
+        if (string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase))
+            return booking;
+
         if (booking.DepositPaid != true)
             throw new InvalidOperationException("Deposit must be paid before settling remaining balance.");
 
@@ -282,6 +293,12 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
         {
+            var remainingAmount = booking.TotalPrice - booking.DepositAmount;
+            if (remainingAmount > 0)
+            {
+                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, remainingAmount);
+            }
+
             await CreateBookingNotificationAsync(
                 booking.TenantId,
                 NotificationType.payment_success.ToString(),

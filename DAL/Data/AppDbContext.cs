@@ -83,6 +83,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<GeneratedReport> GeneratedReports { get; set; }
 
+    public virtual DbSet<LandlordWallet> LandlordWallets { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -1324,6 +1326,29 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("user_identity_documents_ibfk_1");
         });
 
+        modelBuilder.Entity<LandlordWallet>(entity =>
+        {
+            entity.HasKey(e => e.LandlordId).HasName("PRIMARY");
+
+            entity.ToTable("landlord_wallets");
+
+            entity.Property(e => e.LandlordId).HasColumnName("landlord_id");
+            entity.Property(e => e.PendingBalance)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("pending_balance");
+            entity.Property(e => e.AvailableBalance)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("available_balance");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Landlord).WithOne(p => p.LandlordWallet)
+                .HasForeignKey<LandlordWallet>(d => d.LandlordId)
+                .HasConstraintName("landlord_wallets_ibfk_1");
+        });
         OnModelCreatingPartial(modelBuilder);
     }
 

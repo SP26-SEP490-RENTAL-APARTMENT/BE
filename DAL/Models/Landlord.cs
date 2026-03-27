@@ -28,4 +28,6 @@ public partial class Landlord
     public virtual ICollection<LandlordSubscription> LandlordSubscriptions { get; set; } = new List<LandlordSubscription>();
 
     public virtual ICollection<TemporaryResidenceReport> TemporaryResidenceReports { get; set; } = new List<TemporaryResidenceReport>();
+
+    public virtual LandlordWallet? LandlordWallet { get; set; }
 }
