@@ -33,10 +33,28 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return NotFound();
             }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var isStaffOrAdmin = User.IsInRole("staff") || User.IsInRole("admin");
+
+            if (!isStaffOrAdmin)
+            {
+                if (!Guid.TryParse(userIdClaim, out var userId))
+                {
+                    return Forbid();
+                }
+
+                if (result.UserId != userId)
+                {
+                    return Forbid();
+                }
+            }
+
             return Ok(_mapper.Map<SupportTicketDto>(result));
         }
 
         [HttpGet]
+        [Authorize(Roles = "staff,admin")]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -45,6 +63,29 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] string? search = null,
             [FromQuery] Dictionary<string, string>? filters = null)
         {
+            var (items, totalCount) = await _supportTicketService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
+            var itemDtos = _mapper.Map<IEnumerable<SupportTicketDto>>(items);
+            return Ok(new { Items = itemDtos, TotalCount = totalCount });
+        }
+
+        [HttpGet("my")]
+        public async Task<IActionResult> GetMyTickets(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            filters ??= new Dictionary<string, string>();
+            filters["UserId"] = userId.ToString();
+
             var (items, totalCount) = await _supportTicketService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
             var itemDtos = _mapper.Map<IEnumerable<SupportTicketDto>>(items);
             return Ok(new { Items = itemDtos, TotalCount = totalCount });
