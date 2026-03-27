@@ -2,6 +2,7 @@ using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using NotificationType = Common.Enums.Notification;
 
 namespace BLL.Services.Implements
 {
@@ -22,6 +23,33 @@ namespace BLL.Services.Implements
             _userRepository = userRepository;
             _assignmentRepository = assignmentRepository;
             _notificationRepository = notificationRepository;
+        }
+
+        private async Task CreateSupportNotificationAsync(
+            Guid userId,
+            string type,
+            string title,
+            string message,
+            Guid ticketId,
+            bool saveChanges = true)
+        {
+            await _notificationRepository.AddAsync(new Notification
+            {
+                NotificationId = Guid.NewGuid(),
+                UserId = userId,
+                Type = type,
+                Title = title,
+                Message = message,
+                ReferenceId = ticketId,
+                ReferenceType = "support_ticket",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            if (saveChanges)
+            {
+                await _notificationRepository.SaveChangesAsync();
+            }
         }
 
         public override async Task<(IEnumerable<SupportTicket> Items, int TotalCount)> GetAllAsync(
@@ -81,22 +109,23 @@ namespace BLL.Services.Implements
 
                 foreach (var staff in staffUsers)
                 {
-                    await _notificationRepository.AddAsync(new Notification
-                    {
-                        NotificationId = Guid.NewGuid(),
-                        UserId = staff.UserId,
-                        Type = "support_ticket_created",
-                        Title = "New support ticket reported",
-                        Message = $"Ticket '{ticket.Subject}' requires attention.",
-                        ReferenceId = ticket.TicketId,
-                        ReferenceType = "support_ticket",
-                        IsRead = false,
-                        CreatedAt = DateTime.UtcNow
-                    });
+                    await CreateSupportNotificationAsync(
+                        staff.UserId,
+                        NotificationType.support_ticket_created.ToString(),
+                        "New support ticket reported",
+                        $"Ticket '{ticket.Subject}' requires attention.",
+                        ticket.TicketId,
+                        saveChanges: false);
                 }
-
                 await _notificationRepository.SaveChangesAsync();
             }
+
+            await CreateSupportNotificationAsync(
+                ticket.UserId,
+                NotificationType.support_ticket_created.ToString(),
+                "Support ticket received",
+                $"Your ticket '{ticket.Subject}' has been received. Our staff will review it shortly.",
+                ticket.TicketId);
 
             return ticket;
         }
@@ -138,19 +167,37 @@ namespace BLL.Services.Implements
                 ? $"Ticket '{ticket.Subject}' has been resolved. Please verify the fix."
                 : $"Ticket '{ticket.Subject}' has a status update: {ticket.Status}.";
 
-            await _notificationRepository.AddAsync(new Notification
+            await CreateSupportNotificationAsync(
+                ticket.UserId,
+                type,
+                title,
+                message,
+                ticket.TicketId);
+
+            var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
+            foreach (var assignment in assignments)
             {
-                NotificationId = Guid.NewGuid(),
-                UserId = ticket.UserId,
-                Type = type,
-                Title = title,
-                Message = message,
-                ReferenceId = ticket.TicketId,
-                ReferenceType = "support_ticket",
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
-            });
-            await _notificationRepository.SaveChangesAsync();
+                var staffTitle = isResolved
+                    ? "Assigned ticket resolved"
+                    : "Assigned ticket updated";
+
+                var staffMessage = isResolved
+                    ? $"Ticket '{ticket.Subject}' has been resolved."
+                    : $"Ticket '{ticket.Subject}' status updated to {ticket.Status}.";
+
+                await CreateSupportNotificationAsync(
+                    assignment.StaffId,
+                    type,
+                    staffTitle,
+                    staffMessage,
+                    ticket.TicketId,
+                    saveChanges: false);
+            }
+
+            if (assignments.Any())
+            {
+                await _notificationRepository.SaveChangesAsync();
+            }
 
             return ticket;
         }

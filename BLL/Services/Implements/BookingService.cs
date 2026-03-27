@@ -3,6 +3,7 @@ using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using System.Linq;
+using NotificationType = Common.Enums.Notification;
 
 namespace BLL.Services.Implements;
 
@@ -43,6 +44,30 @@ public class BookingService : BaseService<Booking>, IBookingService
         _tenantRepository = tenantRepository;
         _userRepository = userRepository;
         _identityVerificationService = identityVerificationService;
+    }
+
+    private async Task CreateBookingNotificationAsync(
+        Guid userId,
+        string type,
+        string title,
+        string message,
+        Guid bookingId)
+    {
+        var notification = new Notification
+        {
+            NotificationId = Guid.NewGuid(),
+            UserId = userId,
+            Type = type,
+            Title = title,
+            Message = message,
+            ReferenceId = bookingId,
+            ReferenceType = "booking",
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _notificationRepository.AddAsync(notification);
+        await _notificationRepository.SaveChangesAsync();
     }
 
     public override async Task<(IEnumerable<Booking> Items, int TotalCount)> GetAllAsync(
@@ -181,6 +206,24 @@ public class BookingService : BaseService<Booking>, IBookingService
         await _bookingCheckTimeRepository.AddAsync(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
 
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment != null)
+        {
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.booking_created.ToString(),
+                "New booking request",
+                $"A new booking has been created for your apartment '{apartment.Title}'.",
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                booking.TenantId,
+                NotificationType.booking_created.ToString(),
+                "Booking created",
+                $"Your booking for apartment '{apartment.Title}' has been created.",
+                booking.BookingId);
+        }
+
         return booking;
     }
 
@@ -205,19 +248,19 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
         {
-            await _notificationRepository.AddAsync(new Notification
-            {
-                NotificationId = Guid.NewGuid(),
-                UserId = apartment.LandlordId,
-                Type = "booking_confirmed",
-                Title = "New booking confirmed",
-                Message = $"A booking for apartment '{apartment.Title}' has been confirmed with deposit payment.",
-                ReferenceId = booking.BookingId,
-                ReferenceType = "booking",
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
-            });
-            await _notificationRepository.SaveChangesAsync();
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.booking_confirmed.ToString(),
+                "New booking confirmed",
+                $"A booking for apartment '{apartment.Title}' has been confirmed with deposit payment.",
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                booking.TenantId,
+                NotificationType.booking_confirmed.ToString(),
+                "Booking confirmed",
+                $"Your booking for apartment '{apartment.Title}' has been confirmed after deposit payment.",
+                booking.BookingId);
         }
 
         return booking;
@@ -235,6 +278,24 @@ public class BookingService : BaseService<Booking>, IBookingService
         booking.Status = "paid";
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment != null)
+        {
+            await CreateBookingNotificationAsync(
+                booking.TenantId,
+                NotificationType.payment_success.ToString(),
+                "Booking payment completed",
+                $"Your payment for booking at '{apartment.Title}' is complete.",
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.payment_success.ToString(),
+                "Booking payment received",
+                $"Payment for booking at '{apartment.Title}' has been completed.",
+                booking.BookingId);
+        }
 
         return booking;
     }
