@@ -201,6 +201,103 @@ Controller: Short-termApartmentAPI/Controllers/BookingController.cs
 
 ---
 
+## Workflow 5.5: Check-In/Check-Out Time Recording (Fraud Prevention & Fee Calculation)
+Controller: Short-termApartmentAPI/Controllers/BookingController.cs
+
+### Purpose
+Landlords/staff record actual guest arrival and departure times. System validates times are within ±1 day of scheduled dates, detects early/late occurrences, calculates fees, notifies parties, and prevents fraudulent time recording with 24-hour edit window and audit trail.
+
+### Prerequisites
+- Booking must be in "confirmed" or "paid" status
+- Check-in time cannot be recorded before check-in date - 1 day
+- Check-out time cannot be recorded until after check-in is recorded
+
+### Landlord Steps
+1. Record guest check-in time.
+- Endpoint: POST /api/booking/{id}/check-in
+- Auth: landlord or staff
+- Input: ActualCheckIn (datetime), optional Notes
+- Expected: 200 with BookingCheckTimeResponseDto
+- Save: CheckInFee (if early), IsEditableWindow flag
+- Verification: ActualCheckIn must be ±1 day from scheduled check-in date
+- Verify: Tenant receives notification of recorded check-in time
+
+2. Retrieve check-in/check-out details anytime.
+- Endpoint: GET /api/booking/{id}/check-time
+- Auth: authenticated (both parties can view)
+- Expected: 200 with full check-time record including EditableWindow flag
+- Verification: IsEditable = true only within 24 hours of RecordedAt timestamp
+
+3. Update check-in time within 24-hour correction window.
+- Endpoint: POST /api/booking/{id}/check-in (again, with new time)
+- Auth: landlord or staff
+- Expected: 200 with updated record if within 24 hours
+- Verification: RecordedAt timestamp updates,  modification tracked internally
+
+4. Record guest check-out time.
+- Endpoint: POST /api/booking/{id}/check-out
+- Auth: landlord or staff
+- Input: ActualCheckOut (datetime), optional Notes
+- Expected: 200 with BookingCheckTimeResponseDto
+- Save: CheckOutFee (if late), LateCheckOutFee amount, booking status → "completed"
+- Verification: ActualCheckOut must be ±1 day from scheduled check-out date
+- Verification: ActualCheckIn must already be recorded
+- Verify: Both tenant and landlord receive notifications with fee breakdown
+
+5. Tenant reviews recorded times and disputes if needed.
+- Endpoint: GET /api/booking/{id}/check-time
+- Auth: tenant
+- Expected: 200 with recorded times and fee info
+- If tenant disagrees: Create support ticket via Workflow 9 with evidence
+
+### Negative Tests
+- Record check-in more than ±1 day from scheduled date should return 400.
+- Record check-out without prior check-in should return 400 (InvalidOperationException).
+- Attempt to edit record after 24-hour window should return 400.
+- Staff attempts check-in on non-confirmed booking should return 400.
+- Non-landlord/non-staff attempts to record times should return 403.
+- Booking ID that doesn't exist should return 404.
+- Invalid DateTime in actualCheckIn/actualCheckOut (e.g., year 2000) should return 400 (DTO validation).
+
+### Fee Calculation Rules (Configuration in appsettings.json)
+- **Early Check-In:** If ActualCheckIn < ScheduledCheckIn
+	- Fee = (TotalPrice / Nights) × EarlyCheckInFeePercentOfDaily (default: 0.5 = 50%)
+	- Example: $300 booking / 3 nights × 0.5 = $50 early check-in fee
+- **Late Check-Out:** If ActualCheckOut > ScheduledCheckOut
+	- Fee = (TotalPrice / Nights) × LateCheckOutFeePercentPerHour × hoursLate (default: 0.025 = 2.5% per hour)
+	- Example: $300 booking / 3 nights × 0.025 × 2 hours late = $5 per hour × 2 = $10 fee
+
+### Fraud Prevention Features
+- **Time Validation:** Rejects times outside ±1 day of scheduled dates
+- **24-Hour Correction Window:** Landlord can edit recorded times only within 24 hours; after that, only support staff can override
+- **Audit Trail:** System tracks RecordedBy (staff user ID) and RecordedAt (server timestamp)
+- **Notifications:** Both tenant and landlord notified immediately upon recording; tenant can verify and dispute
+- **Dispute Resolution:** Tenant can open support ticket with evidence (photos, timestamps) to dispute fees
+
+### Example Workflow
+1. Booking scheduled check-in: 2026-03-29 14:00, check-out: 2026-04-01 12:00
+2. Landlord records actual check-in: 2026-03-29 13:30 (30 min early)
+	 - IsEarlyCheckIn = true
+	 - EarlyCheckInFee = calculated
+	 - Notification sent to tenant: "Guest arrived early at 13:30. Early check-in fee: $50"
+3. Tenant views check-time details, sees IsEditable = true (within 24 hours)
+4. Landlord records actual check-out: 2026-04-01 14:00 (2 hours late)
+	 - IsLateCheckOut = true
+	 - LateCheckOutFee = calculated ($10)
+	 - Booking status → "completed"
+	 - Notifications sent: Landlord receives fee alert, tenant receives courtesy notice
+5. Tenant disputes late checkout; opens support ticket with photo evidence
+6. Support staff reviews RecordedBy, RecordedAt, and audit trail; approves adjustment
+
+### Audit Checks
+- Verify RecordedBy contains valid staff/landlord user ID
+- Verify RecordedAt is close to current timestamp (not backdated)
+- Verify actual times do not exceed ±1 day boundaries
+- Verify fees calculated correctly per configuration
+- Verify booking status transitions from confirmed/paid → completed
+
+---
+
 ## Workflow 6: Payment Processing Branches
 Controllers:
 - Short-termApartmentAPI/Controllers/StripeController.cs

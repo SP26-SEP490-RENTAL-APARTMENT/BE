@@ -26,6 +26,8 @@ namespace Common.Enums
         review_reminder, 
         new_message, 
         system_announcement, 
+            check_in_recorded,
+            check_out_recorded,
         other
     }
 }

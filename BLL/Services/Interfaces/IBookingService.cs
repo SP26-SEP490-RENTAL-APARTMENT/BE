@@ -20,4 +20,25 @@ public interface IBookingService : IBaseService<Booking>
 		string? search = null,
 		DateTime? fromDate = null,
 		DateTime? toDate = null);
+	
+	/// <summary>
+	/// Records the actual check-in time for a booking.
+	/// Validates time range (±1 day from booking check-in date), sets IsEarlyCheckIn flag,
+	/// calculates early check-in fee if applicable, and notifies landlord.
+	/// Prevents re-recording within 24-hour window (throws exception after correction grace period).
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> RecordCheckInAsync(Guid bookingId, RecordCheckInDto dto, Guid recordedBy);
+
+	/// <summary>
+	/// Records the actual check-out time for a booking.
+	/// Validates that ActualCheckIn exists first, validates time range (±1 day from booking check-out date),
+	/// sets IsLateCheckOut flag, calculates late check-out fee if applicable, updates booking to "completed",
+	/// and notifies both landlord and tenant with fee details.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> RecordCheckOutAsync(Guid bookingId, RecordCheckOutDto dto, Guid recordedBy);
+
+	/// <summary>
+	/// Retrieves full check-time record with history and editability flag for a booking.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null);
 }

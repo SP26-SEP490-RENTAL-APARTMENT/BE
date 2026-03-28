@@ -207,5 +207,86 @@ namespace Short_termApartmentAPI.Controllers
 				return NotFound(new ApiResponse<string>(ex.Message));
 			}
 		}
+
+		[HttpPost("{id:guid}/check-in")]
+		[Authorize(Roles = "landlord,staff")]
+		public async Task<IActionResult> RecordCheckIn(Guid id, [FromBody] RecordCheckInDto dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var recordedBy))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			try
+			{
+				var checkTimeResponse = await _bookingService.RecordCheckInAsync(id, dto, recordedBy);
+				return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-in recorded successfully."));
+			}
+			catch (KeyNotFoundException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpPost("{id:guid}/check-out")]
+		[Authorize(Roles = "landlord,staff")]
+		public async Task<IActionResult> RecordCheckOut(Guid id, [FromBody] RecordCheckOutDto dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var recordedBy))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			try
+			{
+				var checkTimeResponse = await _bookingService.RecordCheckOutAsync(id, dto, recordedBy);
+				return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-out recorded successfully."));
+			}
+			catch (KeyNotFoundException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpGet("{id:guid}/check-time")]
+		[Authorize]
+		public async Task<IActionResult> GetCheckTimeDetails(Guid id)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var requesterId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var checkTimeResponse = await _bookingService.GetCheckTimeDetailsAsync(id, requesterId);
+				return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse));
+			}
+			catch (KeyNotFoundException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
 	}
 }

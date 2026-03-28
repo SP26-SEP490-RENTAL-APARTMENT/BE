@@ -4,6 +4,8 @@ using DAL.Models;
 using DAL.Repository.Interfaces;
 using System.Linq;
 using NotificationType = Common.Enums.Notification;
+using Microsoft.Extensions.Configuration;
+using System.Text.Json;
 
 namespace BLL.Services.Implements;
 
@@ -22,19 +24,21 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<User> _userRepository;
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
+    private readonly IConfiguration _configuration;
 
-    public BookingService(
-        IBookingRepository repository,
-        IApartmentRepository apartmentRepository,
-        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
-        IRepository<Package> packageRepository,
-        IRepository<Notification> notificationRepository,
-        IRepository<BookingCheckTime> bookingCheckTimeRepository,
-        IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
-        IRepository<Tenant> tenantRepository,
-        IRepository<User> userRepository,
-        IIdentityVerificationService identityVerificationService,
-        ILandlordWalletService landlordWalletService) : base(repository)
+        public BookingService(
+            IBookingRepository repository,
+            IApartmentRepository apartmentRepository,
+            IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
+            IRepository<Package> packageRepository,
+            IRepository<Notification> notificationRepository,
+            IRepository<BookingCheckTime> bookingCheckTimeRepository,
+            IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
+            IRepository<Tenant> tenantRepository,
+            IRepository<User> userRepository,
+            IIdentityVerificationService identityVerificationService,
+            ILandlordWalletService landlordWalletService,
+            IConfiguration configuration) : base(repository)
     {
         _bookingRepository = repository;
         _apartmentRepository = apartmentRepository;
@@ -47,6 +51,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _userRepository = userRepository;
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
+        _configuration = configuration;
     }
 
     private async Task CreateBookingNotificationAsync(
@@ -452,5 +457,220 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             throw new InvalidOperationException("Apartment is not available for the selected dates.");
         }
+    }
+
+    public async Task<BookingCheckTimeResponseDto> RecordCheckInAsync(Guid bookingId, RecordCheckInDto dto, Guid recordedBy)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId);
+        if (booking == null)
+            throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId) 
+            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment == null)
+            throw new KeyNotFoundException("Apartment not found.");
+
+        // Validate booking status (must be confirmed or paid)
+        if (!checkTime.ActualCheckIn.HasValue && 
+            !(string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) || 
+              string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Booking must be in confirmed or paid status to record check-in.");
+        }
+
+        // Validate time range: ±1 day from scheduled check-in date
+        var scheduledDate = checkTime.ScheduledCheckIn.Date;
+        var actualDate = dto.ActualCheckIn.Date;
+        var dayDiff = Math.Abs((scheduledDate - actualDate).Days);
+        if (dayDiff > 1)
+        {
+            throw new InvalidOperationException($"Check-in time must be within ±1 day of scheduled check-in date ({scheduledDate:yyyy-MM-dd}).");
+        }
+
+        // Check correction window: if already recorded, only allow edits within 24 hours
+        if (checkTime.ActualCheckIn.HasValue && checkTime.RecordedAt.HasValue)
+        {
+            var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
+            var timeSinceRecording = DateTime.UtcNow - checkTime.RecordedAt.Value;
+            if (timeSinceRecording.TotalHours > correctionWindowHours)
+            {
+                throw new InvalidOperationException($"Check-in time cannot be modified after {correctionWindowHours} hours of initial recording. Contact support to dispute.");
+            }
+        }
+
+        // Detect early check-in and calculate fee
+        bool isEarlyCheckIn = dto.ActualCheckIn < checkTime.ScheduledCheckIn;
+        decimal earlyCheckInFee = 0m;
+
+        if (isEarlyCheckIn)
+        {
+            var earlyFeePercent = _configuration.GetValue<decimal>("BookingCheckTimeSettings:EarlyCheckInFeePercentOfDaily", 0.5m);
+            earlyCheckInFee = Math.Round(booking.TotalPrice / booking.Nights * earlyFeePercent, 2, MidpointRounding.AwayFromZero);
+        }
+
+        // Update check-in record
+        checkTime.ActualCheckIn = dto.ActualCheckIn;
+        checkTime.IsEarlyCheckIn = isEarlyCheckIn;
+        checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
+        checkTime.RecordedBy = recordedBy;
+        checkTime.RecordedAt = DateTime.UtcNow;
+        
+        if (!string.IsNullOrWhiteSpace(dto.Notes))
+        {
+            checkTime.Notes = dto.Notes;
+        }
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        // Notify landlord
+        var checkInMessage = isEarlyCheckIn 
+            ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}" 
+            : $"Guest checked in at {dto.ActualCheckIn:yyyy-MM-dd HH:mm} (on schedule).";
+        
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_in_recorded.ToString(),
+            "Check-in Recorded",
+            checkInMessage,
+            bookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, apartment.LandlordId);
+    }
+
+    public async Task<BookingCheckTimeResponseDto> RecordCheckOutAsync(Guid bookingId, RecordCheckOutDto dto, Guid recordedBy)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId);
+        if (booking == null)
+            throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId) 
+            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment == null)
+            throw new KeyNotFoundException("Apartment not found.");
+
+        // Validate that check-in has been recorded
+        if (!checkTime.ActualCheckIn.HasValue)
+        {
+            throw new InvalidOperationException("Cannot record check-out before check-in has been recorded.");
+        }
+
+        // Validate time range: ±1 day from scheduled check-out date
+        var scheduledDate = checkTime.ScheduledCheckOut.Date;
+        var actualDate = dto.ActualCheckOut.Date;
+        var dayDiff = Math.Abs((scheduledDate - actualDate).Days);
+        if (dayDiff > 1)
+        {
+            throw new InvalidOperationException($"Check-out time must be within ±1 day of scheduled check-out date ({scheduledDate:yyyy-MM-dd}).");
+        }
+
+        // Check correction window: if already recorded, only allow edits within 24 hours
+        if (checkTime.ActualCheckOut.HasValue)
+        {
+            var recordedCheckOutTime = checkTime.UpdatedAt ?? checkTime.RecordedAt;
+            if (recordedCheckOutTime.HasValue)
+            {
+                var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
+                var timeSinceRecording = DateTime.UtcNow - recordedCheckOutTime.Value;
+                if (timeSinceRecording.TotalHours > correctionWindowHours)
+                {
+                    throw new InvalidOperationException($"Check-out time cannot be modified after {correctionWindowHours} hours of initial recording. Contact support to dispute.");
+                }
+            }
+        }
+
+        // Detect late check-out and calculate fee
+        bool isLateCheckOut = dto.ActualCheckOut > checkTime.ScheduledCheckOut;
+        decimal lateCheckOutFee = 0m;
+
+        if (isLateCheckOut)
+        {
+            var lateFePercentPerHour = _configuration.GetValue<decimal>("BookingCheckTimeSettings:LateCheckOutFeePercentPerHour", 0.025m);
+            var hoursLate = (decimal)Math.Ceiling((dto.ActualCheckOut - checkTime.ScheduledCheckOut).TotalHours);
+            lateCheckOutFee = Math.Round(booking.TotalPrice / booking.Nights * lateFePercentPerHour * hoursLate, 2, MidpointRounding.AwayFromZero);
+        }
+
+        // Update check-out record
+        checkTime.ActualCheckOut = dto.ActualCheckOut;
+        checkTime.IsLateCheckOut = isLateCheckOut;
+        checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
+        checkTime.UpdatedAt = DateTime.UtcNow;
+        
+        if (!string.IsNullOrWhiteSpace(dto.Notes))
+        {
+            checkTime.Notes = dto.Notes;
+        }
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        // Update booking status to "completed"
+        booking.Status = "completed";
+        _bookingRepository.Update(booking);
+        await _bookingRepository.SaveChangesAsync();
+
+        // Notify landlord
+        var checkOutMessage = isLateCheckOut 
+            ? $"Guest checked out late at {dto.ActualCheckOut:yyyy-MM-dd HH:mm}. Late check-out fee: ${lateCheckOutFee}" 
+            : $"Guest checked out at {dto.ActualCheckOut:yyyy-MM-dd HH:mm} (on schedule).";
+        
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_out_recorded.ToString(),
+            "Check-out Recorded",
+            checkOutMessage,
+            bookingId);
+
+        // Notify tenant
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.check_out_recorded.ToString(),
+            "Check-out Recorded",
+            $"Your checkout has been recorded. {(isLateCheckOut ? $"Late checkout fee: ${lateCheckOutFee}" : "Thank you for checking out on time!")}",
+            bookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, apartment.LandlordId);
+    }
+
+    public async Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId);
+        if (booking == null)
+            throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+
+        // Calculate if still editable (within 24-hour window from RecordedAt)
+        bool isEditable = false;
+        if (checkTime.RecordedAt.HasValue)
+        {
+            var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
+            var timeSinceRecording = DateTime.UtcNow - checkTime.RecordedAt.Value;
+            isEditable = timeSinceRecording.TotalHours <= correctionWindowHours;
+        }
+
+        return new BookingCheckTimeResponseDto
+        {
+            CheckTimeId = checkTime.CheckTimeId,
+            BookingId = checkTime.BookingId,
+            ScheduledCheckIn = checkTime.ScheduledCheckIn,
+            ScheduledCheckOut = checkTime.ScheduledCheckOut,
+            ActualCheckIn = checkTime.ActualCheckIn,
+            ActualCheckOut = checkTime.ActualCheckOut,
+            IsEarlyCheckIn = checkTime.IsEarlyCheckIn,
+            EarlyCheckInFee = checkTime.EarlyCheckInFee,
+            IsLateCheckOut = checkTime.IsLateCheckOut,
+            LateCheckOutFee = checkTime.LateCheckOutFee,
+            RecordedBy = checkTime.RecordedBy,
+            RecordedAt = checkTime.RecordedAt,
+            Notes = checkTime.Notes,
+            LastModifiedAt = checkTime.UpdatedAt ?? checkTime.RecordedAt,
+            IsEditable = isEditable
+        };
     }
 }
