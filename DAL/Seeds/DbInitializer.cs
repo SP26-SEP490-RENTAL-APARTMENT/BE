@@ -14,5 +14,9 @@ public static class DbInitializer
         await LandlordSeed.SeedAsync(context, cancellationToken);
         await ApartmentSeed.SeedAsync(context, cancellationToken);
         await RoomSeed.SeedAsync(context, cancellationToken);
+        await SubscriptionPlanSeed.SeedAsync(context, cancellationToken);
+        await HolidaysEventSeed.SeedAsync(context, cancellationToken);
+        await NearbyAttractionSeed.SeedAsync(context, cancellationToken);
+        await PackageSeed.SeedAsync(context, cancellationToken);
     }
 }
