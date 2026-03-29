@@ -32,6 +32,29 @@ public sealed class RoomController : ControllerBase
         return Ok(new ApiResponse<RoomResponseDto>(_mapper.Map<RoomResponseDto>(room)));
     }
 
+    [HttpGet("by-apartment/{apartmentId:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetByApartmentId(Guid apartmentId)
+    {
+        var room = await _roomService.GetByApartmentIdAsync(apartmentId);
+        if (room == null)
+            return NotFound(new ApiResponse<string>("Room not found for the specified apartment."));
+
+        return Ok(new ApiResponse<RoomResponseDto>(_mapper.Map<RoomResponseDto>(room)));
+    }
+
+    [HttpGet("by-landlord/{landlordId:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetByLandlordId(Guid landlordId)
+    {
+        var rooms = await _roomService.GetByLandlordIdAsync(landlordId);
+        if (!rooms.Any())
+            return NotFound(new ApiResponse<string>("No rooms found for the specified landlord."));
+
+        var roomDtos = _mapper.Map<IEnumerable<RoomResponseDto>>(rooms);
+        return Ok(new ApiResponse<IEnumerable<RoomResponseDto>>(roomDtos));
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
