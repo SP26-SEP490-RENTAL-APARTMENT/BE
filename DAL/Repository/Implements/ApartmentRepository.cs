@@ -19,6 +19,8 @@ namespace DAL.Repository.Implements
                 .Include(a => a.Room)
                 .Include(a => a.Amenities)
                 .Include(a => a.ApartmentMedia)
+                .Include(a => a.Landlord)
+                    .ThenInclude(l => l.LandlordNavigation)
                 .FirstOrDefaultAsync(a => a.ApartmentId == id);
         }
 
@@ -42,6 +44,8 @@ namespace DAL.Repository.Implements
                 .Include(a => a.Room)
                 .Include(a => a.Amenities)
                 .Include(a => a.ApartmentMedia)
+                .Include(a => a.Landlord)
+                    .ThenInclude(l => l.LandlordNavigation)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();

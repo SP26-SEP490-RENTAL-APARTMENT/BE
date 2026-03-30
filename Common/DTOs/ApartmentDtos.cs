@@ -120,6 +120,7 @@ public class ApartmentResponseDto
 {
     public Guid ApartmentId { get; set; }
     public Guid LandlordId { get; set; }
+    public string? LandlordName { get; set; }
     public string Title { get; set; } = null!;
     public string? Description { get; set; }
     public sbyte? MaxOccupants { get; set; }

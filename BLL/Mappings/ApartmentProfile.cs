@@ -27,6 +27,10 @@ public class ApartmentProfile : Profile
         CreateMap<CreateApartmentResponseDto, Apartment>(MemberList.Source);
 
         CreateMap<Apartment, ApartmentResponseDto>()
+            .ForMember(dest => dest.LandlordName, opt => opt.MapFrom(src =>
+                src.Landlord != null && src.Landlord.LandlordNavigation != null
+                    ? src.Landlord.LandlordNavigation.FullName
+                    : null))
             .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
 
         CreateMap<Room, RoomResponseDto>();
