@@ -21,10 +21,10 @@ public static class ApartmentPriceCalendarSeed
                 PriceId = Guid.NewGuid(),
                 ApartmentId = apartment.ApartmentId,
                 StartDate = today.AddDays(14),
-                EndDate = today.AddDays(21),
+                EndDate = today.AddDays(20),
                 DiscountPercentage = 15m,
                 IsDiscount = true,
-                PriceType = "weekly_discount",
+                PriceType = "low_season",
                 MinNights = 7,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -37,21 +37,8 @@ public static class ApartmentPriceCalendarSeed
                 EndDate = today.AddDays(60),
                 DiscountPercentage = 25m,
                 IsDiscount = true,
-                PriceType = "monthly_discount",
+                PriceType = "low_season",
                 MinNights = 30,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                PriceId = Guid.NewGuid(),
-                ApartmentId = apartment.ApartmentId,
-                StartDate = today.AddDays(7),
-                EndDate = today.AddDays(10),
-                DiscountPercentage = 10m,
-                IsDiscount = false,
-                PriceType = "surge_pricing",
-                MinNights = null,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             }

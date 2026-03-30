@@ -23,7 +23,7 @@ public static class PropertyInspectionSeed
                 InspectorId = staffUser.UserId,
                 ScheduledDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-5)),
                 CompletedDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-5)),
-                Status = "completed",
+                Status = "passed",
                 OverallCondition = "excellent",
                 IssuesFound = null,
                 Recommendations = "Regular maintenance scheduled for next quarter.",

@@ -23,7 +23,7 @@ public static class PaymentSeed
                 PaymentPurpose = "booking_deposit",
                 RelatedEntityType = "Booking",
                 Method = "bank_transfer",
-                Status = "completed",
+                Status = "success",
                 TransactionId = "TXN" + Guid.NewGuid().ToString().Substring(0, 8),
                 PaidAt = DateTime.UtcNow
             },

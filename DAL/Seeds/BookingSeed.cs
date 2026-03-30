@@ -35,7 +35,7 @@ public static class BookingSeed
                 DepositAmount = 2250000m,
                 DepositPaid = false,
                 BalanceDueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(9)),
-                Status = "pending_confirmation",
+                Status = "pending",
                 CreatedAt = DateTime.UtcNow
             },
             new()
