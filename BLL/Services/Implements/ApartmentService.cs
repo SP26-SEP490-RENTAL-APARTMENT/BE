@@ -4,6 +4,7 @@ using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using NotificationType = Common.Enums.Notification;
+using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 
 namespace BLL.Services.Implements;
 
@@ -126,6 +127,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         var apartment = _mapper.Map<Apartment>(requestDto);
         apartment.LandlordId = landlordId;
+        apartment.BookingStatus = ApartmentBookingStatusEnum.Available.ToString();
 
         var created = await CreateAsync(apartment);
 
@@ -221,6 +223,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         // Transition to pending_review
         apartment.Status = "pending_review";
+        apartment.BookingStatus = ApartmentBookingStatusEnum.Locked.ToString();
         _apartmentRepository.Update(apartment);
         await _apartmentRepository.SaveChangesAsync();
 
@@ -271,6 +274,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         {
             // Approve: transition to posted
             apartment.Status = "posted";
+            apartment.BookingStatus = ApartmentBookingStatusEnum.Available.ToString();
 
             type = NotificationType.listing_approved.ToString();
             title = "Listing approved";
@@ -283,6 +287,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 throw new InvalidOperationException("A rejection reason must be provided when rejecting a listing.");
 
             apartment.Status = "blocked";
+            apartment.BookingStatus = ApartmentBookingStatusEnum.Locked.ToString();
 
             type = NotificationType.listing_rejected.ToString();
             title = "Listing rejected";

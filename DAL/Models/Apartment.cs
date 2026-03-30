@@ -34,6 +34,8 @@ public partial class Apartment
 
     public string? Status { get; set; }
 
+    public string? BookingStatus { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<ApartmentMedium> ApartmentMedia { get; set; } = new List<ApartmentMedium>();

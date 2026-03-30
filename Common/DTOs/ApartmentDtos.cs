@@ -111,6 +111,8 @@ public class CreateApartmentResponseDto
 
     public string? Status { get; set; }
 
+    public string? BookingStatus { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public List<string> Photos { get; set; } = new List<string>();
@@ -132,6 +134,7 @@ public class ApartmentResponseDto
     public decimal? Longitude { get; set; }
     public decimal BasePricePerNight { get; set; }
     public string? Status { get; set; }
+    public string? BookingStatus { get; set; }
     public DateTime? CreatedAt { get; set; }
     public List<string> Photos { get; set; } = new List<string>();
     public RoomResponseDto? Room { get; set; }
@@ -205,6 +208,7 @@ public class DateRangeBlockingDto
 public class AvailabilityCalendarResponseDto
 {
     public Guid ApartmentId { get; set; }
+    public string? BookingStatus { get; set; }
     public DateTime CalendarStartDate { get; set; }
     public DateTime CalendarEndDate { get; set; }
     public DateTime GeneratedAt { get; set; }

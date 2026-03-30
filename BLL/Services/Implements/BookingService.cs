@@ -4,6 +4,7 @@ using DAL.Models;
 using DAL.Repository.Interfaces;
 using System.Linq;
 using NotificationType = Common.Enums.Notification;
+using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 
@@ -17,7 +18,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IApartmentRepository _apartmentRepository;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IRepository<Package> _packageRepository;
-    private readonly IRepository<Notification> _notificationRepository;
+    private readonly IRepository<DAL.Models.Notification> _notificationRepository;
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
     private readonly IRepository<Tenant> _tenantRepository;
@@ -32,7 +33,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             IApartmentRepository apartmentRepository,
             IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
             IRepository<Package> packageRepository,
-            IRepository<Notification> notificationRepository,
+            IRepository<DAL.Models.Notification> notificationRepository,
             IRepository<BookingCheckTime> bookingCheckTimeRepository,
             IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
             IRepository<Tenant> tenantRepository,
@@ -115,6 +116,9 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This apartment is not currently available for booking.");
+
+        if (string.Equals(apartment.BookingStatus, ApartmentBookingStatusEnum.Locked.ToString(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("This apartment is currently locked for booking.");
 
         await EnsureNoConflictingBookingsAsync(dto.ApartmentId, dto.CheckInDate, dto.CheckOutDate);
         var nights = dto.CheckOutDate.DayNumber - dto.CheckInDate.DayNumber;
@@ -258,6 +262,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
@@ -297,6 +302,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         booking.Status = "paid";
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
@@ -460,6 +466,16 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             throw new InvalidOperationException("Apartment is not available for the selected dates.");
         }
+
+        var blackoutConflicts = await _apartmentAvailabilityRepository.FindAsync(a =>
+            a.ApartmentId == apartmentId &&
+            a.StartDate < checkOutDate &&
+            a.EndDate > checkInDate);
+
+        if (blackoutConflicts.Any())
+        {
+            throw new InvalidOperationException("Apartment is not available for the selected dates.");
+        }
     }
 
     public async Task<BookingCheckTimeResponseDto> RecordCheckInAsync(Guid bookingId, RecordCheckInDto dto, Guid recordedBy)
@@ -615,6 +631,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         booking.Status = "completed";
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
         // Notify landlord
         var checkOutMessage = isLateCheckOut 
@@ -775,9 +792,16 @@ public class BookingService : BaseService<Booking>, IBookingService
             priceCalendars.ToList(),
             apartment.BasePricePerNight);
 
+        var confirmedReservationStatuses = new[] { "confirmed", "paid", "completed", "disputed" };
+        var calendarBookingStatus = ComputeRangeBookingStatus(
+            apartment.Status,
+            blackoutRules.Any(),
+            bookings.Any(b => b.Status != null && confirmedReservationStatuses.Contains(b.Status, StringComparer.OrdinalIgnoreCase)));
+
         return new AvailabilityCalendarResponseDto
         {
             ApartmentId = apartmentId,
+            BookingStatus = calendarBookingStatus,
             CalendarStartDate = calendarStartDate,
             CalendarEndDate = calendarEndDate.AddDays(-1), // Return original end date (without the +1 day)
             GeneratedAt = DateTime.UtcNow,
@@ -838,7 +862,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         DateTime calendarStart,
         DateTime calendarEnd,
         List<DateRangeBlockingDto> unavailablePeriods,
-        List<ApartmentPriceCalendar> priceCalendars,
+        List<DAL.Models.ApartmentPriceCalendar> priceCalendars,
         decimal defaultPrice)
     {
         var availablePeriods = new List<DateRangePriceDto>();
@@ -917,7 +941,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private decimal? GetPriceForRange(
         DateTime rangeStart,
         DateTime rangeEnd,
-        List<ApartmentPriceCalendar> priceCalendars,
+        List<DAL.Models.ApartmentPriceCalendar> priceCalendars,
         decimal defaultPrice)
     {
         // Find price calendars that overlap with this range
@@ -1023,6 +1047,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         await _apartmentAvailabilityRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(apartmentId);
 
         return new SetApartmentAvailabilityResponseDto
         {
@@ -1148,6 +1173,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         await _apartmentAvailabilityRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(apartmentId);
 
         return new RemoveApartmentAvailabilityResponseDto
         {
@@ -1192,5 +1218,55 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return merged;
+    }
+
+    private static bool IsApartmentListingLocked(string? apartmentStatus)
+    {
+        return string.Equals(apartmentStatus, "draft", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(apartmentStatus, "pending_review", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(apartmentStatus, "blocked", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(apartmentStatus, "archived", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ComputeRangeBookingStatus(
+        string? apartmentStatus,
+        bool hasBlackoutOverlap,
+        bool hasConfirmedReservationOverlap)
+    {
+        if (IsApartmentListingLocked(apartmentStatus) || hasBlackoutOverlap)
+            return ApartmentBookingStatusEnum.Locked.ToString();
+
+        if (hasConfirmedReservationOverlap)
+            return ApartmentBookingStatusEnum.ConfirmedReservation.ToString();
+
+        return ApartmentBookingStatusEnum.Available.ToString();
+    }
+
+    private async Task RefreshApartmentBookingStatusSnapshotAsync(Guid apartmentId)
+    {
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        if (apartment == null)
+            return;
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+
+        var hasBlackoutOverlap = (await _apartmentAvailabilityRepository.FindAsync(a =>
+            a.ApartmentId == apartmentId &&
+            a.EndDate > today)).Any();
+
+        var confirmedReservationStatuses = new[] { "confirmed", "paid", "completed", "disputed" };
+        var hasConfirmedReservationOverlap = (await _bookingRepository.FindAsync(b =>
+            b.ApartmentId == apartmentId &&
+            b.Status != null &&
+            confirmedReservationStatuses.Contains(b.Status) &&
+            b.CheckOutDate > today)).Any();
+
+        var computed = ComputeRangeBookingStatus(apartment.Status, hasBlackoutOverlap, hasConfirmedReservationOverlap);
+        if (!string.Equals(apartment.BookingStatus, computed, StringComparison.OrdinalIgnoreCase))
+        {
+            apartment.BookingStatus = computed;
+            _apartmentRepository.Update(apartment);
+            await _apartmentRepository.SaveChangesAsync();
+        }
     }
 }

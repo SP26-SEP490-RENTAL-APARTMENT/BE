@@ -164,6 +164,8 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => e.Status, "idx_status");
 
+            entity.HasIndex(e => e.BookingStatus, "idx_booking_status");
+
             entity.Property(e => e.ApartmentId).HasColumnName("apartment_id");
             entity.Property(e => e.Address)
                 .HasMaxLength(255)
@@ -171,6 +173,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.BasePricePerNight)
                 .HasPrecision(12, 2)
                 .HasColumnName("base_price_per_night");
+            entity.Property(e => e.BookingStatus)
+                .HasDefaultValueSql("'Available'")
+                .HasColumnType("enum('Available','ConfirmedReservation','Locked')")
+                .HasColumnName("booking_status");
             entity.Property(e => e.City)
                 .HasMaxLength(100)
                 .HasDefaultValueSql("'Hồ Chí Minh'")

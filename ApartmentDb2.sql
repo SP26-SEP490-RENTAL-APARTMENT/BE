@@ -74,6 +74,7 @@ CREATE TABLE `apartments` (
   `location` point NOT NULL,
   `base_price_per_night` decimal(12,2) NOT NULL,
   `status` ENUM ('draft', 'pending_review', 'posted', 'blocked', 'archived') DEFAULT 'draft',
+  `booking_status` ENUM ('available', 'confirmed', 'locked') DEFAULT 'available',
   `created_at` timestamp DEFAULT (CURRENT_TIMESTAMP)
 );
 
@@ -498,6 +499,8 @@ CREATE INDEX `idx_dates` ON `apartment_price_calendar` (`start_date`, `end_date`
 CREATE INDEX `idx_landlord` ON `apartments` (`landlord_id`);
 
 CREATE INDEX `idx_status` ON `apartments` (`status`);
+
+CREATE INDEX `idx_booking_status` ON `apartments` (`booking_status`);
 
 CREATE INDEX `idx_location` ON `apartments` (`location`);
 
