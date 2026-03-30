@@ -38,6 +38,8 @@ public partial class Apartment
 
     public virtual ICollection<ApartmentMedium> ApartmentMedia { get; set; } = new List<ApartmentMedium>();
 
+    public virtual ICollection<ApartmentAvailability> ApartmentAvailabilities { get; set; } = new List<ApartmentAvailability>();
+
     public virtual ICollection<ApartmentPriceCalendar> ApartmentPriceCalendars { get; set; } = new List<ApartmentPriceCalendar>();
 
     public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();

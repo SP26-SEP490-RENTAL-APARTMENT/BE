@@ -22,6 +22,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
     private readonly IRepository<Tenant> _tenantRepository;
     private readonly IRepository<User> _userRepository;
+    private readonly IRepository<ApartmentAvailability> _apartmentAvailabilityRepository;
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
@@ -36,6 +37,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
             IRepository<Tenant> tenantRepository,
             IRepository<User> userRepository,
+            IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
             IIdentityVerificationService identityVerificationService,
             ILandlordWalletService landlordWalletService,
             IConfiguration configuration) : base(repository)
@@ -49,6 +51,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _temporaryResidenceReportRepository = temporaryResidenceReportRepository;
         _tenantRepository = tenantRepository;
         _userRepository = userRepository;
+        _apartmentAvailabilityRepository = apartmentAvailabilityRepository;
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
@@ -717,6 +720,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             b.CheckInDate < DateOnly.FromDateTime(calendarEndDate) &&
             b.CheckOutDate > DateOnly.FromDateTime(calendarStartDate));
 
+        var blackoutRules = await _apartmentAvailabilityRepository.FindAsync(r =>
+            r.ApartmentId == apartmentId &&
+            r.StartDate < DateOnly.FromDateTime(calendarEndDate) &&
+            r.EndDate > DateOnly.FromDateTime(calendarStartDate));
+
         // Fetch price calendar entries for pricing information
         var priceCalendars = await _apartmentPriceCalendarRepository.FindAsync(c =>
             c.ApartmentId == apartmentId &&
@@ -742,6 +750,18 @@ public class BookingService : BaseService<Booking>, IBookingService
                 BookingStatus = isLandlordOwner ? booking.Status : null
             };
             unavailablePeriods.Add(blockingDto);
+        }
+
+        foreach (var rule in blackoutRules.OrderBy(r => r.StartDate))
+        {
+            unavailablePeriods.Add(new DateRangeBlockingDto
+            {
+                StartDate = rule.StartDate.ToDateTime(TimeOnly.MinValue),
+                EndDate = rule.EndDate.ToDateTime(TimeOnly.MinValue),
+                Reason = string.IsNullOrWhiteSpace(rule.Reason) ? "Unavailable by landlord" : rule.Reason,
+                BookingId = null,
+                BookingStatus = null
+            });
         }
 
         // Merge overlapping unavailable periods
@@ -785,7 +805,21 @@ public class BookingService : BaseService<Booking>, IBookingService
             if (period.StartDate <= lastMerged.EndDate)
             {
                 lastMerged.EndDate = period.EndDate > lastMerged.EndDate ? period.EndDate : lastMerged.EndDate;
-                // Keep the first booking's details (or could keep the last, or keep all)
+
+                if (lastMerged.BookingId != period.BookingId)
+                {
+                    lastMerged.BookingId = null;
+                }
+
+                if (!string.Equals(lastMerged.BookingStatus, period.BookingStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    lastMerged.BookingStatus = null;
+                }
+
+                if (!string.Equals(lastMerged.Reason, period.Reason, StringComparison.OrdinalIgnoreCase))
+                {
+                    lastMerged.Reason = "Unavailable";
+                }
             }
             else
             {
@@ -903,5 +937,260 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return null;
+    }
+
+    public async Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(
+        Guid apartmentId,
+        Guid landlordId,
+        SetApartmentAvailabilityRequestDto dto)
+    {
+        if (dto.Ranges == null || dto.Ranges.Count == 0)
+            throw new ArgumentException("At least one availability range is required.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        if (apartment == null)
+            throw new KeyNotFoundException("Apartment not found.");
+
+        if (apartment.LandlordId != landlordId)
+            throw new KeyNotFoundException("Apartment not found.");
+
+        var normalizedIncoming = new List<(DateOnly StartDate, DateOnly EndDate, string? Reason)>();
+        foreach (var range in dto.Ranges)
+        {
+            var start = DateOnly.FromDateTime(range.StartDate.Date);
+            var end = DateOnly.FromDateTime(range.EndDate.Date);
+
+            if (start >= end)
+                throw new ArgumentException("Each range must have start date earlier than end date.");
+
+            normalizedIncoming.Add((start, end, range.Reason));
+        }
+
+        var minStart = normalizedIncoming.Min(r => r.StartDate);
+        var maxEnd = normalizedIncoming.Max(r => r.EndDate);
+
+        var existingOverlaps = (await _apartmentAvailabilityRepository.FindAsync(r =>
+            r.ApartmentId == apartmentId &&
+            r.StartDate < maxEnd &&
+            r.EndDate > minStart)).ToList();
+
+        var allRanges = existingOverlaps
+            .Select(r => (r.StartDate, r.EndDate, r.Reason))
+            .Concat(normalizedIncoming)
+            .OrderBy(r => r.StartDate)
+            .ThenBy(r => r.EndDate)
+            .ToList();
+
+        var merged = new List<(DateOnly StartDate, DateOnly EndDate, string? Reason)>();
+        foreach (var current in allRanges)
+        {
+            if (merged.Count == 0)
+            {
+                merged.Add(current);
+                continue;
+            }
+
+            var last = merged[^1];
+            if (current.StartDate <= last.EndDate)
+            {
+                var newEnd = current.EndDate > last.EndDate ? current.EndDate : last.EndDate;
+                var newReason = string.IsNullOrWhiteSpace(last.Reason) ? current.Reason : last.Reason;
+                merged[^1] = (last.StartDate, newEnd, newReason);
+            }
+            else
+            {
+                merged.Add(current);
+            }
+        }
+
+        foreach (var rule in existingOverlaps)
+        {
+            _apartmentAvailabilityRepository.Remove(rule);
+        }
+
+        foreach (var item in merged)
+        {
+            await _apartmentAvailabilityRepository.AddAsync(new ApartmentAvailability
+            {
+                AvailabilityId = Guid.NewGuid(),
+                ApartmentId = apartmentId,
+                StartDate = item.StartDate,
+                EndDate = item.EndDate,
+                Reason = item.Reason,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _apartmentAvailabilityRepository.SaveChangesAsync();
+
+        return new SetApartmentAvailabilityResponseDto
+        {
+            ApartmentId = apartmentId,
+            SubmittedRanges = dto.Ranges.Count,
+            AppliedRanges = merged.Count,
+            MergedRanges = merged.Select(m => new AvailabilityAppliedRangeDto
+            {
+                StartDate = m.StartDate.ToDateTime(TimeOnly.MinValue),
+                EndDate = m.EndDate.ToDateTime(TimeOnly.MinValue),
+                Reason = m.Reason
+            }).ToList()
+        };
+    }
+
+    public async Task<RemoveApartmentAvailabilityResponseDto> RemoveApartmentAvailabilityAsync(
+        Guid apartmentId,
+        Guid landlordId,
+        RemoveApartmentAvailabilityRequestDto dto)
+    {
+        if (dto.Ranges == null || dto.Ranges.Count == 0)
+            throw new ArgumentException("At least one availability range is required.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        if (apartment == null)
+            throw new KeyNotFoundException("Apartment not found.");
+
+        if (apartment.LandlordId != landlordId)
+            throw new KeyNotFoundException("Apartment not found.");
+
+        var removalRanges = new List<(DateOnly StartDate, DateOnly EndDate)>();
+        foreach (var range in dto.Ranges)
+        {
+            var start = DateOnly.FromDateTime(range.StartDate.Date);
+            var end = DateOnly.FromDateTime(range.EndDate.Date);
+
+            if (start >= end)
+                throw new ArgumentException("Each range must have start date earlier than end date.");
+
+            removalRanges.Add((start, end));
+        }
+
+        var mergedRemovals = MergeRemovalRanges(removalRanges);
+        var minStart = mergedRemovals.Min(r => r.StartDate);
+        var maxEnd = mergedRemovals.Max(r => r.EndDate);
+
+        var existingOverlaps = (await _apartmentAvailabilityRepository.FindAsync(r =>
+            r.ApartmentId == apartmentId &&
+            r.StartDate < maxEnd &&
+            r.EndDate > minStart)).ToList();
+
+        if (!existingOverlaps.Any())
+        {
+            return new RemoveApartmentAvailabilityResponseDto
+            {
+                ApartmentId = apartmentId,
+                SubmittedRanges = dto.Ranges.Count,
+                AffectedRules = 0,
+                RemainingRanges = 0
+            };
+        }
+
+        var remainingSegments = new List<(DateOnly StartDate, DateOnly EndDate, string? Reason)>();
+        foreach (var rule in existingOverlaps)
+        {
+            var segments = new List<(DateOnly StartDate, DateOnly EndDate)> { (rule.StartDate, rule.EndDate) };
+
+            foreach (var removal in mergedRemovals)
+            {
+                var nextSegments = new List<(DateOnly StartDate, DateOnly EndDate)>();
+                foreach (var segment in segments)
+                {
+                    if (removal.EndDate <= segment.StartDate || removal.StartDate >= segment.EndDate)
+                    {
+                        nextSegments.Add(segment);
+                        continue;
+                    }
+
+                    if (segment.StartDate < removal.StartDate)
+                    {
+                        nextSegments.Add((segment.StartDate, removal.StartDate));
+                    }
+
+                    if (removal.EndDate < segment.EndDate)
+                    {
+                        nextSegments.Add((removal.EndDate, segment.EndDate));
+                    }
+                }
+
+                segments = nextSegments;
+                if (!segments.Any())
+                {
+                    break;
+                }
+            }
+
+            foreach (var segment in segments)
+            {
+                if (segment.StartDate < segment.EndDate)
+                {
+                    remainingSegments.Add((segment.StartDate, segment.EndDate, rule.Reason));
+                }
+            }
+        }
+
+        foreach (var rule in existingOverlaps)
+        {
+            _apartmentAvailabilityRepository.Remove(rule);
+        }
+
+        foreach (var segment in remainingSegments.OrderBy(s => s.StartDate).ThenBy(s => s.EndDate))
+        {
+            await _apartmentAvailabilityRepository.AddAsync(new ApartmentAvailability
+            {
+                AvailabilityId = Guid.NewGuid(),
+                ApartmentId = apartmentId,
+                StartDate = segment.StartDate,
+                EndDate = segment.EndDate,
+                Reason = segment.Reason,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _apartmentAvailabilityRepository.SaveChangesAsync();
+
+        return new RemoveApartmentAvailabilityResponseDto
+        {
+            ApartmentId = apartmentId,
+            SubmittedRanges = dto.Ranges.Count,
+            AffectedRules = existingOverlaps.Count,
+            RemainingRanges = remainingSegments.Count,
+            UpdatedRanges = remainingSegments
+                .OrderBy(s => s.StartDate)
+                .ThenBy(s => s.EndDate)
+                .Select(s => new AvailabilityAppliedRangeDto
+                {
+                    StartDate = s.StartDate.ToDateTime(TimeOnly.MinValue),
+                    EndDate = s.EndDate.ToDateTime(TimeOnly.MinValue),
+                    Reason = s.Reason
+                })
+                .ToList()
+        };
+    }
+
+    private static List<(DateOnly StartDate, DateOnly EndDate)> MergeRemovalRanges(
+        List<(DateOnly StartDate, DateOnly EndDate)> ranges)
+    {
+        if (!ranges.Any())
+            return new List<(DateOnly StartDate, DateOnly EndDate)>();
+
+        var sorted = ranges.OrderBy(r => r.StartDate).ThenBy(r => r.EndDate).ToList();
+        var merged = new List<(DateOnly StartDate, DateOnly EndDate)> { sorted[0] };
+
+        foreach (var current in sorted.Skip(1))
+        {
+            var last = merged[^1];
+            if (current.StartDate <= last.EndDate)
+            {
+                var end = current.EndDate > last.EndDate ? current.EndDate : last.EndDate;
+                merged[^1] = (last.StartDate, end);
+            }
+            else
+            {
+                merged.Add(current);
+            }
+        }
+
+        return merged;
     }
 }

@@ -49,6 +49,16 @@ CREATE TABLE `apartment_price_calendar` (
   `updated_at` timestamp DEFAULT (CURRENT_TIMESTAMP)
 );
 
+CREATE TABLE `apartment_availability` (
+  `availability_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
+  `apartment_id` char(36) NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `reason` varchar(200),
+  `created_at` timestamp DEFAULT (CURRENT_TIMESTAMP),
+  `updated_at` timestamp DEFAULT (CURRENT_TIMESTAMP)
+);
+
 CREATE TABLE `apartments` (
   `apartment_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
   `landlord_id` char(36) NOT NULL,
@@ -477,6 +487,8 @@ CREATE INDEX `amenity_id` ON `apartment_amenities` (`amenity_id`);
 
 CREATE INDEX `idx_apartment` ON `apartment_media` (`apartment_id`);
 
+CREATE INDEX `idx_apartment_availability_dates` ON `apartment_availability` (`apartment_id`, `start_date`, `end_date`);
+
 CREATE UNIQUE INDEX `uk_apartment_date_range` ON `apartment_price_calendar` (`apartment_id`, `start_date`, `end_date`);
 
 CREATE INDEX `idx_apartment_dates` ON `apartment_price_calendar` (`apartment_id`, `start_date`, `end_date`);
@@ -604,6 +616,8 @@ ALTER TABLE `apartment_amenities` ADD CONSTRAINT `apartment_amenities_ibfk_1` FO
 ALTER TABLE `apartment_amenities` ADD CONSTRAINT `apartment_amenities_ibfk_2` FOREIGN KEY (`amenity_id`) REFERENCES `amenities` (`amenity_id`) ON DELETE CASCADE;
 
 ALTER TABLE `apartment_media` ADD CONSTRAINT `apartment_media_ibfk_1` FOREIGN KEY (`apartment_id`) REFERENCES `apartments` (`apartment_id`) ON DELETE CASCADE;
+
+ALTER TABLE `apartment_availability` ADD CONSTRAINT `apartment_availability_ibfk_1` FOREIGN KEY (`apartment_id`) REFERENCES `apartments` (`apartment_id`) ON DELETE CASCADE;
 
 ALTER TABLE `apartment_price_calendar` ADD CONSTRAINT `apartment_price_calendar_ibfk_1` FOREIGN KEY (`apartment_id`) REFERENCES `apartments` (`apartment_id`) ON DELETE CASCADE;
 
