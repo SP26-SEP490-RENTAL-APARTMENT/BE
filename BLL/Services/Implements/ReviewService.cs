@@ -92,4 +92,9 @@ public sealed class ReviewService : BaseService<Review>, IReviewService
         var average = reviewList.Average(r => (double)r.Rating!.Value);
         return (average, totalReviews);
     }
+
+    public async Task<IEnumerable<Review>> GetByApartmentIdAsync(Guid apartmentId)
+    {
+        return await _repository.FindAsync(r => r.ApartmentId == apartmentId);
+    }
 }

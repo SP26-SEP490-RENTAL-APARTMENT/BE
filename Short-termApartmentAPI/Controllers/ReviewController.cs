@@ -62,6 +62,15 @@ namespace Short_termApartmentAPI.Controllers
             });
         }
 
+        [HttpGet("apartment/{apartmentId:guid}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetByApartmentId(Guid apartmentId)
+        {
+            var items = await _reviewService.GetByApartmentIdAsync(apartmentId);
+            var mappedItems = _mapper.Map<IEnumerable<ReviewResponseDto>>(items);
+            return Ok(mappedItems);
+        }
+
         [HttpPost]
         [Authorize(Roles = "tenant")]
         public async Task<IActionResult> Create([FromBody] CreateReviewRequestDto requestDto)

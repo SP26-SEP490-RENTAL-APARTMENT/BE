@@ -20,4 +20,10 @@ public interface IReviewService : IBaseService<Review>
 	/// <param name="apartmentId">The apartment identifier.</param>
 	/// <returns>A tuple containing the average rating (or null if no reviews) and total review count.</returns>
 	Task<(double? AverageRating, int TotalReviews)> GetApartmentAverageRatingAsync(Guid apartmentId);
+
+	/// <summary>
+	/// Gets all reviews that belong to a specific apartment.
+	/// </summary>
+	/// <param name="apartmentId">The apartment identifier.</param>
+	Task<IEnumerable<Review>> GetByApartmentIdAsync(Guid apartmentId);
 }
