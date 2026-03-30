@@ -16,12 +16,18 @@ public sealed class ApartmentsController : ControllerBase
 {
     private readonly IApartmentService _apartmentService;
     private readonly ILandlordService _landlordService;
+    private readonly IBookingService _bookingService;
     private readonly IMapper _mapper;
 
-    public ApartmentsController(IApartmentService apartmentService, ILandlordService landlordService, IMapper mapper)
+    public ApartmentsController(
+        IApartmentService apartmentService,
+        ILandlordService landlordService,
+        IBookingService bookingService,
+        IMapper mapper)
     {
         _apartmentService = apartmentService;
         _landlordService = landlordService;
+        _bookingService = bookingService;
         _mapper = mapper;
     }
 
@@ -258,6 +264,53 @@ public sealed class ApartmentsController : ControllerBase
             return BadRequest(new ApiResponse<string>(ex.Message));
         }
         catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Gets the availability calendar for an apartment showing available and unavailable date ranges.
+    /// Default range: next 90 days from today. Can be customized via query parameters.
+    /// Anonymous users see availability only; landlord/staff see booking details for unavailable periods.
+    /// All dates returned in UTC.
+    /// </summary>
+    [HttpGet("{id:guid}/availability-calendar")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAvailabilityCalendar(
+        Guid id,
+        [FromQuery] DateTime? startDate = null,
+        [FromQuery] DateTime? endDate = null)
+    {
+        try
+        {
+            // Extract user info if authenticated
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var rolesClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+            
+            Guid? requesterId = null;
+            string? requesterRole = null;
+
+            if (Guid.TryParse(userIdClaim, out var userId))
+            {
+                requesterId = userId;
+                requesterRole = rolesClaim;
+            }
+
+            var calendar = await _bookingService.GetAvailabilityCalendarAsync(
+                id,
+                startDate,
+                endDate,
+                requesterId,
+                requesterRole);
+
+            return Ok(new ApiResponse<AvailabilityCalendarResponseDto>(calendar, "Availability calendar retrieved successfully."));
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
         {
             return BadRequest(new ApiResponse<string>(ex.Message));
         }

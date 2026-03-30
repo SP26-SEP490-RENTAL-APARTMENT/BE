@@ -41,4 +41,17 @@ public interface IBookingService : IBaseService<Booking>
 	/// Retrieves full check-time record with history and editability flag for a booking.
 	/// </summary>
 	Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null);
+
+	/// <summary>
+	/// Retrieves the availability calendar for an apartment showing available and unavailable date ranges.
+	/// Returns a 90-day calendar by default (customizable via startDate/endDate parameters).
+	/// Anonymous users see availability only; landlord/owner roles see booking IDs and statuses for blocked periods.
+	/// All dates are in UTC.
+	/// </summary>
+	Task<AvailabilityCalendarResponseDto> GetAvailabilityCalendarAsync(
+		Guid apartmentId,
+		DateTime? startDate = null,
+		DateTime? endDate = null,
+		Guid? requesterId = null,
+		string? requesterRole = null);
 }

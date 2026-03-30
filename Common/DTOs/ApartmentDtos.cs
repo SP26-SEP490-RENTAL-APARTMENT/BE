@@ -173,3 +173,41 @@ public class ListingReviewResponseDto
     public DateTime ReviewedAt { get; set; }
     public string ReviewedBy { get; set; } = null!; // Admin/Staff username
 }
+
+/// <summary>
+/// DTO representing an available date range with pricing information.
+/// </summary>
+public class DateRangePriceDto
+{
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public decimal? PricePerNight { get; set; }
+}
+
+/// <summary>
+/// DTO representing an unavailable (blocked) date range with optional blocking details.
+/// Blocking details (BookingId, BookingStatus) are only included for landlord/staff roles.
+/// </summary>
+public class DateRangeBlockingDto
+{
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public string? Reason { get; set; }
+    public Guid? BookingId { get; set; }
+    public string? BookingStatus { get; set; }
+}
+
+/// <summary>
+/// DTO for apartment availability calendar response.
+/// Shows available and unavailable date ranges for apartment bookings over a specified period.
+/// All dates are in UTC.
+/// </summary>
+public class AvailabilityCalendarResponseDto
+{
+    public Guid ApartmentId { get; set; }
+    public DateTime CalendarStartDate { get; set; }
+    public DateTime CalendarEndDate { get; set; }
+    public DateTime GeneratedAt { get; set; }
+    public IList<DateRangePriceDto> AvailablePeriods { get; set; } = new List<DateRangePriceDto>();
+    public IList<DateRangeBlockingDto> UnavailablePeriods { get; set; } = new List<DateRangeBlockingDto>();
+}

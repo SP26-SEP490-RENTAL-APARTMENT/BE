@@ -673,4 +673,235 @@ public class BookingService : BaseService<Booking>, IBookingService
             IsEditable = isEditable
         };
     }
+
+    /// <summary>
+    /// Retrieves the availability calendar for an apartment, showing available and unavailable date ranges.
+    /// Anonymous users see availability only; landlord/staff see blocking details including booking IDs.
+    /// </summary>
+    public async Task<AvailabilityCalendarResponseDto> GetAvailabilityCalendarAsync(
+        Guid apartmentId,
+        DateTime? startDate = null,
+        DateTime? endDate = null,
+        Guid? requesterId = null,
+        string? requesterRole = null)
+    {
+        // Validate apartment exists and is posted
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("This apartment is not currently available for booking.");
+
+        // Set default date range: today to 90 days from today
+        var calendarStartDate = startDate ?? DateTime.UtcNow.Date;
+        var calendarEndDate = endDate ?? DateTime.UtcNow.AddDays(90).Date;
+
+        // Validate date range
+        if (calendarStartDate >= calendarEndDate)
+            throw new ArgumentException("Start date must be before end date.");
+
+        var rangeDays = (calendarEndDate - calendarStartDate).Days;
+        if (rangeDays > 365)
+            throw new ArgumentException("Date range cannot exceed 365 days.");
+
+        // Add one day to end date to include the entire end date (exclusive check-out date logic)
+        calendarEndDate = calendarEndDate.AddDays(1);
+
+        // Fetch blocking bookings (those that prevent booking)
+        var blockingStatuses = new[] { "pending", "negotiating", "confirmed", "paid", "completed", "disputed" };
+        var bookings = await _bookingRepository.FindAsync(b =>
+            b.ApartmentId == apartmentId &&
+            b.Status != null &&
+            blockingStatuses.Contains(b.Status) &&
+            b.CheckInDate < DateOnly.FromDateTime(calendarEndDate) &&
+            b.CheckOutDate > DateOnly.FromDateTime(calendarStartDate));
+
+        // Fetch price calendar entries for pricing information
+        var priceCalendars = await _apartmentPriceCalendarRepository.FindAsync(c =>
+            c.ApartmentId == apartmentId &&
+            c.StartDate < DateOnly.FromDateTime(calendarEndDate) &&
+            c.EndDate > DateOnly.FromDateTime(calendarStartDate));
+
+        // Build unavailable periods from bookings
+        var unavailablePeriods = new List<DateRangeBlockingDto>();
+        bool isLandlordOwner = requesterId.HasValue && string.Equals(requesterRole, "landlord", StringComparison.OrdinalIgnoreCase) 
+            && apartment.LandlordId == requesterId;
+
+        foreach (var booking in bookings.OrderBy(b => b.CheckInDate))
+        {
+            var unavailStart = booking.CheckInDate.ToDateTime(TimeOnly.MinValue);
+            var unavailEnd = booking.CheckOutDate.ToDateTime(TimeOnly.MinValue);
+
+            var blockingDto = new DateRangeBlockingDto
+            {
+                StartDate = unavailStart,
+                EndDate = unavailEnd,
+                Reason = $"Booking {booking.Status}",
+                BookingId = isLandlordOwner ? booking.BookingId : null,
+                BookingStatus = isLandlordOwner ? booking.Status : null
+            };
+            unavailablePeriods.Add(blockingDto);
+        }
+
+        // Merge overlapping unavailable periods
+        var mergedUnavailable = MergeUnavailablePeriods(unavailablePeriods);
+
+        // Build available periods and assign pricing
+        var availablePeriods = BuildAvailablePeriods(
+            calendarStartDate,
+            calendarEndDate,
+            mergedUnavailable,
+            priceCalendars.ToList(),
+            apartment.BasePricePerNight);
+
+        return new AvailabilityCalendarResponseDto
+        {
+            ApartmentId = apartmentId,
+            CalendarStartDate = calendarStartDate,
+            CalendarEndDate = calendarEndDate.AddDays(-1), // Return original end date (without the +1 day)
+            GeneratedAt = DateTime.UtcNow,
+            AvailablePeriods = availablePeriods,
+            UnavailablePeriods = mergedUnavailable
+        };
+    }
+
+    /// <summary>
+    /// Merges overlapping unavailable periods into consolidated date ranges.
+    /// </summary>
+    private List<DateRangeBlockingDto> MergeUnavailablePeriods(List<DateRangeBlockingDto> periods)
+    {
+        if (!periods.Any())
+            return new List<DateRangeBlockingDto>();
+
+        var sorted = periods.OrderBy(p => p.StartDate).ToList();
+        var merged = new List<DateRangeBlockingDto> { sorted[0] };
+
+        foreach (var period in sorted.Skip(1))
+        {
+            var lastMerged = merged.Last();
+
+            // If periods overlap or are adjacent, merge them
+            if (period.StartDate <= lastMerged.EndDate)
+            {
+                lastMerged.EndDate = period.EndDate > lastMerged.EndDate ? period.EndDate : lastMerged.EndDate;
+                // Keep the first booking's details (or could keep the last, or keep all)
+            }
+            else
+            {
+                merged.Add(period);
+            }
+        }
+
+        return merged;
+    }
+
+    /// <summary>
+    /// Builds available periods by filling gaps between unavailable periods,
+    /// and assigns pricing information from price calendars.
+    /// </summary>
+    private List<DateRangePriceDto> BuildAvailablePeriods(
+        DateTime calendarStart,
+        DateTime calendarEnd,
+        List<DateRangeBlockingDto> unavailablePeriods,
+        List<ApartmentPriceCalendar> priceCalendars,
+        decimal defaultPrice)
+    {
+        var availablePeriods = new List<DateRangePriceDto>();
+
+        if (!unavailablePeriods.Any())
+        {
+            // Entire period is available
+            var price = priceCalendars.Any() 
+                ? priceCalendars.Average(p => p.DiscountPercentage.HasValue && p.IsDiscount == true 
+                    ? defaultPrice * (1 - p.DiscountPercentage.Value / 100) 
+                    : defaultPrice)
+                : (decimal?)null;
+
+            availablePeriods.Add(new DateRangePriceDto
+            {
+                StartDate = calendarStart,
+                EndDate = calendarEnd,
+                PricePerNight = price
+            });
+            return availablePeriods;
+        }
+
+        var sortedUnavailable = unavailablePeriods.OrderBy(p => p.StartDate).ToList();
+
+        // Check if there's availability before the first unavailable period
+        if (calendarStart < sortedUnavailable[0].StartDate)
+        {
+            var availEnd = sortedUnavailable[0].StartDate;
+            var price = GetPriceForRange(calendarStart, availEnd, priceCalendars, defaultPrice);
+            availablePeriods.Add(new DateRangePriceDto
+            {
+                StartDate = calendarStart,
+                EndDate = availEnd,
+                PricePerNight = price
+            });
+        }
+
+        // Check for gaps between unavailable periods
+        for (int i = 0; i < sortedUnavailable.Count - 1; i++)
+        {
+            var gapStart = sortedUnavailable[i].EndDate;
+            var gapEnd = sortedUnavailable[i + 1].StartDate;
+
+            if (gapStart < gapEnd)
+            {
+                var price = GetPriceForRange(gapStart, gapEnd, priceCalendars, defaultPrice);
+                availablePeriods.Add(new DateRangePriceDto
+                {
+                    StartDate = gapStart,
+                    EndDate = gapEnd,
+                    PricePerNight = price
+                });
+            }
+        }
+
+        // Check if there's availability after the last unavailable period
+        if (sortedUnavailable.Last().EndDate < calendarEnd)
+        {
+            var availStart = sortedUnavailable.Last().EndDate;
+            var price = GetPriceForRange(availStart, calendarEnd, priceCalendars, defaultPrice);
+            availablePeriods.Add(new DateRangePriceDto
+            {
+                StartDate = availStart,
+                EndDate = calendarEnd,
+                PricePerNight = price
+            });
+        }
+
+        return availablePeriods;
+    }
+
+    /// <summary>
+    /// Determines the price per night for a given date range based on price calendars.
+    /// Returns null if no matching price calendar entry is found.
+    /// </summary>
+    private decimal? GetPriceForRange(
+        DateTime rangeStart,
+        DateTime rangeEnd,
+        List<ApartmentPriceCalendar> priceCalendars,
+        decimal defaultPrice)
+    {
+        // Find price calendars that overlap with this range
+        var overlappingCalendars = priceCalendars.Where(c =>
+            c.StartDate < DateOnly.FromDateTime(rangeEnd) &&
+            c.EndDate > DateOnly.FromDateTime(rangeStart)).ToList();
+
+        if (!overlappingCalendars.Any())
+            return null;
+
+        // If multiple overlapping calendars, use average or first
+        // For now, using the first matching calendar's discount
+        var firstCalendar = overlappingCalendars.First();
+        if (firstCalendar.IsDiscount == true && firstCalendar.DiscountPercentage.HasValue)
+        {
+            return defaultPrice * (1 - firstCalendar.DiscountPercentage.Value / 100);
+        }
+
+        return null;
+    }
 }
