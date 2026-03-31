@@ -32,6 +32,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IPackageItemService, PackageItemService>();
             services.AddScoped<IPaymentService, PaymentService>();
             services.AddScoped<ILandlordWalletService, LandlordWalletService>();
+            services.AddScoped<ILandlordPayoutService, LandlordPayoutService>();
             services.AddScoped<IPropertyInspectionService, PropertyInspectionService>();
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<IRoomService, RoomService>();

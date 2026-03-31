@@ -10,6 +10,8 @@ using System.Text.Json;
 
 namespace Short_termApartmentAPI.Controllers
 {
+    [ApiController]
+    [Route("api/[controller]")]
     public class MomoController : ControllerBase
     {
         private readonly IMomoService _momoService;
@@ -18,6 +20,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IMomoTransactionService _momoTransactionService;
         private readonly ILandlordSubscriptionService _landlordSubscriptionService;
         private readonly ILandlordService _landlordService;
+        private readonly ILandlordPayoutService _landlordPayoutService;
         private readonly MomoOptions _options;
 
         public MomoController(
@@ -27,6 +30,7 @@ namespace Short_termApartmentAPI.Controllers
             IMomoTransactionService momoTransactionService,
             ILandlordSubscriptionService landlordSubscriptionService,
             ILandlordService landlordService,
+            ILandlordPayoutService landlordPayoutService,
             IOptions<MomoOptions> options)
         {
             _momoService = momoService;
@@ -35,6 +39,7 @@ namespace Short_termApartmentAPI.Controllers
             _momoTransactionService = momoTransactionService;
             _landlordSubscriptionService = landlordSubscriptionService;
             _landlordService = landlordService;
+            _landlordPayoutService = landlordPayoutService;
             _options = options.Value;
         }
 
@@ -254,6 +259,57 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             // Respond per MoMo expectation — keep response small and quick
+            return Ok(new { resultCode = 0, message = "OK" });
+        }
+
+        [HttpPost("disbursement-ipn")]
+        public async Task<IActionResult> DisbursementIpn()
+        {
+            using var reader = new StreamReader(Request.Body);
+            var body = await reader.ReadToEndAsync();
+
+            var ipnLog = new MomoTransaction
+            {
+                RequestId = Guid.NewGuid().ToString(),
+                PartnerCode = _options.PartnerCode,
+                Amount = 0,
+                Type = "disbursement_ipn",
+                RequestBody = body,
+                ResponseBody = string.Empty,
+                Status = "received",
+                Message = "received",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _momoTransactionService.CreateAsync(ipnLog);
+
+            if (!_momoService.ValidateDisbursementIpnSignature(body))
+            {
+                ipnLog.Status = "invalid_signature";
+                ipnLog.UpdatedAt = DateTime.UtcNow;
+                await _momoTransactionService.UpdateAsync(ipnLog);
+                return BadRequest(new { resultCode = -1, message = "Invalid signature" });
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            var requestId = root.TryGetProperty("requestId", out var rid) ? rid.GetString() : null;
+            var resultCode = root.TryGetProperty("resultCode", out var rc) && rc.ValueKind == JsonValueKind.Number ? rc.GetInt32() : -1;
+
+            ipnLog.Status = "verified";
+            ipnLog.ResultCode = resultCode;
+            ipnLog.Message = root.TryGetProperty("message", out var msg) ? msg.GetString() ?? string.Empty : string.Empty;
+            ipnLog.ResponseBody = body;
+            ipnLog.UpdatedAt = DateTime.UtcNow;
+            await _momoTransactionService.UpdateAsync(ipnLog);
+
+            if (!string.IsNullOrWhiteSpace(requestId))
+            {
+                // Fast path: run reconciliation sync, which includes pending/processing payouts.
+                await _landlordPayoutService.SyncProcessingPayoutsAsync();
+            }
+
             return Ok(new { resultCode = 0, message = "OK" });
         }
     }

@@ -49,4 +49,46 @@ public class LandlordWalletService : ILandlordWalletService
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
     }
+
+    public async Task ReserveForPayoutAsync(Guid landlordId, long amount)
+    {
+        if (amount <= 0)
+        {
+            throw new ArgumentException("Amount must be greater than zero.");
+        }
+
+        var wallet = await GetOrCreateAsync(landlordId);
+        var value = Convert.ToDecimal(amount);
+        if (wallet.AvailableBalance < value)
+        {
+            throw new InvalidOperationException("Insufficient available balance for payout.");
+        }
+
+        wallet.AvailableBalance -= value;
+        wallet.UpdatedAt = DateTime.UtcNow;
+        _walletRepository.Update(wallet);
+        await _walletRepository.SaveChangesAsync();
+    }
+
+    public async Task FinalizePayoutSuccessAsync(Guid landlordId, long amount)
+    {
+        var wallet = await GetOrCreateAsync(landlordId);
+        wallet.UpdatedAt = DateTime.UtcNow;
+        _walletRepository.Update(wallet);
+        await _walletRepository.SaveChangesAsync();
+    }
+
+    public async Task RollbackPayoutAsync(Guid landlordId, long amount)
+    {
+        if (amount <= 0)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreateAsync(landlordId);
+        wallet.AvailableBalance += Convert.ToDecimal(amount);
+        wallet.UpdatedAt = DateTime.UtcNow;
+        _walletRepository.Update(wallet);
+        await _walletRepository.SaveChangesAsync();
+    }
 }

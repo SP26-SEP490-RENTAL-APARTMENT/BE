@@ -39,6 +39,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Landlord> Landlords { get; set; }
 
+    public virtual DbSet<LandlordPayout> LandlordPayouts { get; set; }
+
     public virtual DbSet<LandlordSubscription> LandlordSubscriptions { get; set; }
 
     public virtual DbSet<MomoTransaction> MomoTransactions { get; set; }
@@ -569,6 +571,27 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.LastVerifiedAt)
                 .HasColumnType("timestamp")
                 .HasColumnName("last_verified_at");
+            entity.Property(e => e.MomoWalletPhone)
+                .HasMaxLength(20)
+                .HasColumnName("momo_wallet_phone");
+            entity.Property(e => e.PayoutBankAccountNo)
+                .HasMaxLength(40)
+                .HasColumnName("payout_bank_account_no");
+            entity.Property(e => e.PayoutBankCardNo)
+                .HasMaxLength(40)
+                .HasColumnName("payout_bank_card_no");
+            entity.Property(e => e.PayoutBankCode)
+                .HasMaxLength(20)
+                .HasColumnName("payout_bank_code");
+            entity.Property(e => e.PayoutPersonalId)
+                .HasMaxLength(30)
+                .HasColumnName("payout_personal_id");
+            entity.Property(e => e.PayoutReceiverName)
+                .HasMaxLength(150)
+                .HasColumnName("payout_receiver_name");
+            entity.Property(e => e.PreferredPayoutMethod)
+                .HasMaxLength(20)
+                .HasColumnName("preferred_payout_method");
             entity.Property(e => e.SubscriptionExpiresAt).HasColumnName("subscription_expires_at");
             entity.Property(e => e.SubscriptionStatus)
                 .HasDefaultValueSql("'none'")
@@ -586,6 +609,66 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.LandlordNavigation).WithOne(p => p.Landlord)
                 .HasForeignKey<Landlord>(d => d.LandlordId)
                 .HasConstraintName("landlords_ibfk_1");
+        });
+
+        modelBuilder.Entity<LandlordPayout>(entity =>
+        {
+            entity.HasKey(e => e.PayoutId).HasName("PRIMARY");
+
+            entity.ToTable("landlord_payouts");
+
+            entity.HasIndex(e => e.LandlordId, "idx_landlord");
+
+            entity.HasIndex(e => e.MomoRequestId, "uk_momo_request_id").IsUnique();
+
+            entity.HasIndex(e => new { e.LandlordId, e.CreatedAt }, "idx_landlord_created");
+
+            entity.Property(e => e.PayoutId).HasColumnName("payout_id");
+            entity.Property(e => e.Amount).HasColumnName("amount");
+            entity.Property(e => e.Channel)
+                .HasMaxLength(20)
+                .HasColumnName("channel");
+            entity.Property(e => e.CompletedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("completed_at");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.FailedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("failed_at");
+            entity.Property(e => e.FeeAmount)
+                .HasDefaultValueSql("'0'")
+                .HasColumnName("fee_amount");
+            entity.Property(e => e.LandlordId).HasColumnName("landlord_id");
+            entity.Property(e => e.Message)
+                .HasMaxLength(1024)
+                .HasColumnName("message");
+            entity.Property(e => e.MomoOrderId)
+                .HasMaxLength(120)
+                .HasColumnName("momo_order_id");
+            entity.Property(e => e.MomoRequestId)
+                .HasMaxLength(120)
+                .HasColumnName("momo_request_id");
+            entity.Property(e => e.MomoTransId)
+                .HasMaxLength(120)
+                .HasColumnName("momo_trans_id");
+            entity.Property(e => e.NetAmount).HasColumnName("net_amount");
+            entity.Property(e => e.RequestBody).HasColumnName("request_body");
+            entity.Property(e => e.ResponseBody).HasColumnName("response_body");
+            entity.Property(e => e.ResultCode).HasColumnName("result_code");
+            entity.Property(e => e.Status)
+                .HasMaxLength(30)
+                .HasColumnName("status");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Landlord).WithMany(p => p.LandlordPayouts)
+                .HasForeignKey(d => d.LandlordId)
+                .HasConstraintName("landlord_payouts_ibfk_1");
         });
 
         modelBuilder.Entity<LandlordSubscription>(entity =>

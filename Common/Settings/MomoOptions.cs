@@ -10,4 +10,10 @@ public class MomoOptions
     public string RedirectUrl { get; set; } = string.Empty;
     public string IpnUrl { get; set; } = string.Empty;
     public string Endpoint { get; set; } = "https://test-payment.momo.vn";
+
+    // Disbursement v2 configuration
+    public string DisbursementIpnUrl { get; set; } = string.Empty;
+    public string StoreId { get; set; } = string.Empty;
+    public string PublicKey { get; set; } = string.Empty;
+    public long? OrderGroupId { get; set; }
 }

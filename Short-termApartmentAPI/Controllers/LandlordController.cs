@@ -19,6 +19,7 @@ public sealed class LandlordController : ControllerBase
     private readonly ILandlordSubscriptionService _landlordSubscriptionService;
     private readonly IPaymentService _paymentService;
     private readonly IBookingService _bookingService;
+    private readonly ILandlordPayoutService _landlordPayoutService;
     private readonly IMapper _mapper;
 
     public LandlordController(
@@ -26,12 +27,14 @@ public sealed class LandlordController : ControllerBase
         ILandlordSubscriptionService landlordSubscriptionService,
         IPaymentService paymentService,
         IBookingService bookingService,
+        ILandlordPayoutService landlordPayoutService,
         IMapper mapper)
     {
         _landlordService = landlordService;
         _landlordSubscriptionService = landlordSubscriptionService;
         _paymentService = paymentService;
         _bookingService = bookingService;
+        _landlordPayoutService = landlordPayoutService;
         _mapper = mapper;
     }
     [HttpGet("ping")]
@@ -234,5 +237,125 @@ public sealed class LandlordController : ControllerBase
         {
             return BadRequest(new ApiResponse<string>(ex.Message));
         }
+    }
+
+    [HttpGet("payout-profile")]
+    public async Task<IActionResult> GetPayoutProfile()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        var profile = await _landlordService.GetPayoutProfileAsync(landlord.LandlordId);
+        return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile!));
+    }
+
+    [HttpPut("payout-profile")]
+    public async Task<IActionResult> UpdatePayoutProfile([FromBody] UpsertLandlordPayoutProfileRequestDto request)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        var profile = await _landlordService.UpsertPayoutProfileAsync(landlord.LandlordId, request);
+        return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile));
+    }
+
+    [HttpPost("payouts")]
+    public async Task<IActionResult> CreatePayout([FromBody] CreateLandlordPayoutRequestDto request, CancellationToken cancellationToken)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        try
+        {
+            var result = await _landlordPayoutService.CreatePayoutAsync(landlord.LandlordId, request, cancellationToken);
+            return Ok(new ApiResponse<LandlordPayoutResponseDto>(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpGet("payouts")]
+    public async Task<IActionResult> GetPayoutHistory(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        var (items, totalCount) = await _landlordPayoutService.GetPayoutHistoryAsync(
+            landlord.LandlordId,
+            page,
+            pageSize,
+            sortBy,
+            sortOrder,
+            search,
+            filters);
+
+        return Ok(new { Items = items, TotalCount = totalCount });
+    }
+
+    [HttpGet("payouts/{payoutId:guid}")]
+    public async Task<IActionResult> GetPayoutById(Guid payoutId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        var item = await _landlordPayoutService.GetPayoutByIdAsync(landlord.LandlordId, payoutId);
+        if (item == null)
+            return NotFound(new ApiResponse<string>("Payout not found."));
+
+        return Ok(new ApiResponse<LandlordPayoutResponseDto>(item));
+    }
+
+    [HttpPost("payouts/sync-processing")]
+    public async Task<IActionResult> SyncProcessingPayouts(CancellationToken cancellationToken)
+    {
+        var updated = await _landlordPayoutService.SyncProcessingPayoutsAsync(cancellationToken);
+        return Ok(new ApiResponse<int>(updated));
     }
 }

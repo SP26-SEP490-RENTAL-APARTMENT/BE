@@ -16,4 +16,8 @@ public interface ILandlordService : IBaseService<Landlord>
         string? search = null);
 
     Task<SubscriptionPlanDto?> GetCurrentSubscriptionAsync(Guid landlordId);
+
+    Task<LandlordPayoutProfileDto?> GetPayoutProfileAsync(Guid landlordId);
+
+    Task<LandlordPayoutProfileDto> UpsertPayoutProfileAsync(Guid landlordId, UpsertLandlordPayoutProfileRequestDto request);
 }

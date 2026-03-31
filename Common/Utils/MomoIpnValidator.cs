@@ -92,4 +92,68 @@ public static class MomoIpnValidator
 
         return CryptographicOperations.FixedTimeEquals(receivedBytes, computedBytes);
     }
+
+    // Canonical signature for MoMo disbursement IPN (no payType field)
+    public static bool ValidateDisbursement(string requestBody, string accessKey, string secretKey)
+    {
+        using var doc = JsonDocument.Parse(requestBody);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("signature", out var signatureElement) || signatureElement.ValueKind != JsonValueKind.String)
+            return false;
+
+        var receivedSignature = signatureElement.GetString() ?? string.Empty;
+
+        static string? GetElementAsString(JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => element.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Null => null,
+                _ => element.GetRawText().Trim('"')
+            };
+        }
+
+        var parts = new List<string> { $"accessKey={accessKey}" };
+
+        void AddPart(string propertyName)
+        {
+            if (!root.TryGetProperty(propertyName, out var el))
+                return;
+
+            var value = GetElementAsString(el);
+            if (!string.IsNullOrEmpty(value))
+            {
+                parts.Add($"{propertyName}={value}");
+            }
+        }
+
+        AddPart("amount");
+        AddPart("extraData");
+        AddPart("message");
+        AddPart("orderId");
+        AddPart("orderInfo");
+        AddPart("orderType");
+        AddPart("partnerCode");
+        AddPart("requestId");
+        AddPart("responseTime");
+        AddPart("resultCode");
+        AddPart("transId");
+
+        var raw = string.Join("&", parts);
+
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey));
+        var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(raw));
+        var computedHex = Convert.ToHexString(computed).ToLowerInvariant();
+
+        var receivedBytes = Encoding.UTF8.GetBytes(receivedSignature);
+        var computedBytes = Encoding.UTF8.GetBytes(computedHex);
+        if (receivedBytes.Length != computedBytes.Length)
+            return false;
+
+        return CryptographicOperations.FixedTimeEquals(receivedBytes, computedBytes);
+    }
 }

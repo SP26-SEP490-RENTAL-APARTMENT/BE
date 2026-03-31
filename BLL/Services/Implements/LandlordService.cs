@@ -60,4 +60,58 @@ public class LandlordService : BaseService<Landlord>, ILandlordService
         var plan = await _subscriptionPlanService.GetByIdAsync(landlord.CurrentPlanId.Value);
         return plan == null ? null : _mapper.Map<SubscriptionPlanDto>(plan);
     }
+
+    public async Task<LandlordPayoutProfileDto?> GetPayoutProfileAsync(Guid landlordId)
+    {
+        var landlord = await _landlordRepository.GetByIdAsync(landlordId);
+        if (landlord == null)
+        {
+            return null;
+        }
+
+        return new LandlordPayoutProfileDto
+        {
+            MomoWalletPhone = landlord.MomoWalletPhone,
+            ReceiverName = landlord.PayoutReceiverName,
+            PersonalIdMasked = MaskRight(landlord.PayoutPersonalId, 4),
+            BankAccountNoMasked = MaskRight(landlord.PayoutBankAccountNo, 4),
+            BankCardNoMasked = MaskRight(landlord.PayoutBankCardNo, 4),
+            BankCode = landlord.PayoutBankCode,
+            PreferredPayoutMethod = landlord.PreferredPayoutMethod
+        };
+    }
+
+    public async Task<LandlordPayoutProfileDto> UpsertPayoutProfileAsync(Guid landlordId, UpsertLandlordPayoutProfileRequestDto request)
+    {
+        var landlord = await _landlordRepository.GetByIdAsync(landlordId)
+            ?? throw new ArgumentException("Landlord profile not found.");
+
+        landlord.MomoWalletPhone = request.MomoWalletPhone?.Trim();
+        landlord.PayoutReceiverName = request.ReceiverName?.Trim();
+        landlord.PayoutPersonalId = request.PersonalId?.Trim();
+        landlord.PayoutBankAccountNo = request.BankAccountNo?.Trim();
+        landlord.PayoutBankCardNo = request.BankCardNo?.Trim();
+        landlord.PayoutBankCode = request.BankCode?.Trim();
+        landlord.PreferredPayoutMethod = request.PreferredPayoutMethod?.Trim();
+
+        _landlordRepository.Update(landlord);
+        await _landlordRepository.SaveChangesAsync();
+
+        return (await GetPayoutProfileAsync(landlordId))!;
+    }
+
+    private static string? MaskRight(string? value, int visibleTail)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        if (value.Length <= visibleTail)
+        {
+            return new string('*', value.Length);
+        }
+
+        return new string('*', value.Length - visibleTail) + value[^visibleTail..];
+    }
 }

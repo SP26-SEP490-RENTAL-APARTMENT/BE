@@ -19,6 +19,20 @@ public partial class Landlord
 
     public string? SubscriptionStatus { get; set; }
 
+    public string? MomoWalletPhone { get; set; }
+
+    public string? PayoutReceiverName { get; set; }
+
+    public string? PayoutPersonalId { get; set; }
+
+    public string? PayoutBankAccountNo { get; set; }
+
+    public string? PayoutBankCardNo { get; set; }
+
+    public string? PayoutBankCode { get; set; }
+
+    public string? PreferredPayoutMethod { get; set; }
+
     public virtual ICollection<Apartment> Apartments { get; set; } = new List<Apartment>();
 
     public virtual SubscriptionPlan? CurrentPlan { get; set; }
@@ -26,6 +40,8 @@ public partial class Landlord
     public virtual User LandlordNavigation { get; set; } = null!;
 
     public virtual ICollection<LandlordSubscription> LandlordSubscriptions { get; set; } = new List<LandlordSubscription>();
+
+    public virtual ICollection<LandlordPayout> LandlordPayouts { get; set; } = new List<LandlordPayout>();
 
     public virtual ICollection<TemporaryResidenceReport> TemporaryResidenceReports { get; set; } = new List<TemporaryResidenceReport>();
 
