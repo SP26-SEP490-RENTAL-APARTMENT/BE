@@ -475,6 +475,24 @@ CREATE TABLE `landlord_wallets` (
   CONSTRAINT `landlord_wallets_ibfk_1`
     FOREIGN KEY (`landlord_id`) REFERENCES `landlords` (`landlord_id`)
 );
+CREATE TABLE `tenant_wishlists` (
+  `wishlist_id` CHAR(36) NOT NULL,
+  `tenant_id` CHAR(36) NOT NULL,
+  `apartment_id` CHAR(36) NOT NULL,
+  `is_favorite` TINYINT(1) NOT NULL DEFAULT 0,
+  `notes` VARCHAR(500) NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  PRIMARY KEY (`wishlist_id`),
+  UNIQUE KEY `uk_tenant_apartment` (`tenant_id`, `apartment_id`),
+  KEY `idx_tenant_id` (`tenant_id`),
+  
+  CONSTRAINT `tenant_wishlists_ibfk_1` 
+  FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`tenant_id`) ON DELETE CASCADE ON UPDATE RESTRICT,
+  CONSTRAINT `tenant_wishlists_ibfk_2` FOREIGN KEY (`apartment_id`) REFERENCES `apartments` (`apartment_id`) ON DELETE CASCADE ON UPDATE RESTRICT
+);
+
+CREATE INDEX `idx_tenant_id` ON `tenant_wishlists` (`tenant_id`);
 
 CREATE INDEX `idx_admin` ON `admin_actions` (`admin_id`);
 

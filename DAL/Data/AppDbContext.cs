@@ -73,6 +73,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Tenant> Tenants { get; set; }
 
+    public virtual DbSet<TenantWishlist> TenantWishlists { get; set; }
+
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<UserIdentityDocument> UserIdentityDocuments { get; set; }
@@ -1274,6 +1276,48 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.TenantNavigation).WithOne(p => p.Tenant)
                 .HasForeignKey<Tenant>(d => d.TenantId)
                 .HasConstraintName("tenants_ibfk_1");
+        });
+
+        modelBuilder.Entity<TenantWishlist>(entity =>
+        {
+            entity.HasKey(e => e.WishlistId).HasName("PRIMARY");
+
+            entity.ToTable("tenant_wishlists");
+
+            entity.HasIndex(e => e.TenantId, "idx_tenant_id");
+
+            entity.HasIndex(e => new { e.TenantId, e.ApartmentId }, "uk_tenant_apartment").IsUnique();
+
+            entity.Property(e => e.WishlistId)
+                .ValueGeneratedOnAdd()
+                .HasColumnName("wishlist_id");
+
+            entity.Property(e => e.TenantId)
+                .HasColumnName("tenant_id");
+
+            entity.Property(e => e.ApartmentId)
+                .HasColumnName("apartment_id");
+
+            entity.Property(e => e.IsFavorite)
+                .HasDefaultValue(false)
+                .HasColumnName("is_favorite");
+
+            entity.Property(e => e.Notes)
+                .HasMaxLength(500)
+                .HasColumnName("notes");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Tenant).WithMany(p => p.Wishlists)
+                .HasForeignKey(d => d.TenantId)
+                .HasConstraintName("tenant_wishlists_ibfk_1");
+
+            entity.HasOne(d => d.Apartment).WithMany(p => p.TenantWishlists)
+                .HasForeignKey(d => d.ApartmentId)
+                .HasConstraintName("tenant_wishlists_ibfk_2");
         });
 
         modelBuilder.Entity<User>(entity =>

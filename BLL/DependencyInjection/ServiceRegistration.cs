@@ -45,6 +45,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IResidenceReportPdfGenerator, ResidenceReportPdfGenerator>();
             services.AddScoped<IIdentityVerificationService, IdentityVerificationService>();
             services.AddScoped<IReportExecutionService, ReportExecutionService>();
+            services.AddScoped<IWishlistService, WishlistService>();
             return services;
         }
     }

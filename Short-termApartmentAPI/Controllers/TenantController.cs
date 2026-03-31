@@ -15,12 +15,14 @@ public sealed class TenantController : ControllerBase
 {
     private readonly IBookingService _bookingService;
     private readonly IPaymentService _paymentService;
+    private readonly IWishlistService _wishlistService;
     private readonly IMapper _mapper;
 
-    public TenantController(IBookingService bookingService, IPaymentService paymentService, IMapper mapper)
+    public TenantController(IBookingService bookingService, IPaymentService paymentService, IWishlistService wishlistService, IMapper mapper)
     {
         _bookingService = bookingService;
         _paymentService = paymentService;
+        _wishlistService = wishlistService;
         _mapper = mapper;
     }
 
@@ -131,5 +133,118 @@ public sealed class TenantController : ControllerBase
 
         var dto = _mapper.Map<PaymentHistoryDto>(payment);
         return Ok(new ApiResponse<PaymentHistoryDto>(dto));
+    }
+
+    [HttpGet("wishlist")]
+    public async Task<IActionResult> GetWishlist(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] decimal? priceMin = null,
+        [FromQuery] decimal? priceMax = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        try
+        {
+            var (items, totalCount) = await _wishlistService.GetTenantWishlistAsync(
+                userId, page, pageSize, sortBy, sortOrder, priceMin, priceMax, filters);
+            
+            var response = new WishlistResponseDto
+            {
+                items = items.ToList(),
+                totalCount = totalCount,
+                page = page,
+                pageSize = pageSize
+            };
+            
+            return Ok(new ApiResponse<WishlistResponseDto>(response));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiResponse<string>($"Error retrieving wishlist: {ex.Message}"));
+        }
+    }
+
+    [HttpPost("wishlist")]
+    public async Task<IActionResult> AddToWishlist([FromBody] AddToWishlistRequestDto requestDto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        try
+        {
+            var result = await _wishlistService.AddToWishlistAsync(userId, requestDto.apartmentId, requestDto.notes);
+            return Created(string.Empty, new ApiResponse<WishlistItemResponseDto>(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new ApiResponse<string>(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiResponse<string>($"Error adding to wishlist: {ex.Message}"));
+        }
+    }
+
+    [HttpDelete("wishlist/{apartmentId:guid}")]
+    public async Task<IActionResult> RemoveFromWishlist(Guid apartmentId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        try
+        {
+            await _wishlistService.RemoveFromWishlistAsync(userId, apartmentId);
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiResponse<string>($"Error removing from wishlist: {ex.Message}"));
+        }
+    }
+
+    [HttpPut("wishlist/{apartmentId:guid}/favorite")]
+    public async Task<IActionResult> ToggleFavorite(Guid apartmentId, [FromBody] ToggleFavoriteRequestDto requestDto)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        try
+        {
+            var result = await _wishlistService.ToggleFavoriteAsync(userId, apartmentId, requestDto.isFavorite);
+            return Ok(new ApiResponse<WishlistItemResponseDto>(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiResponse<string>($"Error updating wishlist: {ex.Message}"));
+        }
     }
 }

@@ -54,6 +54,8 @@ public partial class Apartment
 
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();
 
+    public virtual ICollection<TenantWishlist> TenantWishlists { get; set; } = new List<TenantWishlist>();
+
     public virtual Room? Room { get; set; }
 
     public virtual ICollection<SmartPricingHistory> SmartPricingHistories { get; set; } = new List<SmartPricingHistory>();
