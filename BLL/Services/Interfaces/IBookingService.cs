@@ -54,4 +54,14 @@ public interface IBookingService : IBaseService<Booking>
 		DateTime? endDate = null,
 		Guid? requesterId = null,
 		string? requesterRole = null);
+
+	Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(
+		Guid apartmentId,
+		Guid landlordId,
+		SetApartmentAvailabilityRequestDto dto);
+
+	Task<RemoveApartmentAvailabilityResponseDto> RemoveApartmentAvailabilityAsync(
+		Guid apartmentId,
+		Guid landlordId,
+		RemoveApartmentAvailabilityRequestDto dto);
 }

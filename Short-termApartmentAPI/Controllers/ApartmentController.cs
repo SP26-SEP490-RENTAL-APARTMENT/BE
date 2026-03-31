@@ -315,4 +315,76 @@ public sealed class ApartmentsController : ControllerBase
             return BadRequest(new ApiResponse<string>(ex.Message));
         }
     }
+
+    [HttpPost("{id:guid}/availability")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> SetAvailability(Guid id, [FromBody] SetApartmentAvailabilityRequestDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var landlordUserId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(landlordUserId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        try
+        {
+            var result = await _bookingService.SetApartmentAvailabilityAsync(id, landlord.LandlordId, dto);
+            return Ok(new ApiResponse<SetApartmentAvailabilityResponseDto>(result, "Availability updated successfully."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpDelete("{id:guid}/availability")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> RemoveAvailability(Guid id, [FromBody] RemoveApartmentAvailabilityRequestDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var landlordUserId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(landlordUserId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        try
+        {
+            var result = await _bookingService.RemoveApartmentAvailabilityAsync(id, landlord.LandlordId, dto);
+            return Ok(new ApiResponse<RemoveApartmentAvailabilityResponseDto>(result, "Availability removed successfully."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
 }

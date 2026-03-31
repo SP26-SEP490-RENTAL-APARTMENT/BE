@@ -25,6 +25,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<ApartmentMedium> ApartmentMedia { get; set; }
 
+    public virtual DbSet<ApartmentAvailability> ApartmentAvailabilities { get; set; }
+
     public virtual DbSet<ApartmentPriceCalendar> ApartmentPriceCalendars { get; set; }
 
     public virtual DbSet<Booking> Bookings { get; set; }
@@ -162,6 +164,8 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => e.Status, "idx_status");
 
+            entity.HasIndex(e => e.BookingStatus, "idx_booking_status");
+
             entity.Property(e => e.ApartmentId).HasColumnName("apartment_id");
             entity.Property(e => e.Address)
                 .HasMaxLength(255)
@@ -169,6 +173,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.BasePricePerNight)
                 .HasPrecision(12, 2)
                 .HasColumnName("base_price_per_night");
+            entity.Property(e => e.BookingStatus)
+                .HasDefaultValueSql("'Available'")
+                .HasColumnType("enum('Available','ConfirmedReservation','Locked')")
+                .HasColumnName("booking_status");
             entity.Property(e => e.City)
                 .HasMaxLength(100)
                 .HasDefaultValueSql("'Hồ Chí Minh'")
@@ -253,6 +261,35 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Apartment).WithMany(p => p.ApartmentMedia)
                 .HasForeignKey(d => d.ApartmentId)
                 .HasConstraintName("apartment_media_ibfk_1");
+        });
+
+        modelBuilder.Entity<ApartmentAvailability>(entity =>
+        {
+            entity.HasKey(e => e.AvailabilityId).HasName("PRIMARY");
+
+            entity.ToTable("apartment_availability");
+
+            entity.HasIndex(e => new { e.ApartmentId, e.StartDate, e.EndDate }, "idx_apartment_availability_dates");
+
+            entity.Property(e => e.AvailabilityId).HasColumnName("availability_id");
+            entity.Property(e => e.ApartmentId).HasColumnName("apartment_id");
+            entity.Property(e => e.StartDate).HasColumnName("start_date");
+            entity.Property(e => e.EndDate).HasColumnName("end_date");
+            entity.Property(e => e.Reason)
+                .HasMaxLength(200)
+                .HasColumnName("reason");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Apartment).WithMany(p => p.ApartmentAvailabilities)
+                .HasForeignKey(d => d.ApartmentId)
+                .HasConstraintName("apartment_availability_ibfk_1");
         });
 
         modelBuilder.Entity<ApartmentPriceCalendar>(entity =>

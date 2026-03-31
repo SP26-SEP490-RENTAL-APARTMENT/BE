@@ -33,6 +33,7 @@ public static class ApartmentSeed
                 IsPetAllowed = false,
                 MaxOccupants = 1,
                 Status = "draft",
+                BookingStatus = "locked",
                 CreatedAt = DateTime.UtcNow
             },
             new()
@@ -51,6 +52,7 @@ public static class ApartmentSeed
                 IsPetAllowed = true,
                 MaxOccupants = 2,
                 Status = "posted",
+                BookingStatus = "available",
                 CreatedAt = DateTime.UtcNow
             },
             new()
@@ -69,6 +71,7 @@ public static class ApartmentSeed
                 IsPetAllowed = false,
                 MaxOccupants = 3,
                 Status = "posted",
+                BookingStatus = "available",
                 CreatedAt = DateTime.UtcNow
             }
         };

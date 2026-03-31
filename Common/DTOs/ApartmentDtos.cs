@@ -111,6 +111,8 @@ public class CreateApartmentResponseDto
 
     public string? Status { get; set; }
 
+    public string? BookingStatus { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public List<string> Photos { get; set; } = new List<string>();
@@ -132,6 +134,7 @@ public class ApartmentResponseDto
     public decimal? Longitude { get; set; }
     public decimal BasePricePerNight { get; set; }
     public string? Status { get; set; }
+    public string? BookingStatus { get; set; }
     public DateTime? CreatedAt { get; set; }
     public List<string> Photos { get; set; } = new List<string>();
     public RoomResponseDto? Room { get; set; }
@@ -205,9 +208,69 @@ public class DateRangeBlockingDto
 public class AvailabilityCalendarResponseDto
 {
     public Guid ApartmentId { get; set; }
+    public string? BookingStatus { get; set; }
     public DateTime CalendarStartDate { get; set; }
     public DateTime CalendarEndDate { get; set; }
     public DateTime GeneratedAt { get; set; }
     public IList<DateRangePriceDto> AvailablePeriods { get; set; } = new List<DateRangePriceDto>();
     public IList<DateRangeBlockingDto> UnavailablePeriods { get; set; } = new List<DateRangeBlockingDto>();
+}
+
+public class AvailabilityRangeItemDto
+{
+    [Required]
+    public DateTime StartDate { get; set; }
+
+    [Required]
+    public DateTime EndDate { get; set; }
+
+    [MaxLength(200)]
+    public string? Reason { get; set; }
+}
+
+public class SetApartmentAvailabilityRequestDto
+{
+    [Required]
+    [MinLength(1, ErrorMessage = "At least one range is required.")]
+    public List<AvailabilityRangeItemDto> Ranges { get; set; } = new List<AvailabilityRangeItemDto>();
+}
+
+public class AvailabilityAppliedRangeDto
+{
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class SetApartmentAvailabilityResponseDto
+{
+    public Guid ApartmentId { get; set; }
+    public int SubmittedRanges { get; set; }
+    public int AppliedRanges { get; set; }
+    public IList<AvailabilityAppliedRangeDto> MergedRanges { get; set; } = new List<AvailabilityAppliedRangeDto>();
+}
+
+public class AvailabilityRemovalRangeDto
+{
+    [Required]
+    public DateTime StartDate { get; set; }
+
+    [Required]
+    public DateTime EndDate { get; set; }
+}
+
+public class RemoveApartmentAvailabilityRequestDto
+{
+    [Required]
+    [MinLength(1, ErrorMessage = "At least one range is required.")]
+    public List<AvailabilityRemovalRangeDto> Ranges { get; set; } = new List<AvailabilityRemovalRangeDto>();
+}
+
+public class RemoveApartmentAvailabilityResponseDto
+{
+    public Guid ApartmentId { get; set; }
+    public int SubmittedRanges { get; set; }
+    public int AffectedRules { get; set; }
+    public int RemainingRanges { get; set; }
+    public IList<AvailabilityAppliedRangeDto> UpdatedRanges { get; set; } = new List<AvailabilityAppliedRangeDto>();
 }
