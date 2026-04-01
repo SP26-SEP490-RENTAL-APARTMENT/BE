@@ -148,14 +148,14 @@ CREATE TABLE `landlords` (
   
 );
 
-ALTER TABLE landlords
-    ADD COLUMN IF NOT EXISTS momo_wallet_phone VARCHAR(20) NULL,
-    ADD COLUMN IF NOT EXISTS payout_receiver_name VARCHAR(150) NULL,
-    ADD COLUMN IF NOT EXISTS payout_personal_id VARCHAR(30) NULL,
-    ADD COLUMN IF NOT EXISTS payout_bank_account_no VARCHAR(40) NULL,
-    ADD COLUMN IF NOT EXISTS payout_bank_card_no VARCHAR(40) NULL,
-    ADD COLUMN IF NOT EXISTS payout_bank_code VARCHAR(20) NULL,
-    ADD COLUMN IF NOT EXISTS preferred_payout_method VARCHAR(20) NULL;
+ALTER TABLE `landlords`
+    ADD COLUMN momo_wallet_phone VARCHAR(20) NULL,
+    ADD COLUMN payout_receiver_name VARCHAR(150) NULL,
+    ADD COLUMN payout_personal_id VARCHAR(30) NULL,
+    ADD COLUMN payout_bank_account_no VARCHAR(40) NULL,
+    ADD COLUMN payout_bank_card_no VARCHAR(40) NULL,
+    ADD COLUMN payout_bank_code VARCHAR(20) NULL,
+    ADD COLUMN preferred_payout_method VARCHAR(20) NULL;
 
 CREATE TABLE `nearby_attractions` (
   `attraction_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
@@ -495,7 +495,6 @@ CREATE TABLE `tenant_wishlists` (
   
   PRIMARY KEY (`wishlist_id`),
   UNIQUE KEY `uk_tenant_apartment` (`tenant_id`, `apartment_id`),
-  KEY `idx_tenant_id` (`tenant_id`),
   
   CONSTRAINT `tenant_wishlists_ibfk_1` 
   FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`tenant_id`) ON DELETE CASCADE ON UPDATE RESTRICT,
