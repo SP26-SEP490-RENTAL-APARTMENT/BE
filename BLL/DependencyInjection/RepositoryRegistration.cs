@@ -14,6 +14,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IApartmentMediumRepository, ApartmentMediumRepository>();
             services.AddScoped<IApartmentPriceCalendarRepository, ApartmentPriceCalendarRepository>();
             services.AddScoped<IBookingRepository, BookingRepository>();
+            services.AddScoped<IBookingOfferRepository, BookingOfferRepository>();
             services.AddScoped<IHolidaysEventRepository, HolidaysEventRepository>();
             services.AddScoped<IInspectionPhotoRepository, InspectionPhotoRepository>();
             services.AddScoped<ILandlordRepository, LandlordRepository>();

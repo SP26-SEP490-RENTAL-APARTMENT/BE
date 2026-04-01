@@ -43,6 +43,8 @@ public partial class Booking
 
     public virtual BookingCheckTime? BookingCheckTime { get; set; }
 
+    public virtual ICollection<BookingOffer> BookingOffers { get; set; } = new List<BookingOffer>();
+
     public virtual Package? Package { get; set; }
 
     public virtual ICollection<Review> Reviews { get; set; } = new List<Review>();

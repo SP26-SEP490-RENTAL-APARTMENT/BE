@@ -31,6 +31,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<Booking> Bookings { get; set; }
 
+    public virtual DbSet<BookingOffer> BookingOffers { get; set; }
+
     public virtual DbSet<BookingCheckTime> BookingCheckTimes { get; set; }
 
     public virtual DbSet<HolidaysEvent> HolidaysEvents { get; set; }
@@ -399,6 +401,75 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Tenant).WithMany(p => p.Bookings)
                 .HasForeignKey(d => d.TenantId)
                 .HasConstraintName("bookings_ibfk_1");
+        });
+
+        modelBuilder.Entity<BookingOffer>(entity =>
+        {
+            entity.HasKey(e => e.OfferId).HasName("PRIMARY");
+
+            entity.ToTable("booking_offers");
+
+            entity.HasIndex(e => e.OriginalBookingId, "idx_original_booking");
+
+            entity.HasIndex(e => e.AlternativeApartmentId, "idx_alternative_apartment");
+
+            entity.HasIndex(e => e.TenantId, "idx_tenant");
+
+            entity.HasIndex(e => e.Status, "idx_status");
+
+            entity.HasIndex(e => e.ExpiresAt, "idx_expires_at");
+
+            entity.Property(e => e.OfferId).HasColumnName("offer_id");
+            entity.Property(e => e.AlternativeApartmentId).HasColumnName("alternative_apartment_id");
+            entity.Property(e => e.AlternativePrice)
+                .HasPrecision(12, 2)
+                .HasColumnName("alternative_price");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.CreatedByStaffId).HasColumnName("created_by_staff_id");
+            entity.Property(e => e.ExpiresAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("expires_at");
+            entity.Property(e => e.OriginalBookingId).HasColumnName("original_booking_id");
+            entity.Property(e => e.OriginalPrice)
+                .HasPrecision(12, 2)
+                .HasColumnName("original_price");
+            entity.Property(e => e.PriceDifference)
+                .HasPrecision(12, 2)
+                .HasColumnName("price_difference");
+            entity.Property(e => e.Reason)
+                .HasMaxLength(100)
+                .HasColumnName("reason");
+            entity.Property(e => e.RespondedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("responded_at");
+            entity.Property(e => e.Status)
+                .HasDefaultValueSql("'pending'")
+                .HasColumnType("enum('pending','accepted','rejected','expired','cancelled')")
+                .HasColumnName("status");
+            entity.Property(e => e.TenantId).HasColumnName("tenant_id");
+            entity.Property(e => e.TenantResponseNotes)
+                .HasColumnType("text")
+                .HasColumnName("tenant_response_notes");
+
+            entity.HasOne(d => d.AlternativeApartment).WithMany(p => p.BookingOffers)
+                .HasForeignKey(d => d.AlternativeApartmentId)
+                .HasConstraintName("booking_offers_ibfk_2");
+
+            entity.HasOne(d => d.CreatedByStaff).WithMany(p => p.BookingOfferCreatedByStaffNavigations)
+                .HasForeignKey(d => d.CreatedByStaffId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("booking_offers_ibfk_4");
+
+            entity.HasOne(d => d.OriginalBooking).WithMany(p => p.BookingOffers)
+                .HasForeignKey(d => d.OriginalBookingId)
+                .HasConstraintName("booking_offers_ibfk_1");
+
+            entity.HasOne(d => d.Tenant).WithMany(p => p.BookingOffers)
+                .HasForeignKey(d => d.TenantId)
+                .HasConstraintName("booking_offers_ibfk_3");
         });
 
         modelBuilder.Entity<BookingCheckTime>(entity =>

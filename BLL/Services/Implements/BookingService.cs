@@ -1,4 +1,5 @@
 using BLL.Services.Interfaces;
+using AutoMapper;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
@@ -13,8 +14,11 @@ namespace BLL.Services.Implements;
 public class BookingService : BaseService<Booking>, IBookingService
 {
     private const decimal SuggestedDepositRate = 0.30m;
+    private const int DefaultOfferExpiryHours = 2;
+    private const decimal DefaultPriceTolerancePercent = 0.20m;
 
     private readonly IBookingRepository _bookingRepository;
+    private readonly IBookingOfferRepository _bookingOfferRepository;
     private readonly IApartmentRepository _apartmentRepository;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IRepository<Package> _packageRepository;
@@ -27,9 +31,11 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
+    private readonly IMapper _mapper;
 
         public BookingService(
             IBookingRepository repository,
+            IBookingOfferRepository bookingOfferRepository,
             IApartmentRepository apartmentRepository,
             IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
             IRepository<Package> packageRepository,
@@ -41,9 +47,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
             IIdentityVerificationService identityVerificationService,
             ILandlordWalletService landlordWalletService,
-            IConfiguration configuration) : base(repository)
+            IConfiguration configuration,
+            IMapper mapper) : base(repository)
     {
         _bookingRepository = repository;
+        _bookingOfferRepository = bookingOfferRepository;
         _apartmentRepository = apartmentRepository;
         _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _packageRepository = packageRepository;
@@ -56,6 +64,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
+        _mapper = mapper;
     }
 
     private async Task CreateBookingNotificationAsync(
@@ -1240,6 +1249,300 @@ public class BookingService : BaseService<Booking>, IBookingService
             return ApartmentBookingStatusEnum.ConfirmedReservation.ToString();
 
         return ApartmentBookingStatusEnum.Available.ToString();
+    }
+
+    public async Task<IReadOnlyList<OccupiedRoomAlternativeOptionDto>> FindAlternativeApartmentsAsync(Guid bookingId, int maxResults = 5)
+    {
+        if (maxResults <= 0)
+            throw new ArgumentException("maxResults must be greater than zero.");
+
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        var sourceApartment = await _apartmentRepository.GetApartmentWithDetailsAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0);
+        if (occupantCount <= 0)
+        {
+            occupantCount = 1;
+        }
+
+        var hasPets = (booking.NoOfPets ?? 0) > 0;
+        var tolerance = _configuration.GetValue<decimal>("OccupiedRoomAlternatives:PriceTolerancePercent", DefaultPriceTolerancePercent);
+        if (tolerance < 0)
+        {
+            tolerance = DefaultPriceTolerancePercent;
+        }
+
+        var candidateApartments = await _apartmentRepository.FindAsync(a =>
+            a.ApartmentId != booking.ApartmentId &&
+            a.Status == "posted" &&
+            a.City == sourceApartment.City &&
+            a.District == sourceApartment.District &&
+            (!hasPets || a.IsPetAllowed == true) &&
+            (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount));
+
+        var alternatives = new List<OccupiedRoomAlternativeOptionDto>();
+        foreach (var candidate in candidateApartments)
+        {
+            try
+            {
+                await EnsureNoConflictingBookingsAsync(candidate.ApartmentId, booking.CheckInDate, booking.CheckOutDate);
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            var alternativeTotal = EstimateAlternativeTotalPrice(candidate, booking);
+            if (!IsWithinPriceTolerance(booking.TotalPrice, alternativeTotal, tolerance))
+            {
+                continue;
+            }
+
+            var detailedApartment = await _apartmentRepository.GetApartmentWithDetailsAsync(candidate.ApartmentId);
+            if (detailedApartment == null)
+            {
+                continue;
+            }
+
+            alternatives.Add(new OccupiedRoomAlternativeOptionDto
+            {
+                ApartmentId = detailedApartment.ApartmentId,
+                ApartmentTitle = detailedApartment.Title,
+                BasePricePerNight = detailedApartment.BasePricePerNight,
+                EstimatedTotalPrice = alternativeTotal,
+                PriceDifference = Math.Round(alternativeTotal - booking.TotalPrice, 2, MidpointRounding.AwayFromZero),
+                AdjustmentType = GetAdjustmentType(alternativeTotal - booking.TotalPrice),
+                Apartment = _mapper.Map<ApartmentResponseDto>(detailedApartment)
+            });
+        }
+
+        return alternatives
+            .OrderBy(o => Math.Abs(o.PriceDifference))
+            .ThenBy(o => o.EstimatedTotalPrice)
+            .Take(maxResults)
+            .ToList();
+    }
+
+    public async Task<BookingOfferResponseDto> CreateAlternativeOfferAsync(
+        Guid bookingId,
+        Guid alternativeApartmentId,
+        Guid staffUserId,
+        string? reason = null,
+        int? expiresInHours = null)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        if (booking.ApartmentId == alternativeApartmentId)
+            throw new InvalidOperationException("Alternative apartment must be different from the original booking apartment.");
+
+        var alternativeApartment = await _apartmentRepository.GetApartmentWithDetailsAsync(alternativeApartmentId)
+            ?? throw new ArgumentException("Alternative apartment not found.");
+
+        if (!string.Equals(alternativeApartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Alternative apartment is not available for booking.");
+
+        var sourceApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Original apartment not found.");
+
+        if (!string.Equals(sourceApartment.City, alternativeApartment.City, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(sourceApartment.District, alternativeApartment.District, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Alternative apartment must be in the same city and district as the original booking.");
+        }
+
+        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0);
+        if (occupantCount <= 0)
+        {
+            occupantCount = 1;
+        }
+
+        if (alternativeApartment.MaxOccupants.HasValue && (int)alternativeApartment.MaxOccupants < occupantCount)
+        {
+            throw new InvalidOperationException("Alternative apartment does not satisfy occupancy requirements.");
+        }
+
+        if ((booking.NoOfPets ?? 0) > 0 && alternativeApartment.IsPetAllowed != true)
+        {
+            throw new InvalidOperationException("Alternative apartment does not allow pets for this booking.");
+        }
+
+        await EnsureNoConflictingBookingsAsync(alternativeApartmentId, booking.CheckInDate, booking.CheckOutDate);
+
+        var now = DateTime.UtcNow;
+        var existingPendingOffers = await _bookingOfferRepository.GetPendingOffersByBookingAsync(bookingId, now);
+        if (existingPendingOffers.Any(o => o.AlternativeApartmentId == alternativeApartmentId))
+        {
+            throw new InvalidOperationException("A pending offer already exists for this alternative apartment.");
+        }
+
+        var alternativePrice = EstimateAlternativeTotalPrice(alternativeApartment, booking);
+        var priceDifference = Math.Round(alternativePrice - booking.TotalPrice, 2, MidpointRounding.AwayFromZero);
+        var expiryHours = expiresInHours.GetValueOrDefault(
+            _configuration.GetValue<int>("OccupiedRoomAlternatives:OfferExpiryHours", DefaultOfferExpiryHours));
+        if (expiryHours <= 0)
+        {
+            expiryHours = DefaultOfferExpiryHours;
+        }
+
+        var offer = new BookingOffer
+        {
+            OfferId = Guid.NewGuid(),
+            OriginalBookingId = bookingId,
+            AlternativeApartmentId = alternativeApartmentId,
+            TenantId = booking.TenantId,
+            CreatedByStaffId = staffUserId,
+            OriginalPrice = booking.TotalPrice,
+            AlternativePrice = alternativePrice,
+            PriceDifference = priceDifference,
+            Status = "pending",
+            Reason = string.IsNullOrWhiteSpace(reason) ? "room_occupied" : reason,
+            ExpiresAt = now.AddHours(expiryHours),
+            CreatedAt = now
+        };
+
+        await _bookingOfferRepository.AddAsync(offer);
+        await _bookingOfferRepository.SaveChangesAsync();
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.system_announcement.ToString(),
+            "Alternative apartment offer available",
+            "An alternative apartment option was prepared for your booking issue. Please review and respond before it expires.",
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            sourceApartment.LandlordId,
+            NotificationType.system_announcement.ToString(),
+            "Occupancy incident offer created",
+            "Support staff created an alternative apartment offer for a tenant due to occupancy incident.",
+            booking.BookingId);
+
+        var createdOffer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offer.OfferId)
+            ?? throw new InvalidOperationException("Offer created but failed to load details.");
+
+        return MapOfferToResponse(createdOffer);
+    }
+
+    public async Task<IReadOnlyList<BookingOfferResponseDto>> GetTenantActiveOffersAsync(Guid tenantId)
+    {
+        var now = DateTime.UtcNow;
+        var offers = await _bookingOfferRepository.GetPendingOffersForTenantAsync(tenantId, now);
+        return offers.Select(MapOfferToResponse).ToList();
+    }
+
+    public async Task<BookingOfferResponseDto> RespondToAlternativeOfferAsync(Guid offerId, Guid tenantId, bool accepted, string? notes = null)
+    {
+        var now = DateTime.UtcNow;
+        var offer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offerId)
+            ?? throw new KeyNotFoundException("Offer not found.");
+
+        if (offer.TenantId != tenantId)
+            throw new InvalidOperationException("This offer does not belong to the current tenant.");
+
+        if (!string.Equals(offer.Status, "pending", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Only pending offers can be responded to.");
+
+        if (offer.ExpiresAt.HasValue && offer.ExpiresAt.Value <= now)
+        {
+            offer.Status = "expired";
+            offer.RespondedAt = now;
+            _bookingOfferRepository.Update(offer);
+            await _bookingOfferRepository.SaveChangesAsync();
+            throw new InvalidOperationException("Offer has expired.");
+        }
+
+        offer.Status = accepted ? "accepted" : "rejected";
+        offer.RespondedAt = now;
+        offer.TenantResponseNotes = notes;
+        _bookingOfferRepository.Update(offer);
+
+        if (accepted)
+        {
+            var siblings = await _bookingOfferRepository.GetPendingOffersByBookingAsync(offer.OriginalBookingId, now);
+            foreach (var sibling in siblings.Where(o => o.OfferId != offer.OfferId))
+            {
+                sibling.Status = "cancelled";
+                sibling.RespondedAt = now;
+                sibling.TenantResponseNotes = "Automatically cancelled after another offer was accepted.";
+                _bookingOfferRepository.Update(sibling);
+            }
+        }
+
+        await _bookingOfferRepository.SaveChangesAsync();
+
+        await CreateBookingNotificationAsync(
+            tenantId,
+            NotificationType.system_announcement.ToString(),
+            accepted ? "Alternative offer accepted" : "Alternative offer rejected",
+            accepted
+                ? "Your response was recorded. Staff will complete manual settlement and booking adjustment."
+                : "Your rejection was recorded. Staff will follow up with additional options.",
+            offer.OriginalBookingId);
+
+        var updatedOffer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offerId)
+            ?? throw new InvalidOperationException("Offer updated but failed to reload details.");
+
+        return MapOfferToResponse(updatedOffer);
+    }
+
+    private decimal EstimateAlternativeTotalPrice(Apartment alternativeApartment, Booking originalBooking)
+    {
+        var nights = originalBooking.Nights;
+        if (nights <= 0)
+        {
+            nights = originalBooking.CheckOutDate.DayNumber - originalBooking.CheckInDate.DayNumber;
+        }
+
+        if (nights <= 0)
+        {
+            nights = 1;
+        }
+
+        return Math.Round(alternativeApartment.BasePricePerNight * nights, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static bool IsWithinPriceTolerance(decimal originalPrice, decimal alternativePrice, decimal tolerancePercent)
+    {
+        if (originalPrice <= 0)
+            return true;
+
+        var min = originalPrice * (1 - tolerancePercent);
+        var max = originalPrice * (1 + tolerancePercent);
+        return alternativePrice >= min && alternativePrice <= max;
+    }
+
+    private static string GetAdjustmentType(decimal priceDifference)
+    {
+        if (priceDifference > 0)
+            return "upgrade";
+        if (priceDifference < 0)
+            return "downgrade";
+        return "same_price";
+    }
+
+    private BookingOfferResponseDto MapOfferToResponse(BookingOffer offer)
+    {
+        return new BookingOfferResponseDto
+        {
+            OfferId = offer.OfferId,
+            OriginalBookingId = offer.OriginalBookingId,
+            AlternativeApartmentId = offer.AlternativeApartmentId,
+            Status = offer.Status,
+            Reason = offer.Reason,
+            OriginalPrice = offer.OriginalPrice,
+            AlternativePrice = offer.AlternativePrice,
+            PriceDifference = offer.PriceDifference,
+            AdjustmentType = GetAdjustmentType(offer.PriceDifference),
+            ManualSettlementRequired = true,
+            ExpiresAt = offer.ExpiresAt,
+            RespondedAt = offer.RespondedAt,
+            TenantResponseNotes = offer.TenantResponseNotes,
+            AlternativeApartment = _mapper.Map<ApartmentResponseDto>(offer.AlternativeApartment)
+        };
     }
 
     private async Task RefreshApartmentBookingStatusSnapshotAsync(Guid apartmentId)

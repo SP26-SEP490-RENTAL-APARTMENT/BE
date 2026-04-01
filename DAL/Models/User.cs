@@ -27,6 +27,8 @@ public partial class User
 
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
+    public virtual ICollection<BookingOffer> BookingOfferCreatedByStaffNavigations { get; set; } = new List<BookingOffer>();
+
     public virtual ICollection<PropertyInspection> PropertyInspectionApprovedByNavigations { get; set; } = new List<PropertyInspection>();
 
     public virtual ICollection<PropertyInspection> PropertyInspectionInspectors { get; set; } = new List<PropertyInspection>();

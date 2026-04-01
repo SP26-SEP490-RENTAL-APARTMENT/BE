@@ -46,6 +46,8 @@ public partial class Apartment
 
     public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 
+    public virtual ICollection<BookingOffer> BookingOffers { get; set; } = new List<BookingOffer>();
+
     public virtual Landlord Landlord { get; set; } = null!;
 
     public virtual ICollection<Package> Packages { get; set; } = new List<Package>();

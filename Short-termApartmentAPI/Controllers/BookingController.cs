@@ -17,13 +17,20 @@ namespace Short_termApartmentAPI.Controllers
 	{
 		private readonly IBookingService _bookingService;
 		private readonly IPaymentService _paymentService;
+		private readonly ISupportTicketService _supportTicketService;
 		private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
 		private readonly IMapper _mapper;
 
-		public BookingController(IBookingService bookingService, IPaymentService paymentService, IResidenceReportPdfGenerator residenceReportPdfGenerator, IMapper mapper)
+		public BookingController(
+			IBookingService bookingService,
+			IPaymentService paymentService,
+			ISupportTicketService supportTicketService,
+			IResidenceReportPdfGenerator residenceReportPdfGenerator,
+			IMapper mapper)
 		{
 			_bookingService = bookingService;
 			_paymentService = paymentService;
+			_supportTicketService = supportTicketService;
 			_residenceReportPdfGenerator = residenceReportPdfGenerator;
 			_mapper = mapper;
 		}
@@ -286,6 +293,163 @@ namespace Short_termApartmentAPI.Controllers
 			catch (KeyNotFoundException ex)
 			{
 				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpGet("{id:guid}/occupied-alternatives")]
+		[Authorize(Roles = "tenant,staff,admin")]
+		public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int maxResults = 5)
+		{
+			try
+			{
+				if (maxResults > 10)
+				{
+					maxResults = 10;
+				}
+
+				var requesterClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+				if (!Guid.TryParse(requesterClaim, out var requesterId))
+				{
+					return Unauthorized(new ApiResponse<string>("Invalid user token."));
+				}
+
+				if (User.IsInRole("tenant"))
+				{
+					var booking = await _bookingService.GetByIdAsync(id);
+					if (booking == null || booking.TenantId != requesterId)
+					{
+						return NotFound(new ApiResponse<string>("Booking not found."));
+					}
+				}
+
+				var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, maxResults);
+				return Ok(new ApiResponse<IReadOnlyList<OccupiedRoomAlternativeOptionDto>>(alternatives));
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpPost("{id:guid}/occupied-incident")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> ReportOccupiedIncident(Guid id, [FromBody] ReportOccupiedIncidentRequestDto dto)
+		{
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			var requesterClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(requesterClaim, out var tenantId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			var booking = await _bookingService.GetByIdAsync(id);
+			if (booking == null || booking.TenantId != tenantId)
+			{
+				return NotFound(new ApiResponse<string>("Booking not found."));
+			}
+
+			var supportTicket = new SupportTicket
+			{
+				TicketId = Guid.NewGuid(),
+				UserId = tenantId,
+				Category = "booking_issue",
+				Priority = "urgent",
+				Subject = $"Occupied room incident for booking {booking.BookingId}",
+				Description = dto.Details,
+				Status = "open",
+				CreatedAt = DateTime.UtcNow,
+				UpdatedAt = DateTime.UtcNow
+			};
+
+			var created = await _supportTicketService.CreateTicketAsync(supportTicket);
+			return Ok(new ApiResponse<object>(new
+			{
+				TicketId = created.TicketId,
+				created.Status,
+				Message = "Incident reported. Staff review is required before alternative offers are published."
+			}));
+		}
+
+		[HttpPost("{id:guid}/occupied-offers")]
+		[Authorize(Roles = "staff,admin")]
+		public async Task<IActionResult> CreateOccupiedOffer(Guid id, [FromBody] CreateBookingOfferRequestDto dto)
+		{
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var staffId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var offer = await _bookingService.CreateAlternativeOfferAsync(
+					id,
+					dto.AlternativeApartmentId,
+					staffId,
+					dto.Reason);
+
+				return Ok(new ApiResponse<BookingOfferResponseDto>(offer, "Alternative offer created successfully."));
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpGet("occupied-offers/my")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> GetMyOccupiedOffers()
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			var offers = await _bookingService.GetTenantActiveOffersAsync(tenantId);
+			return Ok(new ApiResponse<IReadOnlyList<BookingOfferResponseDto>>(offers));
+		}
+
+		[HttpPost("occupied-offers/{offerId:guid}/respond")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> RespondOccupiedOffer(Guid offerId, [FromBody] RespondBookingOfferRequestDto dto)
+		{
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var response = await _bookingService.RespondToAlternativeOfferAsync(offerId, tenantId, dto.Accepted, dto.Notes);
+				return Ok(new ApiResponse<BookingOfferResponseDto>(response, "Offer response recorded successfully."));
+			}
+			catch (KeyNotFoundException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
 			}
 		}
 	}
