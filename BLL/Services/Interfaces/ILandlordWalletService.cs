@@ -8,6 +8,8 @@ public interface ILandlordWalletService
 
     Task CreditPendingAsync(Guid landlordId, decimal amount);
 
+    Task DebitAvailableAsync(Guid landlordId, decimal amount);
+
     Task ReserveForPayoutAsync(Guid landlordId, long amount);
 
     Task FinalizePayoutSuccessAsync(Guid landlordId, long amount);

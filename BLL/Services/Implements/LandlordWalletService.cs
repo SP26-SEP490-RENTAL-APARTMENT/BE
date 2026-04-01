@@ -50,6 +50,25 @@ public class LandlordWalletService : ILandlordWalletService
         await _walletRepository.SaveChangesAsync();
     }
 
+    public async Task DebitAvailableAsync(Guid landlordId, decimal amount)
+    {
+        if (amount <= 0)
+        {
+            throw new ArgumentException("Amount must be greater than zero.");
+        }
+
+        var wallet = await GetOrCreateAsync(landlordId);
+        if (wallet.AvailableBalance < amount)
+        {
+            throw new InvalidOperationException("Insufficient available balance.");
+        }
+
+        wallet.AvailableBalance -= amount;
+        wallet.UpdatedAt = DateTime.UtcNow;
+        _walletRepository.Update(wallet);
+        await _walletRepository.SaveChangesAsync();
+    }
+
     public async Task ReserveForPayoutAsync(Guid landlordId, long amount)
     {
         if (amount <= 0)

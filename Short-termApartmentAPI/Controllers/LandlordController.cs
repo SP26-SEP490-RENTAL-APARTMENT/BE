@@ -239,6 +239,47 @@ public sealed class LandlordController : ControllerBase
         }
     }
 
+    [HttpPost("subscription/wallet-pay")]
+    public async Task<IActionResult> PaySubscriptionByWallet(
+        [FromBody] StartLandlordSubscriptionRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        try
+        {
+            var result = await _landlordSubscriptionService.PaySubscriptionByWalletAsync(
+                landlord.LandlordId,
+                dto,
+                cancellationToken);
+
+            return Ok(new ApiResponse<WalletSubscriptionPaymentResponseDto>(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
     [HttpGet("payout-profile")]
     public async Task<IActionResult> GetPayoutProfile()
     {

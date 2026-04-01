@@ -16,6 +16,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
     private readonly IMomoService _momoService;
     private readonly IPaymentService _paymentService;
     private readonly IMomoTransactionService _momoTransactionService;
+    private readonly ILandlordWalletService _landlordWalletService;
     private readonly MomoOptions _momoOptions;
 
     public LandlordSubscriptionService(
@@ -25,6 +26,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         IMomoService momoService,
         IPaymentService paymentService,
         IMomoTransactionService momoTransactionService,
+        ILandlordWalletService landlordWalletService,
         IOptions<MomoOptions> momoOptions)
         : base(repository)
     {
@@ -34,6 +36,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         _momoService = momoService;
         _paymentService = paymentService;
         _momoTransactionService = momoTransactionService;
+        _landlordWalletService = landlordWalletService;
         _momoOptions = momoOptions.Value;
     }
 
@@ -168,5 +171,137 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         await _momoTransactionService.CreateAsync(requestLog);
 
         return momoResult;
+    }
+
+    public async Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(
+        Guid landlordId,
+        StartLandlordSubscriptionRequestDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var landlord = await _landlordRepository.GetByIdAsync(landlordId)
+            ?? throw new InvalidOperationException("Landlord profile not found.");
+
+        var (plan, renewalType, amount) = await ResolvePlanAndAmountAsync(dto);
+
+        var subscription = new LandlordSubscription
+        {
+            SubscriptionId = Guid.NewGuid(),
+            LandlordId = landlord.LandlordId,
+            PlanId = plan.PlanId,
+            Status = Status.pending_payment.ToString(),
+            StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            EndDate = null,
+            RenewalType = renewalType,
+            AutoRenew = dto.AutoRenew,
+            PaymentMethod = "landlord_wallet",
+            LastPaymentId = null,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        subscription = await CreateAsync(subscription);
+
+        try
+        {
+            await _landlordWalletService.DebitAvailableAsync(landlordId, amount);
+
+            var paymentPurpose = renewalType == RenewalType.annual.ToString()
+                ? PaymentPurposes.subscription_annual.ToString()
+                : PaymentPurposes.subscription_monthly.ToString();
+
+            var payment = new Payment
+            {
+                Amount = amount,
+                PaymentType = PaymentTypes.deposit.ToString(),
+                PaymentPurpose = paymentPurpose,
+                RelatedEntityId = subscription.SubscriptionId,
+                RelatedEntityType = PaymentRelatedEntityType.host_subscription.ToString(),
+                Method = "landlord_wallet",
+                Status = PaymentStatus.success.ToString(),
+                PaidAt = DateTime.UtcNow,
+                TransactionId = $"wallet_sub_{subscription.SubscriptionId:N}"
+            };
+
+            payment = await _paymentService.CreateAsync(payment);
+
+            ApplyActivatedSubscriptionState(subscription, payment.PaymentId);
+            await UpdateAsync(subscription);
+
+            landlord.CurrentPlanId = subscription.PlanId;
+            landlord.SubscriptionStatus = SubscriptionStatus.active.ToString();
+            landlord.SubscriptionExpiresAt = subscription.EndDate;
+            _landlordRepository.Update(landlord);
+            await _landlordRepository.SaveChangesAsync();
+
+            var wallet = await _landlordWalletService.GetOrCreateAsync(landlordId);
+            return new WalletSubscriptionPaymentResponseDto
+            {
+                SubscriptionId = subscription.SubscriptionId,
+                PaymentId = payment.PaymentId,
+                Amount = amount,
+                RenewalType = renewalType,
+                StartDate = subscription.StartDate,
+                EndDate = subscription.EndDate,
+                SubscriptionStatus = subscription.Status,
+                RemainingWalletBalance = wallet.AvailableBalance
+            };
+        }
+        catch
+        {
+            subscription.Status = Status.cancelled.ToString();
+            subscription.UpdatedAt = DateTime.UtcNow;
+            await UpdateAsync(subscription);
+            throw;
+        }
+    }
+
+    private async Task<(SubscriptionPlan plan, string renewalType, decimal amount)> ResolvePlanAndAmountAsync(StartLandlordSubscriptionRequestDto dto)
+    {
+        var plan = await _subscriptionPlanService.GetByIdAsync(dto.PlanId);
+        if (plan == null || plan.IsActive == false)
+        {
+            throw new InvalidOperationException("Subscription plan not found or inactive.");
+        }
+
+        var renewalType = (dto.RenewalType ?? RenewalType.monthly.ToString())
+            .Trim()
+            .ToLowerInvariant();
+
+        if (renewalType != RenewalType.monthly.ToString() && renewalType != RenewalType.annual.ToString())
+        {
+            throw new ArgumentException("RenewalType must be 'monthly' or 'annual'.");
+        }
+
+        decimal amount;
+        if (renewalType == RenewalType.annual.ToString())
+        {
+            if (!plan.PriceAnnual.HasValue || plan.PriceAnnual.Value <= 0)
+            {
+                throw new InvalidOperationException("Annual price is not configured for this plan.");
+            }
+            amount = plan.PriceAnnual.Value;
+        }
+        else
+        {
+            if (plan.PriceMonthly <= 0)
+            {
+                throw new InvalidOperationException("Monthly price is not configured for this plan.");
+            }
+            amount = plan.PriceMonthly;
+        }
+
+        return (plan, renewalType, amount);
+    }
+
+    private static void ApplyActivatedSubscriptionState(LandlordSubscription subscription, Guid paymentId)
+    {
+        var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var months = string.Equals(subscription.RenewalType, RenewalType.annual.ToString(), StringComparison.OrdinalIgnoreCase) ? 12 : 1;
+
+        subscription.Status = Status.active.ToString();
+        subscription.StartDate = nowDate;
+        subscription.EndDate = nowDate.AddMonths(months);
+        subscription.LastPaymentId = paymentId;
+        subscription.UpdatedAt = DateTime.UtcNow;
     }
 }

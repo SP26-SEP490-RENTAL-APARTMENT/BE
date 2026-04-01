@@ -35,4 +35,16 @@ namespace Common.DTOs
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
     }
+
+    public class WalletSubscriptionPaymentResponseDto
+    {
+        public Guid SubscriptionId { get; set; }
+        public Guid PaymentId { get; set; }
+        public decimal Amount { get; set; }
+        public string? RenewalType { get; set; }
+        public DateOnly StartDate { get; set; }
+        public DateOnly? EndDate { get; set; }
+        public string? SubscriptionStatus { get; set; }
+        public decimal RemainingWalletBalance { get; set; }
+    }
 }

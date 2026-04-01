@@ -20,4 +20,9 @@ public interface ILandlordSubscriptionService : IBaseService<LandlordSubscriptio
 		Guid landlordId,
 		StartLandlordSubscriptionRequestDto dto,
 		CancellationToken cancellationToken = default);
+
+	Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(
+		Guid landlordId,
+		StartLandlordSubscriptionRequestDto dto,
+		CancellationToken cancellationToken = default);
 }
