@@ -4,10 +4,10 @@ using DAL.Repository.Interfaces;
 
 namespace BLL.Services.Implements;
 
-public sealed class RoomService(IRepository<Room> repository)
+public sealed class RoomService(IRoomRepository repository)
     : BaseService<Room>(repository), IRoomService
 {
-    private readonly IRepository<Room> _roomRepository = repository;
+    private readonly IRoomRepository _roomRepository = repository;
 
     public override async Task<(IEnumerable<Room> Items, int TotalCount)> GetAllAsync(
         int page,
@@ -32,15 +32,69 @@ public sealed class RoomService(IRepository<Room> repository)
         return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
     }
 
-    public async Task<Room?> GetByApartmentIdAsync(Guid apartmentId)
+    public async Task<(IEnumerable<Room> Items, int TotalCount)> GetByApartmentIdAsync(
+        Guid apartmentId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null
+    )
     {
-        var rooms = await _roomRepository.FindAsync(r => r.ApartmentId == apartmentId);
-        return rooms.FirstOrDefault();
+        var allowedColumns = new[]
+        {
+            "RoomId",
+            "ApartmentId",
+            "Title",
+            "Description",
+            "RoomType",
+            "BedType",
+            "CreatedAt"
+        };
+
+        return await _roomRepository.GetByApartmentIdAsync(
+            apartmentId,
+            page,
+            pageSize,
+            sortBy,
+            sortOrder,
+            search,
+            filters,
+            allowedColumns
+        );
     }
 
-    public async Task<IEnumerable<Room>> GetByLandlordIdAsync(Guid landlordId)
+    public async Task<(IEnumerable<Room> Items, int TotalCount)> GetByLandlordIdAsync(
+        Guid landlordId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null
+    )
     {
-        var rooms = await _roomRepository.FindAsync(r => r.Apartment.LandlordId == landlordId);
-        return rooms;
+        var allowedColumns = new[]
+        {
+            "RoomId",
+            "ApartmentId",
+            "Title",
+            "Description",
+            "RoomType",
+            "BedType",
+            "CreatedAt"
+        };
+
+        return await _roomRepository.GetByLandlordIdAsync(
+            landlordId,
+            page,
+            pageSize,
+            sortBy,
+            sortOrder,
+            search,
+            filters,
+            allowedColumns
+        );
     }
 }

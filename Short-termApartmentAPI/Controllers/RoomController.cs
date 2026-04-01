@@ -34,25 +34,40 @@ public sealed class RoomController : ControllerBase
 
     [HttpGet("by-apartment/{apartmentId:guid}")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetByApartmentId(Guid apartmentId)
+    public async Task<IActionResult> GetByApartmentId(
+        Guid apartmentId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var room = await _roomService.GetByApartmentIdAsync(apartmentId);
-        if (room == null)
+        var (items, total) = await _roomService.GetByApartmentIdAsync(apartmentId, page, pageSize, sortBy, sortOrder, search, filters);
+        if (!items.Any())
             return NotFound(new ApiResponse<string>("Room not found for the specified apartment."));
 
-        return Ok(new ApiResponse<RoomResponseDto>(_mapper.Map<RoomResponseDto>(room)));
+        var dtos = _mapper.Map<IEnumerable<RoomResponseDto>>(items);
+        return Ok(new { Items = dtos, TotalCount = total });
     }
 
     [HttpGet("by-landlord/{landlordId:guid}")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetByLandlordId(Guid landlordId)
+    public async Task<IActionResult> GetByLandlordId(
+        Guid landlordId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var rooms = await _roomService.GetByLandlordIdAsync(landlordId);
-        if (!rooms.Any())
+        var (items, total) = await _roomService.GetByLandlordIdAsync(landlordId, page, pageSize, sortBy, sortOrder, search, filters);
+        if (!items.Any())
             return NotFound(new ApiResponse<string>("No rooms found for the specified landlord."));
 
-        var roomDtos = _mapper.Map<IEnumerable<RoomResponseDto>>(rooms);
-        return Ok(new ApiResponse<IEnumerable<RoomResponseDto>>(roomDtos));
+        var dtos = _mapper.Map<IEnumerable<RoomResponseDto>>(items);
+        return Ok(new { Items = dtos, TotalCount = total });
     }
 
     [HttpGet]
