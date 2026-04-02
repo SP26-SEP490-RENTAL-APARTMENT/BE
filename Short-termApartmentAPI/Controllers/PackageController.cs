@@ -61,6 +61,27 @@ namespace Short_termApartmentAPI.Controllers
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }
 
+        [HttpGet("by-apartment/{apartmentId:guid}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetByApartmentId(
+            Guid apartmentId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+        {
+            var (items, totalCount) = await _packageService.GetByApartmentIdAsync(apartmentId, page, pageSize, sortBy, sortOrder, search, filters);
+            if (!items.Any())
+            {
+                return NotFound(new ApiResponse<string>("No packages found for the specified apartment."));
+            }
+
+            var mappedItems = _mapper.Map<IEnumerable<PackageResponseDto>>(items);
+            return Ok(new { Items = mappedItems, TotalCount = totalCount });
+        }
+
         [HttpPost]
         [Authorize(Roles = "admin,landlord")]
         public async Task<IActionResult> Create([FromBody] PackageRequestDto packageDto)
