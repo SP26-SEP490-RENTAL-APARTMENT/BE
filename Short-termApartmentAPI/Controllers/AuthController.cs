@@ -1,6 +1,8 @@
 ﻿using BLL.Services.Interfaces;
 using Common.DTOs;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace Short_termApartmentAPI.Controllers
@@ -86,6 +88,41 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             return Ok(new { message = "Successfully logged out." });
+        }
+
+        [Authorize]
+        [HttpPost("roles")]
+        public async Task<IActionResult> AddRole([FromBody] AddUserRoleRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Invalid user token." });
+            }
+
+            try
+            {
+                var response = await _authService.AddRoleAsync(userId, request);
+                if (response == null)
+                {
+                    return NotFound(new { message = "User not found." });
+                }
+
+                return Ok(response);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new { message = ex.Message });
+            }
         }
     }
 }
