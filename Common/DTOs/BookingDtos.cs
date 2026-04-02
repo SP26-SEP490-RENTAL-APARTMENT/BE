@@ -29,18 +29,7 @@ public class CreateBookingRequestDto : IValidatableObject
     [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
     public int? NoOfPets { get; set; }
 
-    [Required]
-    [Range(0, double.MaxValue, ErrorMessage = "Total price must be a non-negative value.")]
-    public decimal TotalPrice { get; set; }
-
     public Guid? PackageId { get; set; }
-
-    [Range(0, double.MaxValue, ErrorMessage = "Package price must be a non-negative value.")]
-    public decimal? PackagePrice { get; set; }
-
-    [Required]
-    [Range(0, double.MaxValue, ErrorMessage = "Deposit amount must be a non-negative value.")]
-    public decimal DepositAmount { get; set; }
 
     public bool? DepositPaid { get; set; }
 
