@@ -77,6 +77,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<TenantWishlist> TenantWishlists { get; set; }
 
+    public virtual DbSet<WishlistCollection> WishlistCollections { get; set; }
+
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<UserIdentityDocument> UserIdentityDocuments { get; set; }
@@ -1369,7 +1371,9 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => e.TenantId, "idx_tenant_id");
 
-            entity.HasIndex(e => new { e.TenantId, e.ApartmentId }, "uk_tenant_apartment").IsUnique();
+            entity.HasIndex(e => e.CollectionId, "idx_collection_id");
+
+            entity.HasIndex(e => new { e.CollectionId, e.ApartmentId }, "uk_collection_apartment").IsUnique();
 
             entity.Property(e => e.WishlistId)
                 .ValueGeneratedOnAdd()
@@ -1380,6 +1384,9 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.ApartmentId)
                 .HasColumnName("apartment_id");
+
+            entity.Property(e => e.CollectionId)
+                .HasColumnName("collection_id");
 
             entity.Property(e => e.IsFavorite)
                 .HasDefaultValue(false)
@@ -1401,6 +1408,54 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Apartment).WithMany(p => p.TenantWishlists)
                 .HasForeignKey(d => d.ApartmentId)
                 .HasConstraintName("tenant_wishlists_ibfk_2");
+
+            entity.HasOne(d => d.Collection).WithMany(p => p.WishlistItems)
+                .HasForeignKey(d => d.CollectionId)
+                .HasConstraintName("tenant_wishlists_ibfk_3");
+        });
+
+        modelBuilder.Entity<WishlistCollection>(entity =>
+        {
+            entity.HasKey(e => e.CollectionId).HasName("PRIMARY");
+
+            entity.ToTable("wishlist_collections");
+
+            entity.HasIndex(e => e.TenantId, "idx_wishlist_collections_tenant_id");
+
+            entity.HasIndex(e => new { e.TenantId, e.Name }, "uk_wishlist_collections_tenant_name").IsUnique();
+
+            entity.Property(e => e.CollectionId)
+                .ValueGeneratedOnAdd()
+                .HasColumnName("collection_id");
+
+            entity.Property(e => e.TenantId)
+                .HasColumnName("tenant_id");
+
+            entity.Property(e => e.Name)
+                .HasMaxLength(100)
+                .HasColumnName("name");
+
+            entity.Property(e => e.Description)
+                .HasMaxLength(500)
+                .HasColumnName("description");
+
+            entity.Property(e => e.IsDefault)
+                .HasDefaultValue(false)
+                .HasColumnName("is_default");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Tenant).WithMany(p => p.WishlistCollections)
+                .HasForeignKey(d => d.TenantId)
+                .HasConstraintName("wishlist_collections_ibfk_1");
         });
 
         modelBuilder.Entity<User>(entity =>
