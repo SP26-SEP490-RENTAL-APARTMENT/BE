@@ -33,9 +33,6 @@ public class CreateBookingRequestDto : IValidatableObject
 
     public bool? DepositPaid { get; set; }
 
-    [MaxLength(50)]
-    public string? Status { get; set; }
-
     [MaxLength(20)]
     public string? PaymentProvider { get; set; }
 
