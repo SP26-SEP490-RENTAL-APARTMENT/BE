@@ -180,7 +180,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             CheckOutDate = requestDto.CheckOutDate
         });
 
-        var depositAmount = requestDto.DepositAmount > 0 ? requestDto.DepositAmount : quote.SuggestedDeposit;
+        var depositAmount = quote.SuggestedDeposit;
         if (depositAmount > quote.TotalPrice)
             throw new ArgumentException("Deposit cannot exceed total booking price.");
 
@@ -200,7 +200,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             PackagePrice = quote.PackageAmount,
             DepositAmount = depositAmount,
             DepositPaid = false,
-            BalanceDueDate = requestDto.BalanceDueDate,
+            BalanceDueDate = requestDto.CheckInDate.AddDays(-1),
             Status = "pending",
             CreatedAt = DateTime.UtcNow
         };
