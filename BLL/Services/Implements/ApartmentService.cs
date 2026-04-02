@@ -64,6 +64,31 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
     }
 
+    public async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllPublicAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null)
+    {
+        var effectiveAllowedColumns = new[]
+        {
+            "ApartmentId",
+            "LandlordId",
+            "Title",
+            "Description",
+            "Address",
+            "District",
+            "City",
+            "Status",
+            "BasePricePerNight",
+            "CreatedAt"
+        };
+
+        return await _apartmentRepository.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+    }
+
     public async Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)
     {
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);

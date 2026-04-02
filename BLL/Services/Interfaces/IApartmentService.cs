@@ -5,6 +5,14 @@ namespace BLL.Services.Interfaces;
 
 public interface IApartmentService : IBaseService<Apartment>
 {
+    Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllPublicAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null);
+
     Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId);
     Task<ApartmentResponseDto?> GetApartmentWithDetailsAsync(Guid id);
     Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds);

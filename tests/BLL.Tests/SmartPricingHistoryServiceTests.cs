@@ -231,6 +231,20 @@ internal sealed class InMemoryApartmentRepository : IApartmentRepository
         return Task.FromResult((_apartments.AsEnumerable(), _apartments.Count));
     }
 
+    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllPublicAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        IEnumerable<Apartment> result = _apartments.Where(a =>
+            a.Status == null || !string.Equals(a.Status, "draft", StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult((result, result.Count()));
+    }
+
     public Task<Apartment?> GetByIdAsync(Guid id)
     {
         Apartment? result = _apartments.FirstOrDefault(a => a.ApartmentId == id);
