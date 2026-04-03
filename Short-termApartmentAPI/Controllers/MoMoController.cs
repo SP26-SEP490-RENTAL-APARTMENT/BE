@@ -1,5 +1,4 @@
 ﻿using BLL.Services.Interfaces;
-using Common.DTOs;
 using Common.Enums;
 using DAL.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -41,70 +40,6 @@ namespace Short_termApartmentAPI.Controllers
             _landlordService = landlordService;
             _landlordPayoutService = landlordPayoutService;
             _options = options.Value;
-        }
-
-        [HttpPost("create-wallet-payment")]
-        public async Task<ActionResult<object>> CreateWalletPayment([FromBody] MomoCreatePaymentRequest request, CancellationToken cancellationToken)
-        {
-            if (request.Amount <= 0)
-            {
-                return BadRequest("Amount must be greater than zero.");
-            }
-
-            var result = await _momoService.CreateWalletPaymentAsync(request, cancellationToken);
-
-            // Only persist payment and request log if MoMo accepted the create request
-            if (result.ResultCode == 0)
-            {
-                var paymentType = (request.PaymentType ?? "deposit").Trim().ToLowerInvariant();
-                if (paymentType != "deposit" && paymentType != "balance" && paymentType != "addon" && paymentType != "refund")
-                {
-                    paymentType = "deposit";
-                }
-
-                var paymentPurpose = request.PaymentPurpose;
-                if (string.IsNullOrWhiteSpace(paymentPurpose))
-                {
-                    paymentPurpose = paymentType switch
-                    {
-                        "balance" => "booking_balance",
-                        "addon" => "booking_addon_or_package",
-                        _ => "booking_deposit"
-                    };
-                }
-
-                var payment = new Payment
-                {
-                    Amount = Convert.ToDecimal(request.Amount),
-                    PaymentType = paymentType,
-                    PaymentPurpose = paymentPurpose,
-                    RelatedEntityId = (Guid.TryParse(request.ExtraData, out var reId) ? reId : (Guid?)null),
-                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
-                    Method = "momo_wallet",
-                    Status = "pending"
-                };
-
-                Console.WriteLine($"[MoMo] Saving payment with type='{payment.PaymentType}' (DB default purpose expected)");
-
-                await _paymentService.CreateAsync(payment);
-
-                var requestLog = new MomoTransaction
-                {
-                    RequestId = result.RequestId,
-                    PartnerCode = _options.PartnerCode,
-                    Amount = request.Amount,
-                    Type = "create_wallet_payment",
-                    RequestBody = result.RequestRaw ?? string.Empty,
-                    ResponseBody = result.ResponseRaw ?? string.Empty,
-                    Status = "pending",
-                    ResultCode = result.ResultCode,
-                    Message = result.Message,
-                    PaymentId = payment.PaymentId
-                };
-                await _momoTransactionService.CreateAsync(requestLog);
-            }
-
-            return Ok(result);
         }
 
         // IPN endpoint that MoMo will POST to (server-to-server)

@@ -122,6 +122,23 @@ public class BookingResponseDto
     public DateTime? CreatedAt { get; set; }
 }
 
+public class BookingPaymentLinkDto
+{
+    public string Provider { get; set; } = string.Empty;
+    public string? Url { get; set; }
+    public string? Deeplink { get; set; }
+    public string? QrCodeUrl { get; set; }
+    public string? TransactionId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public Guid? PaymentId { get; set; }
+}
+
+public class CreateBookingResponseDto
+{
+    public BookingResponseDto Booking { get; set; } = null!;
+    public BookingPaymentLinkDto? PaymentLink { get; set; }
+}
+
 public class BookingQuoteRequestDto : IValidatableObject
 {
     [Required]

@@ -1,6 +1,4 @@
-using AutoMapper;
 using BLL.Services.Interfaces;
-using Common.DTOs;
 using Common.Enums;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -16,90 +14,18 @@ namespace Short_termApartmentAPI.Controllers;
 [Authorize]
 public sealed class StripeController : ControllerBase
 {
-    private readonly IStripeService _stripeService;
     private readonly IPaymentService _paymentService;
     private readonly IBookingService _bookingService;
-    private readonly IMapper _mapper;
     private readonly Common.Settings.StripeSettings _settings;
 
     public StripeController(
-        IStripeService stripeService,
         IPaymentService paymentService,
         IBookingService bookingService,
-        IMapper mapper,
         IOptions<Common.Settings.StripeSettings> stripeOptions)
     {
-        _stripeService = stripeService;
         _paymentService = paymentService;
         _bookingService = bookingService;
-        _mapper = mapper;
         _settings = stripeOptions.Value;
-    }
-
-    [HttpPost("checkout")]
-    [Authorize(Roles = "tenant")]
-    public async Task<IActionResult> CreateCheckout([FromBody] StripeCheckoutRequestDto dto)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        if (dto.RelatedEntityId == null)
-        {
-            return BadRequest(new ApiResponse<string>("RelatedEntityId (booking id) is required."));
-        }
-
-        var booking = await _bookingService.GetByIdAsync(dto.RelatedEntityId.Value);
-        if (booking == null)
-        {
-            return NotFound(new ApiResponse<string>("Booking not found."));
-        }
-
-        // For now, rely on client-provided amount similar to MoMo flow.
-        if (dto.Amount <= 0)
-        {
-            return BadRequest(new ApiResponse<string>("Amount must be greater than zero."));
-        }
-
-        var paymentType = (dto.PaymentType ?? PaymentTypes.deposit.ToString()).Trim().ToLowerInvariant();
-        if (paymentType != PaymentTypes.deposit.ToString() &&
-            paymentType != PaymentTypes.balance.ToString() &&
-            paymentType != PaymentTypes.addon.ToString() &&
-            paymentType != PaymentTypes.refund.ToString())
-        {
-            paymentType = PaymentTypes.deposit.ToString();
-        }
-
-        var paymentPurpose = dto.PaymentPurpose;
-        if (string.IsNullOrWhiteSpace(paymentPurpose))
-        {
-            paymentPurpose = paymentType switch
-            {
-                "balance" => PaymentPurposes.booking_balance.ToString(),
-                "addon" => PaymentPurposes.booking_addon_or_package.ToString(),
-                "refund" => PaymentPurposes.refund_booking.ToString(),
-                _ => PaymentPurposes.booking_deposit.ToString()
-            };
-        }
-
-        var stripeResponse = await _stripeService.CreateCheckoutSessionAsync(dto);
-
-        var payment = new Payment
-        {
-            Amount = Convert.ToDecimal(dto.Amount),
-            PaymentType = paymentType,
-            PaymentPurpose = paymentPurpose,
-            RelatedEntityId = booking.BookingId,
-            RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
-            Method = "stripe",
-            Status = PaymentStatus.pending.ToString(),
-            TransactionId = stripeResponse.SessionId
-        };
-
-        await _paymentService.CreateAsync(payment);
-
-        return Ok(new ApiResponse<StripeCheckoutResponseDto>(stripeResponse));
     }
 
     [HttpPost("webhook")]
