@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Common.DTOs
 {
@@ -85,21 +86,17 @@ namespace Common.DTOs
         public bool? ApprovedForListing { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public Guid? ApprovedBy { get; set; }
+        public List<InspectionPhotoResponseDto> Photos { get; set; } = new();
     }
 
-    public class InspectionPhotoCreateDto
+    public class InspectionPhotoResponseDto
     {
-        [Required]
-        [MaxLength(500)]
+        public Guid PhotoId { get; set; }
         public string FileUrl { get; set; } = null!;
-
-        [MaxLength(255)]
         public string? FileKey { get; set; }
-
-        [MaxLength(200)]
         public string? Description { get; set; }
-
         public bool? IsIssue { get; set; }
+        public DateTime? UploadedAt { get; set; }
     }
 
     public class CompletePropertyInspectionDto
@@ -110,7 +107,12 @@ namespace Common.DTOs
 
         public string? Recommendations { get; set; }
 
-        public List<InspectionPhotoCreateDto> Photos { get; set; } = new();
+        [MinLength(1, ErrorMessage = "At least one inspection photo is required.")]
+        public List<IFormFile> Photos { get; set; } = new();
+
+        public List<string>? PhotoDescriptions { get; set; }
+
+        public List<bool?>? PhotoIsIssues { get; set; }
     }
 
     public class CancelPropertyInspectionDto

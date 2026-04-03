@@ -7,10 +7,12 @@ namespace BLL.Services.Implements;
 
 public sealed class PropertyInspectionService(
     IRepository<PropertyInspection> repository,
-    IRepository<InspectionPhoto> inspectionPhotoRepository)
+    IRepository<InspectionPhoto> inspectionPhotoRepository,
+    IImageService imageService)
     : BaseService<PropertyInspection>(repository), IPropertyInspectionService
 {
     private readonly IRepository<InspectionPhoto> _inspectionPhotoRepository = inspectionPhotoRepository;
+    private readonly IImageService _imageService = imageService;
 
     public override async Task<(IEnumerable<PropertyInspection> Items, int TotalCount)> GetAllAsync(
         int page,
@@ -35,7 +37,37 @@ public sealed class PropertyInspectionService(
             "ApprovedBy"
         };
 
-        return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+        var (items, totalCount) = await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+        var inspectionList = items.ToList();
+
+        if (!inspectionList.Any())
+        {
+            return (inspectionList, totalCount);
+        }
+
+        var inspectionIds = inspectionList.Select(i => i.InspectionId).ToList();
+        var allPhotos = await _inspectionPhotoRepository.FindAsync(p => inspectionIds.Contains(p.InspectionId));
+        var photoLookup = allPhotos.ToLookup(p => p.InspectionId);
+
+        foreach (var inspection in inspectionList)
+        {
+            inspection.InspectionPhotos = photoLookup[inspection.InspectionId].ToList();
+        }
+
+        return (inspectionList, totalCount);
+    }
+
+    public override async Task<PropertyInspection?> GetByIdAsync(Guid id)
+    {
+        var inspection = await base.GetByIdAsync(id);
+        if (inspection == null)
+        {
+            return null;
+        }
+
+        var photos = await _inspectionPhotoRepository.FindAsync(p => p.InspectionId == id);
+        inspection.InspectionPhotos = photos.ToList();
+        return inspection;
     }
 
     public async Task<PropertyInspection> StartInspectionAsync(Guid inspectionId, Guid staffId)
@@ -82,18 +114,38 @@ public sealed class PropertyInspectionService(
 
         _repository.Update(inspection);
 
-        foreach (var photo in dto.Photos)
+        for (var index = 0; index < dto.Photos.Count; index++)
         {
+            var photo = dto.Photos[index];
+            if (photo == null || photo.Length == 0)
+            {
+                throw new ArgumentException("Each inspection photo must be a non-empty file.");
+            }
+
+            var fileUrl = await _imageService.UploadImageAsync(photo);
+            var description = dto.PhotoDescriptions != null && index < dto.PhotoDescriptions.Count
+                ? dto.PhotoDescriptions[index]
+                : null;
+
+            bool? isIssue = null;
+            if (dto.PhotoIsIssues != null && index < dto.PhotoIsIssues.Count)
+            {
+                isIssue = dto.PhotoIsIssues[index];
+            }
+
             var inspectionPhoto = new InspectionPhoto
             {
                 PhotoId = Guid.NewGuid(),
                 InspectionId = inspection.InspectionId,
-                FileUrl = photo.FileUrl,
-                FileKey = photo.FileKey,
-                Description = photo.Description,
-                IsIssue = photo.IsIssue,
+                FileUrl = fileUrl,
+                FileKey = null,
+                Description = description,
+                IsIssue = isIssue,
                 UploadedAt = DateTime.UtcNow
             };
+
+            // Keep the in-memory aggregate in sync so response mapping includes uploaded photos.
+            inspection.InspectionPhotos.Add(inspectionPhoto);
             await _inspectionPhotoRepository.AddAsync(inspectionPhoto);
         }
 

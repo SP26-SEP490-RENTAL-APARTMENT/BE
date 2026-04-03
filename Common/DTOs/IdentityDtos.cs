@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Common.DTOs
 {
@@ -15,16 +17,8 @@ namespace Common.DTOs
         public string? Side { get; set; }
 
         [Required]
-        [MaxLength(500)]
-        public string FileUrl { get; set; } = null!;
-
-        [MaxLength(255)]
-        public string? FileKey { get; set; }
-
-        [MaxLength(100)]
-        public string? MimeType { get; set; }
-
-        public long? FileSize { get; set; }
+        [MinLength(1, ErrorMessage = "At least one file is required.")]
+        public List<IFormFile> Files { get; set; } = new();
 
         public string? Notes { get; set; }
     }
@@ -43,6 +37,7 @@ namespace Common.DTOs
     public class IdentityDocumentDto
     {
         public Guid DocumentId { get; set; }
+        public Guid UserId { get; set; }
         public string DocumentType { get; set; } = null!;
         public string? Side { get; set; }
         public string FileUrl { get; set; } = null!;

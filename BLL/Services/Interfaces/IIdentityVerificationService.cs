@@ -17,9 +17,9 @@ namespace BLL.Services.Interfaces
         /// Adds a new identity document for the specified user in pending status.
         /// </summary>
         /// <param name="userId">The owner of the document.</param>
-        /// <param name="dto">Document metadata.</param>
-        /// <returns>The created document identifier.</returns>
-        Task<Guid> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto);
+        /// <param name="dto">Document upload data.</param>
+        /// <returns>The created document identifiers.</returns>
+        Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto);
 
         /// <summary>
         /// Marks a specific identity document as approved (verified) or rejected.
@@ -28,8 +28,22 @@ namespace BLL.Services.Interfaces
         Task ReviewIdentityDocumentAsync(ReviewIdentityDocumentDto dto);
 
         /// <summary>
-        /// Returns all identity documents for the given user.
+        /// Returns paged identity documents for the given user.
         /// </summary>
-        Task<IdentityDocumentDto[]> GetUserDocumentsAsync(Guid userId);
+        Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(
+            Guid userId,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null);
+
+        /// <summary>
+        /// Returns paged identity documents for all users. Staff/admin only at the controller level.
+        /// </summary>
+        Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null);
     }
 }

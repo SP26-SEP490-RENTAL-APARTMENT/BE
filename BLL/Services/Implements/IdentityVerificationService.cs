@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using BLL.Services.Interfaces;
@@ -10,6 +11,19 @@ namespace BLL.Services.Implements
 {
     public class IdentityVerificationService : IIdentityVerificationService
     {
+        private static readonly string[] DocumentAllowedColumns =
+        {
+            "DocumentId",
+            "UserId",
+            "DocumentType",
+            "Side",
+            "MimeType",
+            "FileSize",
+            "UploadedAt",
+            "VerifiedAt",
+            "VerificationStatus"
+        };
+
         private static readonly string[] VietnameseAllowedDocumentTypes =
         {
             "national_id_card", "passport", "drivers_license", "other_government_id"
@@ -23,26 +37,70 @@ namespace BLL.Services.Implements
         private readonly IRepository<User> _userRepository;
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<UserIdentityDocument> _userIdentityDocumentRepository;
+        private readonly IImageService _imageService;
 
         public IdentityVerificationService(
             IRepository<User> userRepository,
             IRepository<Tenant> tenantRepository,
-            IRepository<UserIdentityDocument> userIdentityDocumentRepository)
+            IRepository<UserIdentityDocument> userIdentityDocumentRepository,
+            IImageService imageService)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _userIdentityDocumentRepository = userIdentityDocumentRepository;
+            _imageService = imageService;
         }
 
-        public async Task<IdentityDocumentDto[]> GetUserDocumentsAsync(Guid userId)
+        public async Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(
+            Guid userId,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null)
         {
-            var documents = await _userIdentityDocumentRepository.FindAsync(d => d.UserId == userId);
+            var filters = new Dictionary<string, string>
+            {
+                ["UserId"] = userId.ToString()
+            };
 
+            var (documents, totalCount) = await _userIdentityDocumentRepository.GetAllAsync(
+                page,
+                pageSize,
+                sortBy,
+                sortOrder,
+                null,
+                filters,
+                DocumentAllowedColumns);
+
+            return (MapDocumentDtos(documents), totalCount);
+        }
+
+        public async Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null)
+        {
+            var (documents, totalCount) = await _userIdentityDocumentRepository.GetAllAsync(
+                page,
+                pageSize,
+                sortBy,
+                sortOrder,
+                null,
+                null,
+                DocumentAllowedColumns);
+
+            return (MapDocumentDtos(documents), totalCount);
+        }
+
+        private static IEnumerable<IdentityDocumentDto> MapDocumentDtos(IEnumerable<UserIdentityDocument> documents)
+        {
             return documents
                 .Select(d => new IdentityDocumentDto
                 {
                     DocumentId = d.DocumentId,
                     DocumentType = d.DocumentType,
+                    UserId = d.UserId,
                     Side = d.Side,
                     FileUrl = d.FileUrl,
                     MimeType = d.MimeType,
@@ -52,11 +110,10 @@ namespace BLL.Services.Implements
                     VerifiedAt = d.VerifiedAt,
                     RejectionReason = d.RejectionReason,
                     Notes = d.Notes
-                })
-                .ToArray();
+                });
         }
 
-        public async Task<Guid> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
+        public async Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
         {
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null)
@@ -64,24 +121,43 @@ namespace BLL.Services.Implements
                 throw new ArgumentException("User not found.");
             }
 
-            var document = new UserIdentityDocument
+            if (dto.Files == null || dto.Files.Count == 0)
             {
-                DocumentId = Guid.NewGuid(),
-                UserId = userId,
-                DocumentType = dto.DocumentType.Trim().ToLowerInvariant(),
-                Side = string.IsNullOrWhiteSpace(dto.Side) ? null : dto.Side.Trim().ToLowerInvariant(),
-                FileUrl = dto.FileUrl,
-                FileKey = dto.FileKey,
-                MimeType = dto.MimeType,
-                FileSize = dto.FileSize,
-                Notes = dto.Notes,
-                UploadedAt = DateTime.UtcNow
-            };
+                throw new ArgumentException("At least one identity document file is required.");
+            }
 
-            await _userIdentityDocumentRepository.AddAsync(document);
+            var createdDocumentIds = new List<Guid>();
+
+            foreach (var file in dto.Files)
+            {
+                if (file == null || file.Length == 0)
+                {
+                    throw new ArgumentException("Each identity document file must be non-empty.");
+                }
+
+                var fileUrl = await _imageService.UploadImageAsync(file);
+
+                var document = new UserIdentityDocument
+                {
+                    DocumentId = Guid.NewGuid(),
+                    UserId = userId,
+                    DocumentType = dto.DocumentType.Trim().ToLowerInvariant(),
+                    Side = string.IsNullOrWhiteSpace(dto.Side) ? null : dto.Side.Trim().ToLowerInvariant(),
+                    FileUrl = fileUrl,
+                    FileKey = null,
+                    MimeType = file.ContentType,
+                    FileSize = file.Length,
+                    Notes = dto.Notes,
+                    UploadedAt = DateTime.UtcNow
+                };
+
+                await _userIdentityDocumentRepository.AddAsync(document);
+                createdDocumentIds.Add(document.DocumentId);
+            }
+
             await _userIdentityDocumentRepository.SaveChangesAsync();
 
-            return document.DocumentId;
+            return createdDocumentIds.ToArray();
         }
 
         public async Task ReviewIdentityDocumentAsync(ReviewIdentityDocumentDto dto)

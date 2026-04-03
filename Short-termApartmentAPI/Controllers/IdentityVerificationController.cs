@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using BLL.Services.Interfaces;
@@ -13,6 +14,10 @@ namespace Short_termApartmentAPI.Controllers
     [Route("api/identity")]
     public class IdentityVerificationController : ControllerBase
     {
+        private const int DefaultPage = 1;
+        private const int DefaultPageSize = 10;
+        private const int MaxPageSize = 100;
+
         private readonly IIdentityVerificationService _identityVerificationService;
 
         public IdentityVerificationController(IIdentityVerificationService identityVerificationService)
@@ -24,8 +29,9 @@ namespace Short_termApartmentAPI.Controllers
         /// Upload a new identity document for the current user. The document will be marked as pending review.
         /// </summary>
         [HttpPost("documents")]
+        [Consumes("multipart/form-data")]
         [Authorize(Roles = "tenant,landlord,admin,staff")]
-        public async Task<IActionResult> UploadDocument([FromBody] IdentityDocumentUploadDto dto)
+        public async Task<IActionResult> UploadDocument([FromForm] IdentityDocumentUploadDto dto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var userId))
@@ -40,8 +46,8 @@ namespace Short_termApartmentAPI.Controllers
 
             try
             {
-                var documentId = await _identityVerificationService.AddIdentityDocumentAsync(userId, dto);
-                return Ok(new ApiResponse<Guid>(documentId, "Identity document uploaded and pending verification."));
+                var documentIds = await _identityVerificationService.AddIdentityDocumentAsync(userId, dto);
+                return Ok(new ApiResponse<Guid[]>(documentIds, "Identity document uploaded and pending verification."));
             }
             catch (ArgumentException ex)
             {
@@ -73,11 +79,46 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         /// <summary>
-        /// List identity documents for the current user.
+        /// List identity documents for all users (staff/admin only).
         /// </summary>
         [HttpGet("documents")]
+        [Authorize(Roles = "staff,admin")]
+        public async Task<IActionResult> GetAllDocuments(
+            [FromQuery] int page = DefaultPage,
+            [FromQuery] int pageSize = DefaultPageSize,
+            [FromQuery] string? sortBy = "UploadedAt",
+            [FromQuery] string? sortOrder = "desc")
+        {
+            var (normalizedPage, normalizedPageSize) = NormalizePagination(page, pageSize);
+            var normalizedSortOrder = NormalizeSortOrder(sortOrder);
+
+            var (items, totalCount) = await _identityVerificationService.GetAllDocumentsAsync(
+                normalizedPage,
+                normalizedPageSize,
+                sortBy,
+                normalizedSortOrder);
+
+            return Ok(new ApiResponse<object>(new
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = normalizedPage,
+                PageSize = normalizedPageSize,
+                SortBy = sortBy,
+                SortOrder = normalizedSortOrder
+            }));
+        }
+
+        /// <summary>
+        /// List identity documents for the current user.
+        /// </summary>
+        [HttpGet("my-documents")]
         [Authorize(Roles = "tenant,landlord,admin,staff")]
-        public async Task<IActionResult> GetMyDocuments()
+        public async Task<IActionResult> GetMyDocuments(
+            [FromQuery] int page = DefaultPage,
+            [FromQuery] int pageSize = DefaultPageSize,
+            [FromQuery] string? sortBy = "UploadedAt",
+            [FromQuery] string? sortOrder = "desc")
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var userId))
@@ -85,8 +126,25 @@ namespace Short_termApartmentAPI.Controllers
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
 
-            var documents = await _identityVerificationService.GetUserDocumentsAsync(userId);
-            return Ok(new ApiResponse<IdentityDocumentDto[]>(documents));
+            var (normalizedPage, normalizedPageSize) = NormalizePagination(page, pageSize);
+            var normalizedSortOrder = NormalizeSortOrder(sortOrder);
+
+            var (items, totalCount) = await _identityVerificationService.GetUserDocumentsAsync(
+                userId,
+                normalizedPage,
+                normalizedPageSize,
+                sortBy,
+                normalizedSortOrder);
+
+            return Ok(new ApiResponse<object>(new
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = normalizedPage,
+                PageSize = normalizedPageSize,
+                SortBy = sortBy,
+                SortOrder = normalizedSortOrder
+            }));
         }
 
         /// <summary>
@@ -94,10 +152,44 @@ namespace Short_termApartmentAPI.Controllers
         /// </summary>
         [HttpGet("users/{userId:guid}/documents")]
         [Authorize(Roles = "staff,admin")]
-        public async Task<IActionResult> GetUserDocuments(Guid userId)
+        public async Task<IActionResult> GetUserDocuments(
+            Guid userId,
+            [FromQuery] int page = DefaultPage,
+            [FromQuery] int pageSize = DefaultPageSize,
+            [FromQuery] string? sortBy = "UploadedAt",
+            [FromQuery] string? sortOrder = "desc")
         {
-            var documents = await _identityVerificationService.GetUserDocumentsAsync(userId);
-            return Ok(new ApiResponse<IdentityDocumentDto[]>(documents));
+            var (normalizedPage, normalizedPageSize) = NormalizePagination(page, pageSize);
+            var normalizedSortOrder = NormalizeSortOrder(sortOrder);
+
+            var (items, totalCount) = await _identityVerificationService.GetUserDocumentsAsync(
+                userId,
+                normalizedPage,
+                normalizedPageSize,
+                sortBy,
+                normalizedSortOrder);
+
+            return Ok(new ApiResponse<object>(new
+            {
+                Items = items,
+                TotalCount = totalCount,
+                Page = normalizedPage,
+                PageSize = normalizedPageSize,
+                SortBy = sortBy,
+                SortOrder = normalizedSortOrder
+            }));
+        }
+
+        private static (int Page, int PageSize) NormalizePagination(int page, int pageSize)
+        {
+            var normalizedPage = page < 1 ? DefaultPage : page;
+            var normalizedPageSize = pageSize < 1 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+            return (normalizedPage, normalizedPageSize);
+        }
+
+        private static string NormalizeSortOrder(string? sortOrder)
+        {
+            return string.Equals(sortOrder, "asc", StringComparison.OrdinalIgnoreCase) ? "asc" : "desc";
         }
     }
 }
