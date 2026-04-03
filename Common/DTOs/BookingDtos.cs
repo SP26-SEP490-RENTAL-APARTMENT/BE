@@ -146,6 +146,15 @@ public class BookingQuoteRequestDto : IValidatableObject
 
     public Guid? PackageId { get; set; }
 
+    [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
+    public int? NoOfAdults { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
+    public int? NoOfInfants { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
+    public int? NoOfPets { get; set; }
+
     [Required]
     public DateOnly CheckInDate { get; set; }
 

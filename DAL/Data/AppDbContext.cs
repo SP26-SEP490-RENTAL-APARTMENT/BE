@@ -211,6 +211,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.MaxOccupants)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("max_occupants");
+            entity.Property(e => e.MaxPets).HasColumnName("max_pets");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'draft'")
                 .HasColumnType("enum('draft','pending_review','posted','blocked','archived')")

@@ -105,18 +105,19 @@ builder.Services.AddBLLDependencies(builder.Configuration);
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(
-        "CorsPolicy",
-        builder =>
-        {
-            builder
-                .SetIsOriginAllowed(origin => true)
-                .AllowAnyHeader()
-                .AllowAnyMethod()
-                .AllowCredentials()
-                .WithExposedHeaders("Content-Disposition", "content-disposition");
-        }
-    );
+    options.AddPolicy("CorsPolicy", policy =>
+    {
+        policy
+            .WithOrigins(
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "https://rental-apartment-web.vercel.app"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+            .WithExposedHeaders("Content-Disposition", "content-disposition");
+    });
 });
 
 var app = builder.Build();
@@ -142,8 +143,6 @@ if (app.Environment.IsDevelopment())
 {
 
 }
-
-app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();

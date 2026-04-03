@@ -168,21 +168,39 @@ namespace BLL.Services.Implements
                 throw new ArgumentException("Identity document not found.");
             }
 
+            var user = await _userRepository.GetByIdAsync(document.UserId);
+            if (user == null)
+            {
+                throw new ArgumentException("User not found.");
+            }
+
             if (dto.Approved)
             {
                 document.VerificationStatus = "verified";
                 document.VerifiedAt = DateTime.UtcNow;
                 document.RejectionReason = null;
+                user.IdentityVerified = true;
             }
             else
             {
                 document.VerificationStatus = "rejected";
                 document.VerifiedAt = null;
                 document.RejectionReason = dto.RejectionReason;
+
+                var otherVerifiedDocuments = await _userIdentityDocumentRepository.FindAsync(d =>
+                    d.UserId == document.UserId &&
+                    d.DocumentId != document.DocumentId &&
+                    d.VerificationStatus != null &&
+                    d.VerificationStatus == "verified");
+
+                user.IdentityVerified = otherVerifiedDocuments.Any();
             }
 
             _userIdentityDocumentRepository.Update(document);
+            _userRepository.Update(user);
+
             await _userIdentityDocumentRepository.SaveChangesAsync();
+            await _userRepository.SaveChangesAsync();
         }
 
         public async Task EnsureUserVerifiedForBookingAsync(Guid userId)

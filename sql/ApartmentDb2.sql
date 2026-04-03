@@ -66,6 +66,7 @@ CREATE TABLE `apartments` (
   `description` text,
   `max_occupants` tinyint DEFAULT '1',
   `is_pet_allowed` tinyint(1) DEFAULT '0',
+  `max_pets` tinyint NULL,
   `address` varchar(255),
   `district` varchar(100),
   `city` varchar(100) DEFAULT 'Hồ Chí Minh',
