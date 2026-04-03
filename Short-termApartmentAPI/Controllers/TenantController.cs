@@ -174,6 +174,58 @@ public sealed class TenantController : ControllerBase
         }
     }
 
+    [HttpGet("wishlist/collections/{collectionId:guid}/items")]
+    public async Task<IActionResult> GetWishlistByCollectionId(
+        Guid collectionId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] decimal? priceMin = null,
+        [FromQuery] decimal? priceMax = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        try
+        {
+            var (items, totalCount) = await _wishlistService.GetTenantWishlistAsync(
+                userId,
+                page,
+                pageSize,
+                sortBy,
+                sortOrder,
+                search,
+                priceMin,
+                priceMax,
+                collectionId,
+                filters);
+
+            var response = new WishlistResponseDto
+            {
+                items = items.ToList(),
+                totalCount = totalCount,
+                page = page,
+                pageSize = pageSize
+            };
+
+            return Ok(new ApiResponse<WishlistResponseDto>(response));
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiResponse<string>($"Error retrieving wishlist: {ex.Message}"));
+        }
+    }
+
     [HttpPost("wishlist")]
     public async Task<IActionResult> AddToWishlist([FromBody] AddToWishlistRequestDto requestDto)
     {

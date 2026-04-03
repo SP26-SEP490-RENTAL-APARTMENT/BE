@@ -32,6 +32,7 @@ public static class ApartmentSeed
                 BasePricePerNight = 1000000m,
                 IsPetAllowed = false,
                 MaxOccupants = 1,
+                MaxPets = 0,
                 Status = "draft",
                 BookingStatus = "locked",
                 CreatedAt = DateTime.UtcNow
@@ -51,6 +52,7 @@ public static class ApartmentSeed
                 BasePricePerNight = 1500000m,
                 IsPetAllowed = true,
                 MaxOccupants = 2,
+                MaxPets = 2,
                 Status = "posted",
                 BookingStatus = "available",
                 CreatedAt = DateTime.UtcNow
@@ -70,6 +72,7 @@ public static class ApartmentSeed
                 BasePricePerNight = 900000m,
                 IsPetAllowed = false,
                 MaxOccupants = 3,
+                MaxPets = 0,
                 Status = "posted",
                 BookingStatus = "available",
                 CreatedAt = DateTime.UtcNow
