@@ -21,6 +21,7 @@ public partial class Tenant
     public virtual ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 
     public virtual ICollection<BookingOffer> BookingOffers { get; set; } = new List<BookingOffer>();
+    public virtual ICollection<WishlistCollection> WishlistCollections { get; set; } = new List<WishlistCollection>();
 
     public virtual ICollection<TenantWishlist> Wishlists { get; set; } = new List<TenantWishlist>();
 

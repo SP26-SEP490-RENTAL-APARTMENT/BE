@@ -5,6 +5,8 @@ using Common.Enums;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using MoMoApi;
 using Short_termApartmentAPI.Middlewares;
 using System.Security.Claims;
 
@@ -18,6 +20,10 @@ namespace Short_termApartmentAPI.Controllers
 		private readonly IBookingService _bookingService;
 		private readonly IPaymentService _paymentService;
 		private readonly ISupportTicketService _supportTicketService;
+		private readonly IStripeService _stripeService;
+		private readonly IMomoService _momoService;
+		private readonly IMomoTransactionService _momoTransactionService;
+		private readonly MomoOptions _momoOptions;
 		private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
 		private readonly IMapper _mapper;
 
@@ -25,12 +31,20 @@ namespace Short_termApartmentAPI.Controllers
 			IBookingService bookingService,
 			IPaymentService paymentService,
 			ISupportTicketService supportTicketService,
+			IStripeService stripeService,
+			IMomoService momoService,
+			IMomoTransactionService momoTransactionService,
+			IOptions<MomoOptions> momoOptions,
 			IResidenceReportPdfGenerator residenceReportPdfGenerator,
 			IMapper mapper)
 		{
 			_bookingService = bookingService;
 			_paymentService = paymentService;
 			_supportTicketService = supportTicketService;
+			_stripeService = stripeService;
+			_momoService = momoService;
+			_momoTransactionService = momoTransactionService;
+			_momoOptions = momoOptions.Value;
 			_residenceReportPdfGenerator = residenceReportPdfGenerator;
 			_mapper = mapper;
 		}
@@ -103,9 +117,16 @@ namespace Short_termApartmentAPI.Controllers
 			try
 			{
 				var created = await _bookingService.CreateWithQuoteAsync(requestDto, userId);
-				await CreateInitialPaymentIfRequestedAsync(created, requestDto.PaymentProvider);
+				var paymentLink = await CreatePaymentLinkIfRequestedAsync(created, requestDto.PaymentProvider);
+
+				var response = new CreateBookingResponseDto
+				{
+					Booking = _mapper.Map<BookingResponseDto>(created),
+					PaymentLink = paymentLink
+				};
+
 				return CreatedAtAction(nameof(GetById), new { id = created.BookingId },
-					new ApiResponse<BookingResponseDto>(_mapper.Map<BookingResponseDto>(created), "Booking created. Please complete deposit payment to confirm."));
+					new ApiResponse<CreateBookingResponseDto>(response, "Booking created. Please complete deposit payment to confirm."));
 			}
 			catch (InvalidOperationException ex)
 			{
@@ -117,38 +138,113 @@ namespace Short_termApartmentAPI.Controllers
 			}
 		}
 
-		private async Task CreateInitialPaymentIfRequestedAsync(Booking booking, string? paymentProvider)
+		private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(Booking booking, string? paymentProvider)
 		{
 			if (string.IsNullOrWhiteSpace(paymentProvider))
 			{
-				return;
+				return null;
 			}
 
 			var normalized = paymentProvider.Trim().ToLowerInvariant();
-			var method = normalized switch
-			{
-				"stripe" => "stripe",
-				"momo" => "momo_wallet",
-				_ => null
-			};
 
-			if (method == null)
+			if (normalized == "stripe")
 			{
-				return;
+				var stripeRequest = new StripeCheckoutRequestDto
+				{
+					Amount = (long)Math.Round(booking.DepositAmount),
+					RelatedEntityId = booking.BookingId,
+					PaymentType = PaymentTypes.deposit.ToString(),
+					PaymentPurpose = PaymentPurposes.booking_deposit.ToString()
+				};
+
+				var stripeResponse = await _stripeService.CreateCheckoutSessionAsync(stripeRequest);
+
+				var payment = new Payment
+				{
+					Amount = booking.DepositAmount,
+					PaymentType = PaymentTypes.deposit.ToString(),
+					PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
+					RelatedEntityId = booking.BookingId,
+					RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+					Method = "stripe",
+					Status = PaymentStatus.pending.ToString(),
+					TransactionId = stripeResponse.SessionId
+				};
+
+				await _paymentService.CreateAsync(payment);
+
+				return new BookingPaymentLinkDto
+				{
+					Provider = "stripe",
+					Url = stripeResponse.Url,
+					TransactionId = stripeResponse.SessionId,
+					Status = PaymentStatus.pending.ToString(),
+					PaymentId = payment.PaymentId
+				};
 			}
 
-			var payment = new Payment
+			if (normalized == "momo")
 			{
-				Amount = booking.DepositAmount,
-				PaymentType = PaymentTypes.deposit.ToString(),
-				PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
-				RelatedEntityId = booking.BookingId,
-				RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
-				Method = method,
-				Status = PaymentStatus.pending.ToString()
-			};
+				var momoRequest = new MomoCreatePaymentRequest
+				{
+					Amount = (long)Math.Round(booking.DepositAmount),
+					OrderInfo = $"Booking deposit {booking.BookingId}",
+					ExtraData = booking.BookingId.ToString(),
+					PaymentType = PaymentTypes.deposit.ToString(),
+					PaymentPurpose = PaymentPurposes.booking_deposit.ToString()
+				};
 
-			await _paymentService.CreateAsync(payment);
+				var momoResponse = await _momoService.CreateWalletPaymentAsync(momoRequest);
+				if (momoResponse.ResultCode != 0)
+				{
+					throw new InvalidOperationException($"MoMo checkout could not be created: {momoResponse.Message}");
+				}
+
+				var payment = new Payment
+				{
+					Amount = booking.DepositAmount,
+					PaymentType = PaymentTypes.deposit.ToString(),
+					PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
+					RelatedEntityId = booking.BookingId,
+					RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+					Method = "momo_wallet",
+					Status = PaymentStatus.pending.ToString(),
+					TransactionId = momoResponse.OrderId
+				};
+
+				await _paymentService.CreateAsync(payment);
+
+				var requestLog = new MomoTransaction
+			{
+					RequestId = momoResponse.RequestId,
+					PartnerCode = _momoOptions.PartnerCode,
+					Amount = momoResponse.Amount,
+					Type = "create_wallet_payment",
+					RequestBody = momoResponse.RequestRaw ?? string.Empty,
+					ResponseBody = momoResponse.ResponseRaw ?? string.Empty,
+					Status = "pending",
+					ResultCode = momoResponse.ResultCode,
+					Message = momoResponse.Message,
+					PaymentId = payment.PaymentId,
+					CreatedAt = DateTime.UtcNow,
+					UpdatedAt = DateTime.UtcNow
+				};
+
+				await _momoTransactionService.CreateAsync(requestLog);
+
+				return new BookingPaymentLinkDto
+				{
+					Provider = "momo",
+					Url = momoResponse.PayUrl,
+					Deeplink = momoResponse.Deeplink,
+					QrCodeUrl = momoResponse.QrCodeUrl,
+					TransactionId = momoResponse.OrderId,
+					Status = PaymentStatus.pending.ToString(),
+					PaymentId = payment.PaymentId
+				};
+			}
+
+			return null;
 		}
 
 		[HttpPost("{id:guid}/residence-report")]

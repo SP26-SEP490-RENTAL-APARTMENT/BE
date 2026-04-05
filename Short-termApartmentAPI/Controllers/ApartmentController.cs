@@ -31,7 +31,23 @@ public sealed class ApartmentsController : ControllerBase
         _mapper = mapper;
     }
 
+    [HttpGet("public")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAllPublic(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var (items, totalCount) = await _apartmentService.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters);
+        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        return Ok(new { Items = mappedItems, TotalCount = totalCount });
+    }
+
     [HttpGet]
+    [Authorize(Roles = "admin,staff,landlord")]
     public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,

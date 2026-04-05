@@ -8,8 +8,39 @@ public class AddToWishlistRequestDto
     [Required(ErrorMessage = "Apartment ID is required")]
     public Guid apartmentId { get; set; }
 
+    public Guid? collectionId { get; set; }
+
     [MaxLength(500, ErrorMessage = "Notes cannot exceed 500 characters")]
     public string? notes { get; set; }
+}
+
+public class CreateWishlistCollectionRequestDto
+{
+    [Required(ErrorMessage = "Collection name is required")]
+    [MaxLength(100, ErrorMessage = "Collection name cannot exceed 100 characters")]
+    public string name { get; set; } = string.Empty;
+
+    [MaxLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
+    public string? description { get; set; }
+}
+
+public class UpdateWishlistCollectionRequestDto
+{
+    [Required(ErrorMessage = "Collection name is required")]
+    [MaxLength(100, ErrorMessage = "Collection name cannot exceed 100 characters")]
+    public string name { get; set; } = string.Empty;
+
+    [MaxLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
+    public string? description { get; set; }
+}
+
+public class MoveWishlistItemRequestDto
+{
+    [Required(ErrorMessage = "Source collection ID is required")]
+    public Guid sourceCollectionId { get; set; }
+
+    [Required(ErrorMessage = "Target collection ID is required")]
+    public Guid targetCollectionId { get; set; }
 }
 
 public class UpdateWishlistItemRequestDto
@@ -32,6 +63,10 @@ public class WishlistItemResponseDto
 
     public Guid apartmentId { get; set; }
 
+    public Guid collectionId { get; set; }
+
+    public string? collectionName { get; set; }
+
     public bool isFavorite { get; set; }
 
     public string? notes { get; set; }
@@ -39,6 +74,32 @@ public class WishlistItemResponseDto
     public DateTime addedAt { get; set; }
 
     public WishlistApartmentDetailsDto? apartmentDetails { get; set; }
+}
+
+public class WishlistCollectionResponseDto
+{
+    public Guid collectionId { get; set; }
+
+    public string name { get; set; } = string.Empty;
+
+    public string? description { get; set; }
+
+    public bool isDefault { get; set; }
+
+    public DateTime createdAt { get; set; }
+
+    public DateTime updatedAt { get; set; }
+}
+
+public class WishlistCollectionListResponseDto
+{
+    public List<WishlistCollectionResponseDto> items { get; set; } = new();
+
+    public int totalCount { get; set; }
+
+    public int page { get; set; }
+
+    public int pageSize { get; set; }
 }
 
 public class WishlistApartmentDetailsDto
@@ -58,6 +119,8 @@ public class WishlistApartmentDetailsDto
     public string? district { get; set; }
 
     public sbyte? maxOccupants { get; set; }
+
+    public sbyte? maxPets { get; set; }
 
     public bool? isPetAllowed { get; set; }
 

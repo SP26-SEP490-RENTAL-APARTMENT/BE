@@ -24,6 +24,37 @@ public class PackageService : BaseService<Package>, IPackageService
         return await _packageRepository.GetByIdAsync(id);
     }
 
+    public async Task<(IEnumerable<Package> Items, int TotalCount)> GetByApartmentIdAsync(
+        Guid apartmentId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null)
+    {
+        var effectiveAllowedColumns = new[]
+        {
+            "PackageId",
+            "ApartmentId",
+            "Name",
+            "Description",
+            "Currency",
+            "IsActive",
+            "CreatedAt"
+        };
+
+        return await _packageRepository.GetByApartmentIdAsync(
+            apartmentId,
+            page,
+            pageSize,
+            sortBy,
+            sortOrder,
+            search,
+            filters,
+            effectiveAllowedColumns);
+    }
+
     public async Task AddItemsAsync(Guid packageId, List<Guid> packageItemIds)
     {
         // ensure package exists

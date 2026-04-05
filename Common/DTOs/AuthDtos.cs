@@ -27,6 +27,7 @@ namespace Common.DTOs
         public string RefreshToken { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public string Role { get; set; }
+        public List<string> Roles { get; set; } = new();
     }
 
     public class PasswordResetRequestDto
@@ -70,5 +71,24 @@ namespace Common.DTOs
         public required string Role { get; set; }
 
         public string? Phone { get; set; }
+    }
+
+    public class AddUserRoleRequestDto
+    {
+        [Required]
+        [RegularExpression("^(tenant|landlord)$", ErrorMessage = "Target role must be 'tenant' or 'landlord'")]
+        public required string TargetRole { get; set; }
+    }
+
+    public class AddUserRoleResponseDto
+    {
+        public Guid Id { get; set; }
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string AccessToken { get; set; } = string.Empty;
+        public string RefreshToken { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public string Role { get; set; } = string.Empty;
+        public List<string> Roles { get; set; } = new();
     }
 }

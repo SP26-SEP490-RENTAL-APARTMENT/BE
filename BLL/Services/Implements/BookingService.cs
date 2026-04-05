@@ -129,6 +129,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (string.Equals(apartment.BookingStatus, ApartmentBookingStatusEnum.Locked.ToString(), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This apartment is currently locked for booking.");
 
+        ValidateOccupancyLimits(
+            apartment,
+            dto.NoOfAdults,
+            dto.NoOfPets);
+
         await EnsureNoConflictingBookingsAsync(dto.ApartmentId, dto.CheckInDate, dto.CheckOutDate);
         var nights = dto.CheckOutDate.DayNumber - dto.CheckInDate.DayNumber;
 
@@ -185,11 +190,14 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             ApartmentId = requestDto.ApartmentId,
             PackageId = requestDto.PackageId,
+            NoOfAdults = requestDto.NoOfAdults,
+            NoOfInfants = requestDto.NoOfInfants,
+            NoOfPets = requestDto.NoOfPets,
             CheckInDate = requestDto.CheckInDate,
             CheckOutDate = requestDto.CheckOutDate
         });
 
-        var depositAmount = requestDto.DepositAmount > 0 ? requestDto.DepositAmount : quote.SuggestedDeposit;
+        var depositAmount = quote.SuggestedDeposit;
         if (depositAmount > quote.TotalPrice)
             throw new ArgumentException("Deposit cannot exceed total booking price.");
 
@@ -209,7 +217,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             PackagePrice = quote.PackageAmount,
             DepositAmount = depositAmount,
             DepositPaid = false,
-            BalanceDueDate = requestDto.BalanceDueDate,
+            BalanceDueDate = requestDto.CheckInDate.AddDays(-1),
             Status = "pending",
             CreatedAt = DateTime.UtcNow
         };
@@ -249,6 +257,29 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return booking;
+    }
+
+    private static void ValidateOccupancyLimits(
+        Apartment apartment,
+        int? requestedAdults,
+        int? requestedPets)
+    {
+        var adults = requestedAdults ?? 0;
+        if (apartment.MaxOccupants.HasValue && adults > apartment.MaxOccupants.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} adult(s).");
+        }
+
+        var pets = requestedPets ?? 0;
+        if (apartment.IsPetAllowed != true && pets > 0)
+        {
+            throw new InvalidOperationException("This apartment does not allow pets.");
+        }
+
+        if (apartment.IsPetAllowed == true && apartment.MaxPets.HasValue && pets > apartment.MaxPets.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxPets.Value} pet(s).");
+        }
     }
 
     public async Task<Booking> MarkDepositPaidAsync(Guid bookingId)

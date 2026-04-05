@@ -29,26 +29,9 @@ public class CreateBookingRequestDto : IValidatableObject
     [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
     public int? NoOfPets { get; set; }
 
-    [Required]
-    [Range(0, double.MaxValue, ErrorMessage = "Total price must be a non-negative value.")]
-    public decimal TotalPrice { get; set; }
-
     public Guid? PackageId { get; set; }
 
-    [Range(0, double.MaxValue, ErrorMessage = "Package price must be a non-negative value.")]
-    public decimal? PackagePrice { get; set; }
-
-    [Required]
-    [Range(0, double.MaxValue, ErrorMessage = "Deposit amount must be a non-negative value.")]
-    public decimal DepositAmount { get; set; }
-
     public bool? DepositPaid { get; set; }
-
-    [Required]
-    public DateOnly BalanceDueDate { get; set; }
-
-    [MaxLength(50)]
-    public string? Status { get; set; }
 
     [MaxLength(20)]
     public string? PaymentProvider { get; set; }
@@ -139,12 +122,38 @@ public class BookingResponseDto
     public DateTime? CreatedAt { get; set; }
 }
 
+public class BookingPaymentLinkDto
+{
+    public string Provider { get; set; } = string.Empty;
+    public string? Url { get; set; }
+    public string? Deeplink { get; set; }
+    public string? QrCodeUrl { get; set; }
+    public string? TransactionId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public Guid? PaymentId { get; set; }
+}
+
+public class CreateBookingResponseDto
+{
+    public BookingResponseDto Booking { get; set; } = null!;
+    public BookingPaymentLinkDto? PaymentLink { get; set; }
+}
+
 public class BookingQuoteRequestDto : IValidatableObject
 {
     [Required]
     public Guid ApartmentId { get; set; }
 
     public Guid? PackageId { get; set; }
+
+    [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
+    public int? NoOfAdults { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
+    public int? NoOfInfants { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
+    public int? NoOfPets { get; set; }
 
     [Required]
     public DateOnly CheckInDate { get; set; }

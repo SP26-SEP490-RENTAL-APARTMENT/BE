@@ -11,6 +11,8 @@ public partial class TenantWishlist
 
     public Guid ApartmentId { get; set; }
 
+    public Guid CollectionId { get; set; }
+
     public bool IsFavorite { get; set; } = false;
 
     public string? Notes { get; set; }
@@ -18,6 +20,8 @@ public partial class TenantWishlist
     public DateTime CreatedAt { get; set; }
 
     public virtual Apartment Apartment { get; set; } = null!;
+
+    public virtual WishlistCollection Collection { get; set; } = null!;
 
     public virtual Tenant Tenant { get; set; } = null!;
 }

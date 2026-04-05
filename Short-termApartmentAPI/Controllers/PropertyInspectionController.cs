@@ -117,7 +117,8 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpPost("{id:guid}/complete")]
         [Authorize(Roles = "staff")]
-        public async Task<IActionResult> CompleteInspection(Guid id, [FromBody] CompletePropertyInspectionDto dto)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> CompleteInspection(Guid id, [FromForm] CompletePropertyInspectionDto dto)
         {
             if (!ModelState.IsValid)
             {
