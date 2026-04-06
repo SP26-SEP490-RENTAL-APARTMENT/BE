@@ -4,6 +4,7 @@ using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using System.Linq;
+using System.Collections.Concurrent;
 using NotificationType = Common.Enums.Notification;
 using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +15,7 @@ namespace BLL.Services.Implements;
 public class BookingService : BaseService<Booking>, IBookingService
 {
     private const decimal SuggestedDepositRate = 0.30m;
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DepositConfirmationLocks = new();
     private const int DefaultOfferExpiryHours = 2;
     private const decimal DefaultPriceTolerancePercent = 0.20m;
 
@@ -433,43 +435,94 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new ArgumentException("Booking not found.");
 
-        if (booking.DepositPaid == true)
+        var apartmentLock = DepositConfirmationLocks.GetOrAdd(booking.ApartmentId, _ => new SemaphoreSlim(1, 1));
+        await apartmentLock.WaitAsync();
+
+        try
+        {
+            booking = await _bookingRepository.GetByIdAsync(bookingId);
+            if (booking == null)
+                throw new ArgumentException("Booking not found.");
+
+            if (booking.DepositPaid == true)
+                return booking;
+
+            await _identityVerificationService.EnsureUserVerifiedForBookingAsync(booking.TenantId);
+
+            var winningStatuses = new[] { "confirmed", "paid", "completed", "disputed" };
+            var existingWinner = (await _bookingRepository.FindAsync(b =>
+                b.BookingId != booking.BookingId &&
+                b.ApartmentId == booking.ApartmentId &&
+                b.Status != null &&
+                winningStatuses.Contains(b.Status) &&
+                b.CheckInDate < booking.CheckOutDate &&
+                b.CheckOutDate > booking.CheckInDate)).Any();
+
+            var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+
+            booking.DepositPaid = true;
+            if (existingWinner)
+            {
+                booking.Status = "cancelled";
+                _bookingRepository.Update(booking);
+                await _bookingRepository.SaveChangesAsync();
+                await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+                if (apartment != null)
+                {
+                    await CreateBookingNotificationAsync(
+                        booking.TenantId,
+                        NotificationType.booking_cancelled.ToString(),
+                        "Booking cancelled",
+                        $"Your booking for apartment '{apartment.Title}' was cancelled because another booking for the same dates was already confirmed.",
+                        booking.BookingId);
+
+                    await CreateBookingNotificationAsync(
+                        apartment.LandlordId,
+                        NotificationType.booking_cancelled.ToString(),
+                        "Overlapping booking cancelled",
+                        $"An overlapping booking for apartment '{apartment.Title}' was cancelled because dates were already confirmed.",
+                        booking.BookingId);
+                }
+
+                return booking;
+            }
+
+            if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(booking.Status, "negotiating", StringComparison.OrdinalIgnoreCase))
+            {
+                booking.Status = "confirmed";
+            }
+
+            _bookingRepository.Update(booking);
+            await _bookingRepository.SaveChangesAsync();
+            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+            if (apartment != null)
+            {
+                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, booking.DepositAmount);
+
+                await CreateBookingNotificationAsync(
+                    apartment.LandlordId,
+                    NotificationType.booking_confirmed.ToString(),
+                    "New booking confirmed",
+                    $"A booking for apartment '{apartment.Title}' has been confirmed with deposit payment.",
+                    booking.BookingId);
+
+                await CreateBookingNotificationAsync(
+                    booking.TenantId,
+                    NotificationType.booking_confirmed.ToString(),
+                    "Booking confirmed",
+                    $"Your booking for apartment '{apartment.Title}' has been confirmed after deposit payment.",
+                    booking.BookingId);
+            }
+
             return booking;
-
-        await _identityVerificationService.EnsureUserVerifiedForBookingAsync(booking.TenantId);
-
-        booking.DepositPaid = true;
-        if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(booking.Status, "negotiating", StringComparison.OrdinalIgnoreCase))
-        {
-            booking.Status = "confirmed";
         }
-
-        _bookingRepository.Update(booking);
-        await _bookingRepository.SaveChangesAsync();
-        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
-
-        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
-        if (apartment != null)
+        finally
         {
-            await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, booking.DepositAmount);
-
-            await CreateBookingNotificationAsync(
-                apartment.LandlordId,
-                NotificationType.booking_confirmed.ToString(),
-                "New booking confirmed",
-                $"A booking for apartment '{apartment.Title}' has been confirmed with deposit payment.",
-                booking.BookingId);
-
-            await CreateBookingNotificationAsync(
-                booking.TenantId,
-                NotificationType.booking_confirmed.ToString(),
-                "Booking confirmed",
-                $"Your booking for apartment '{apartment.Title}' has been confirmed after deposit payment.",
-                booking.BookingId);
+            apartmentLock.Release();
         }
-
-        return booking;
     }
 
     public async Task<Booking> MarkBalancePaidAsync(Guid bookingId)
