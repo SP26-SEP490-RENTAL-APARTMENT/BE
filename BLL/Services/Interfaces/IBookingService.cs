@@ -70,7 +70,7 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingOfferResponseDto> CreateAlternativeOfferAsync(
 		Guid bookingId,
 		Guid alternativeApartmentId,
-		Guid staffUserId,
+		Guid? staffUserId,
 		string? reason = null,
 		int? expiresInHours = null);
 

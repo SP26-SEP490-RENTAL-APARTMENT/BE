@@ -1360,7 +1360,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     public async Task<BookingOfferResponseDto> CreateAlternativeOfferAsync(
         Guid bookingId,
         Guid alternativeApartmentId,
-        Guid staffUserId,
+        Guid? staffUserId,
         string? reason = null,
         int? expiresInHours = null)
     {
@@ -1449,7 +1449,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             sourceApartment.LandlordId,
             NotificationType.system_announcement.ToString(),
             "Occupancy incident offer created",
-            "Support staff created an alternative apartment offer for a tenant due to occupancy incident.",
+            staffUserId.HasValue
+                ? "Support staff created an alternative apartment offer for a tenant due to occupancy incident."
+                : "An alternative apartment offer was automatically created for a tenant after an occupancy incident report.",
             booking.BookingId);
 
         var createdOffer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offer.OfferId)

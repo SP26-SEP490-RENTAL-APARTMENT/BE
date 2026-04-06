@@ -462,11 +462,43 @@ namespace Short_termApartmentAPI.Controllers
 			};
 
 			var created = await _supportTicketService.CreateTicketAsync(supportTicket);
+
+			try
+			{
+				var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, 1);
+				var firstAlternative = alternatives.FirstOrDefault();
+
+				if (firstAlternative != null)
+				{
+					var offer = await _bookingService.CreateAlternativeOfferAsync(
+						id,
+						firstAlternative.ApartmentId,
+						null,
+						"room_occupied_auto_after_incident");
+
+					return Ok(new ApiResponse<object>(new
+					{
+						TicketId = created.TicketId,
+						created.Status,
+						Offer = offer,
+						Message = "Incident reported and an alternative offer was published immediately."
+					}));
+				}
+			}
+			catch (InvalidOperationException)
+			{
+				// Keep incident report successful even if immediate offer generation is not possible.
+			}
+			catch (ArgumentException)
+			{
+				// Keep incident report successful even if immediate offer generation is not possible.
+			}
+
 			return Ok(new ApiResponse<object>(new
 			{
 				TicketId = created.TicketId,
 				created.Status,
-				Message = "Incident reported. Staff review is required before alternative offers are published."
+				Message = "Incident reported. No immediate alternative could be published; staff will follow up with offers."
 			}));
 		}
 
