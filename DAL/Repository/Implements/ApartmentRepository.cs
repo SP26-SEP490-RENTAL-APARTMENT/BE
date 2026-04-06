@@ -24,6 +24,22 @@ namespace DAL.Repository.Implements
                 .FirstOrDefaultAsync(a => a.ApartmentId == id);
         }
 
+        public async Task UpdateListingStatusAsync(Guid apartmentId, string status, string bookingStatus)
+        {
+            var apartment = new Apartment
+            {
+                ApartmentId = apartmentId,
+                Status = status,
+                BookingStatus = bookingStatus
+            };
+
+            _context.Attach(apartment);
+            _context.Entry(apartment).Property(a => a.Status).IsModified = true;
+            _context.Entry(apartment).Property(a => a.BookingStatus).IsModified = true;
+
+            await _context.SaveChangesAsync();
+        }
+
         public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
             int page,
             int pageSize,

@@ -691,7 +691,9 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private async Task EnsureNoConflictingBookingsAsync(Guid apartmentId, DateOnly checkInDate, DateOnly checkOutDate)
     {
-        var blockingStatuses = new[] { "pending", "negotiating", "confirmed", "paid", "completed", "disputed" };
+        await ExpireUnpaidBookingsIfOverdueAsync(apartmentId);
+
+        var blockingStatuses = new[] { "negotiating", "confirmed", "paid", "completed", "disputed" };
 
         var conflicts = await _bookingRepository.FindAsync(b =>
             b.ApartmentId == apartmentId &&
@@ -951,6 +953,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This apartment is not currently available for booking.");
 
+        await ExpireUnpaidBookingsIfOverdueAsync(apartmentId);
+
         // Set default date range: today to 90 days from today
         var calendarStartDate = startDate ?? DateTime.UtcNow.Date;
         var calendarEndDate = endDate ?? DateTime.UtcNow.AddDays(90).Date;
@@ -967,7 +971,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         calendarEndDate = calendarEndDate.AddDays(1);
 
         // Fetch blocking bookings (those that prevent booking)
-        var blockingStatuses = new[] { "pending", "negotiating", "confirmed", "paid", "completed", "disputed" };
+        var blockingStatuses = new[] { "negotiating", "confirmed", "paid", "completed", "disputed" };
         var bookings = await _bookingRepository.FindAsync(b =>
             b.ApartmentId == apartmentId &&
             b.Status != null &&
@@ -1466,6 +1470,72 @@ public class BookingService : BaseService<Booking>, IBookingService
             || string.Equals(apartmentStatus, "archived", StringComparison.OrdinalIgnoreCase);
     }
 
+    private async Task ExpireUnpaidBookingsIfOverdueAsync(Guid apartmentId)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var today = DateOnly.FromDateTime(nowUtc.Date);
+        var pendingHoldHours = _configuration.GetValue<int>("BookingPaymentSettings:PendingHoldHours", 24);
+        var pendingCutoff = nowUtc.AddHours(-pendingHoldHours);
+
+        var candidates = (await _bookingRepository.FindAsync(b =>
+            b.ApartmentId == apartmentId &&
+            b.Status != null &&
+            (b.Status == "pending" || b.Status == "confirmed"))).ToList();
+
+        if (!candidates.Any())
+            return;
+
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        var changedBookings = new List<Booking>();
+
+        foreach (var booking in candidates)
+        {
+            if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase) && booking.DepositPaid != true)
+            {
+                if (!booking.CreatedAt.HasValue || booking.CreatedAt.Value <= pendingCutoff)
+                {
+                    booking.Status = "cancelled";
+                    _bookingRepository.Update(booking);
+                    changedBookings.Add(booking);
+                }
+
+                continue;
+            }
+
+            if (string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) && booking.BalanceDueDate < today)
+            {
+                booking.Status = "cancelled";
+                _bookingRepository.Update(booking);
+                changedBookings.Add(booking);
+            }
+        }
+
+        if (!changedBookings.Any())
+            return;
+
+        await _bookingRepository.SaveChangesAsync();
+
+        if (apartment == null)
+            return;
+
+        foreach (var booking in changedBookings)
+        {
+            await CreateBookingNotificationAsync(
+                booking.TenantId,
+                NotificationType.booking_cancelled.ToString(),
+                "Booking cancelled",
+                $"Your unpaid booking for apartment '{apartment.Title}' has been cancelled due to payment timeout.",
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.booking_cancelled.ToString(),
+                "Booking cancelled",
+                $"An unpaid booking for apartment '{apartment.Title}' was cancelled due to payment timeout.",
+                booking.BookingId);
+        }
+    }
+
     private static string ComputeRangeBookingStatus(
         string? apartmentStatus,
         bool hasBlackoutOverlap,
@@ -1778,6 +1848,8 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private async Task RefreshApartmentBookingStatusSnapshotAsync(Guid apartmentId)
     {
+        await ExpireUnpaidBookingsIfOverdueAsync(apartmentId);
+
         var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
         if (apartment == null)
             return;

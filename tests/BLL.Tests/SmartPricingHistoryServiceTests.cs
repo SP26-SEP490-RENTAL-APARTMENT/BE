@@ -256,6 +256,18 @@ internal sealed class InMemoryApartmentRepository : IApartmentRepository
         return GetByIdAsync(id);
     }
 
+    public Task UpdateListingStatusAsync(Guid apartmentId, string status, string bookingStatus)
+    {
+        Apartment? apartment = _apartments.FirstOrDefault(a => a.ApartmentId == apartmentId);
+        if (apartment != null)
+        {
+            apartment.Status = status;
+            apartment.BookingStatus = bookingStatus;
+        }
+
+        return Task.CompletedTask;
+    }
+
     public void Remove(Apartment entity)
     {
         _apartments.Remove(entity);

@@ -8,6 +8,7 @@ namespace DAL.Repository.Interfaces
     public interface IApartmentRepository : IRepository<Apartment>
     {
         Task<Apartment?> GetApartmentWithDetailsAsync(Guid id);
+        Task UpdateListingStatusAsync(Guid apartmentId, string status, string bookingStatus);
         Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllPublicAsync(
             int page,
             int pageSize,

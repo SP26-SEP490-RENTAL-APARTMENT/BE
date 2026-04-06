@@ -2,13 +2,13 @@
 -- Safe for MySQL 8.x
 
 ALTER TABLE landlords
-    ADD COLUMN IF NOT EXISTS momo_wallet_phone VARCHAR(20) NULL,
-    ADD COLUMN IF NOT EXISTS payout_receiver_name VARCHAR(150) NULL,
-    ADD COLUMN IF NOT EXISTS payout_personal_id VARCHAR(30) NULL,
-    ADD COLUMN IF NOT EXISTS payout_bank_account_no VARCHAR(40) NULL,
-    ADD COLUMN IF NOT EXISTS payout_bank_card_no VARCHAR(40) NULL,
-    ADD COLUMN IF NOT EXISTS payout_bank_code VARCHAR(20) NULL,
-    ADD COLUMN IF NOT EXISTS preferred_payout_method VARCHAR(20) NULL;
+    ADD COLUMN momo_wallet_phone VARCHAR(20) NULL,
+    ADD COLUMN payout_receiver_name VARCHAR(150) NULL,
+    ADD COLUMN payout_personal_id VARCHAR(30) NULL,
+    ADD COLUMN payout_bank_account_no VARCHAR(40) NULL,
+    ADD COLUMN payout_bank_card_no VARCHAR(40) NULL,
+    ADD COLUMN payout_bank_code VARCHAR(20) NULL,
+    ADD COLUMN preferred_payout_method VARCHAR(20) NULL;
 
 CREATE TABLE IF NOT EXISTS landlord_payouts (
     payout_id CHAR(36) NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS landlord_payouts (
     failed_at TIMESTAMP NULL,
     CONSTRAINT pk_landlord_payouts PRIMARY KEY (payout_id),
     CONSTRAINT fk_landlord_payouts_landlord FOREIGN KEY (landlord_id) REFERENCES landlords (landlord_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+)
 
 CREATE INDEX idx_landlord_payouts_landlord ON landlord_payouts (landlord_id);
 CREATE INDEX idx_landlord_payouts_landlord_created ON landlord_payouts (landlord_id, created_at);

@@ -61,6 +61,50 @@ public sealed class ApartmentsController : ControllerBase
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
+    /// <summary>
+    /// Admin gets apartments that are pending review.
+    /// </summary>
+    [HttpGet("pending-review")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> GetPendingReview(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var effectiveFilters = filters ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        effectiveFilters["status"] = "pending_review";
+
+        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
+        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        return Ok(new { Items = mappedItems, TotalCount = totalCount });
+    }
+
+    /// <summary>
+    /// Admin gets apartments that are pending review for a specific landlord.
+    /// </summary>
+    [HttpGet("pending-review/landlord/{landlordId:guid}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> GetPendingReviewByLandlordId(
+            Guid landlordId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var effectiveFilters = filters ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        effectiveFilters["status"] = "pending_review";
+        effectiveFilters["landlordId"] = landlordId.ToString();
+
+        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
+        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        return Ok(new { Items = mappedItems, TotalCount = totalCount });
+    }
+
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetById(Guid id)

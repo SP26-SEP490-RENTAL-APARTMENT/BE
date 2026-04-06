@@ -8,34 +8,52 @@ public static class LandlordSubscriptionSeed
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
-        var landlord = await context.Landlords.SingleOrDefaultAsync(l => l.LandlordId != Guid.Empty, cancellationToken);
-        if (landlord is null)
+        var landlordIds = await context.Landlords
+            .Where(l => l.LandlordId != Guid.Empty)
+            .Select(l => l.LandlordId)
+            .ToListAsync(cancellationToken);
+
+        if (landlordIds.Count == 0)
             return;
 
         var plan = await context.SubscriptionPlans.FirstOrDefaultAsync(p => p.PlanId != Guid.Empty, cancellationToken);
         if (plan is null)
             return;
 
-        if (!await context.LandlordSubscriptions.AnyAsync(s => s.LandlordId == landlord.LandlordId, cancellationToken))
-        {
-            var startDate = DateOnly.FromDateTime(DateTime.UtcNow);
-            context.LandlordSubscriptions.Add(new LandlordSubscription
-            {
-                SubscriptionId = Guid.NewGuid(),
-                LandlordId = landlord.LandlordId,
-                PlanId = plan.PlanId,
-                Status = "active",
-                StartDate = startDate,
-                EndDate = startDate.AddMonths(1),
-                RenewalType = "monthly",
-                AutoRenew = true,
-                PaymentMethod = "credit_card",
-                LastPaymentId = null,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            });
+        var existingSubscriptionIds = await context.LandlordSubscriptions
+            .Where(s => landlordIds.Contains(s.LandlordId))
+            .Select(s => s.LandlordId)
+            .ToListAsync(cancellationToken);
 
-            await context.SaveChangesAsync(cancellationToken);
+        var missingSubscriptions = landlordIds
+            .Except(existingSubscriptionIds)
+            .Select(landlordId =>
+            {
+                var startDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                return new LandlordSubscription
+                {
+                    SubscriptionId = Guid.NewGuid(),
+                    LandlordId = landlordId,
+                    PlanId = plan.PlanId,
+                    Status = "active",
+                    StartDate = startDate,
+                    EndDate = startDate.AddMonths(1),
+                    RenewalType = "monthly",
+                    AutoRenew = true,
+                    PaymentMethod = "credit_card",
+                    LastPaymentId = null,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            })
+            .ToList();
+
+        if (missingSubscriptions.Count == 0)
+        {
+            return;
         }
+
+        context.LandlordSubscriptions.AddRange(missingSubscriptions);
+        await context.SaveChangesAsync(cancellationToken);
     }
 }
