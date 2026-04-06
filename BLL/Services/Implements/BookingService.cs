@@ -28,6 +28,8 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<Tenant> _tenantRepository;
     private readonly IRepository<User> _userRepository;
     private readonly IRepository<ApartmentAvailability> _apartmentAvailabilityRepository;
+    private readonly IRepository<SupportTicket> _supportTicketRepository;
+    private readonly IRepository<Payment> _paymentRepository;
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
@@ -45,6 +47,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             IRepository<Tenant> tenantRepository,
             IRepository<User> userRepository,
             IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
+            IRepository<SupportTicket> supportTicketRepository,
+            IRepository<Payment> paymentRepository,
             IIdentityVerificationService identityVerificationService,
             ILandlordWalletService landlordWalletService,
             IConfiguration configuration,
@@ -61,10 +65,151 @@ public class BookingService : BaseService<Booking>, IBookingService
         _tenantRepository = tenantRepository;
         _userRepository = userRepository;
         _apartmentAvailabilityRepository = apartmentAvailabilityRepository;
+        _supportTicketRepository = supportTicketRepository;
+        _paymentRepository = paymentRepository;
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
         _mapper = mapper;
+    }
+
+    public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
+        Guid bookingId,
+        Guid confirmedBy,
+        Guid? ticketId = null,
+        string? notes = null)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        if (booking.DepositAmount <= 0)
+            throw new InvalidOperationException("Booking deposit amount is not valid for penalty calculation.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var penaltyTransactionId = $"occupied_penalty_{bookingId:N}";
+        var existingPenalty = (await _paymentRepository.FindAsync(p => p.TransactionId == penaltyTransactionId)).FirstOrDefault();
+        if (existingPenalty != null)
+        {
+            return new ConfirmOccupiedIncidentPenaltyResponseDto
+            {
+                BookingId = booking.BookingId,
+                TicketId = ticketId,
+                PenaltyAmount = booking.DepositAmount,
+                AlreadyApplied = true,
+                Message = "Penalty was already applied for this occupied incident.",
+                Settlement = new LandlordPenaltyApplicationResultDto
+                {
+                    RequestedAmount = booking.DepositAmount,
+                    DeductedFromAvailable = 0m,
+                    DeductedFromPending = 0m,
+                    DebtRecorded = 0m
+                }
+            };
+        }
+
+        var ticket = await ResolveOccupiedIncidentTicketAsync(bookingId, booking.TenantId, ticketId);
+        if (ticket == null)
+        {
+            throw new InvalidOperationException("Occupied incident ticket was not found for this booking.");
+        }
+
+        var settlement = await _landlordWalletService.ApplyOccupiedIncidentPenaltyAsync(apartment.LandlordId, booking.DepositAmount);
+
+        var payment = new Payment
+        {
+            PaymentId = Guid.NewGuid(),
+            Amount = booking.DepositAmount,
+            PaymentType = Common.Enums.PaymentTypes.refund.ToString(),
+            PaymentPurpose = Common.Enums.PaymentPurposes.other.ToString(),
+            RelatedEntityId = booking.BookingId,
+            RelatedEntityType = Common.Enums.PaymentRelatedEntityType.booking.ToString(),
+            Method = "landlord_wallet_penalty",
+            Status = Common.Enums.PaymentStatus.success.ToString(),
+            TransactionId = penaltyTransactionId,
+            PaidAt = DateTime.UtcNow
+        };
+
+        await _paymentRepository.AddAsync(payment);
+
+        ticket.Status = "resolved";
+        ticket.ResolvedAt = DateTime.UtcNow;
+        ticket.ResolvedBy = confirmedBy;
+        var supportNotes = $"Occupied incident penalty applied. Amount: {booking.DepositAmount:0.00}. " +
+                           $"From available: {settlement.DeductedFromAvailable:0.00}, " +
+                           $"from pending: {settlement.DeductedFromPending:0.00}, " +
+                           $"debt: {settlement.DebtRecorded:0.00}.";
+        if (!string.IsNullOrWhiteSpace(notes))
+        {
+            supportNotes += $" Staff notes: {notes}";
+        }
+
+        ticket.ResolutionNotes = string.IsNullOrWhiteSpace(ticket.ResolutionNotes)
+            ? supportNotes
+            : $"{ticket.ResolutionNotes}\n{supportNotes}";
+        ticket.UpdatedAt = DateTime.UtcNow;
+        _supportTicketRepository.Update(ticket);
+
+        await _paymentRepository.SaveChangesAsync();
+        await _supportTicketRepository.SaveChangesAsync();
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.system_announcement.ToString(),
+            "Occupied incident penalty applied",
+            $"A penalty of {booking.DepositAmount:0.00} was applied for booking {booking.BookingId} due to occupied-room incident.",
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.system_announcement.ToString(),
+            "Occupied incident penalty confirmed",
+            "Support staff confirmed your occupied-room incident and applied landlord penalty equal to the booking deposit.",
+            booking.BookingId);
+
+        return new ConfirmOccupiedIncidentPenaltyResponseDto
+        {
+            BookingId = booking.BookingId,
+            TicketId = ticket.TicketId,
+            PenaltyAmount = booking.DepositAmount,
+            AlreadyApplied = false,
+            Message = "Occupied incident penalty applied successfully.",
+            Settlement = settlement
+        };
+    }
+
+    private async Task<SupportTicket?> ResolveOccupiedIncidentTicketAsync(Guid bookingId, Guid tenantId, Guid? ticketId)
+    {
+        if (ticketId.HasValue)
+        {
+            var byId = await _supportTicketRepository.GetByIdAsync(ticketId.Value);
+            if (byId == null)
+            {
+                return null;
+            }
+
+            if (!string.Equals(byId.Category, "booking_issue", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(byId.UserId.ToString(), tenantId.ToString(), StringComparison.OrdinalIgnoreCase)
+                || !byId.Subject.Contains(bookingId.ToString(), StringComparison.OrdinalIgnoreCase)
+                || !byId.Subject.Contains("occupied", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return byId;
+        }
+
+        var subjectMarker = bookingId.ToString();
+        var candidates = await _supportTicketRepository.FindAsync(t =>
+            t.UserId == tenantId &&
+            t.Category == "booking_issue");
+
+        return candidates
+            .Where(t => (t.Subject ?? string.Empty).Contains(subjectMarker, StringComparison.OrdinalIgnoreCase)
+                        && (t.Subject ?? string.Empty).Contains("occupied", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(t => t.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
     }
 
     private async Task CreateBookingNotificationAsync(
@@ -74,7 +219,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         string message,
         Guid bookingId)
     {
-        var notification = new Notification
+        var notification = new DAL.Models.Notification
         {
             NotificationId = Guid.NewGuid(),
             UserId = userId,

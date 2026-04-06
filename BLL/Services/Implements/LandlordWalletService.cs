@@ -1,4 +1,5 @@
 using BLL.Services.Interfaces;
+using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 
@@ -67,6 +68,44 @@ public class LandlordWalletService : ILandlordWalletService
         wallet.UpdatedAt = DateTime.UtcNow;
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
+    }
+
+    public async Task<LandlordPenaltyApplicationResultDto> ApplyOccupiedIncidentPenaltyAsync(Guid landlordId, decimal amount)
+    {
+        if (amount <= 0)
+        {
+            throw new ArgumentException("Amount must be greater than zero.");
+        }
+
+        var wallet = await GetOrCreateAsync(landlordId);
+        var remaining = amount;
+
+        var fromAvailable = Math.Min(wallet.AvailableBalance, remaining);
+        wallet.AvailableBalance -= fromAvailable;
+        remaining -= fromAvailable;
+
+        var fromPending = Math.Min(wallet.PendingBalance, remaining);
+        wallet.PendingBalance -= fromPending;
+        remaining -= fromPending;
+
+        // Policy: if wallet funds are insufficient, keep processing and record landlord debt.
+        // Debt is represented as a negative available balance.
+        if (remaining > 0)
+        {
+            wallet.AvailableBalance -= remaining;
+        }
+
+        wallet.UpdatedAt = DateTime.UtcNow;
+        _walletRepository.Update(wallet);
+        await _walletRepository.SaveChangesAsync();
+
+        return new LandlordPenaltyApplicationResultDto
+        {
+            RequestedAmount = amount,
+            DeductedFromAvailable = Math.Round(fromAvailable, 2, MidpointRounding.AwayFromZero),
+            DeductedFromPending = Math.Round(fromPending, 2, MidpointRounding.AwayFromZero),
+            DebtRecorded = Math.Round(remaining, 2, MidpointRounding.AwayFromZero)
+        };
     }
 
     public async Task ReserveForPayoutAsync(Guid landlordId, long amount)

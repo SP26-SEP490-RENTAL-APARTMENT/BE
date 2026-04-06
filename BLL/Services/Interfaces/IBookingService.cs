@@ -77,4 +77,10 @@ public interface IBookingService : IBaseService<Booking>
 	Task<IReadOnlyList<BookingOfferResponseDto>> GetTenantActiveOffersAsync(Guid tenantId);
 
 	Task<BookingOfferResponseDto> RespondToAlternativeOfferAsync(Guid offerId, Guid tenantId, bool accepted, string? notes = null);
+
+	Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
+		Guid bookingId,
+		Guid confirmedBy,
+		Guid? ticketId = null,
+		string? notes = null);
 }

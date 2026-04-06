@@ -537,6 +537,36 @@ namespace Short_termApartmentAPI.Controllers
 			}
 		}
 
+		[HttpPost("{id:guid}/occupied-incident/confirm-penalty")]
+		[Authorize(Roles = "staff,admin")]
+		public async Task<IActionResult> ConfirmOccupiedIncidentPenalty(Guid id, [FromBody] ConfirmOccupiedIncidentPenaltyRequestDto? dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var staffId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var result = await _bookingService.ConfirmOccupiedIncidentPenaltyAsync(
+					id,
+					staffId,
+					dto?.TicketId,
+					dto?.Notes);
+
+				return Ok(new ApiResponse<ConfirmOccupiedIncidentPenaltyResponseDto>(result, result.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
 		[HttpGet("occupied-offers/my")]
 		[Authorize(Roles = "tenant")]
 		public async Task<IActionResult> GetMyOccupiedOffers()
