@@ -20,8 +20,7 @@ public sealed class PackageItemService(IRepository<PackageItem> repository)
         {
             "PackageItemId",
             "ItemName",
-            "ItemDescription",
-            "SortOrder"
+            "ItemDescription"
         };
 
         return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
