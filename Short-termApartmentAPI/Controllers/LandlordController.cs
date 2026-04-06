@@ -297,8 +297,25 @@ public sealed class LandlordController : ControllerBase
         return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile!));
     }
 
-    [HttpPut("payout-profile")]
-    public async Task<IActionResult> UpdatePayoutProfile([FromBody] UpsertLandlordPayoutProfileRequestDto request)
+    // [HttpPut("payout-profile")]
+    // public async Task<IActionResult> UpdatePayoutProfile([FromBody] UpsertLandlordPayoutProfileRequestDto request)
+    // {
+    //     var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    //     if (!Guid.TryParse(userIdClaim, out var userId))
+    //     {
+    //         return Unauthorized(new ApiResponse<string>("Invalid user token."));
+    //     }
+
+    //     var landlord = await _landlordService.GetByUserIdAsync(userId);
+    //     if (landlord == null)
+    //         return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+    //     var profile = await _landlordService.UpsertPayoutProfileAsync(landlord.LandlordId, request);
+    //     return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile));
+    // }
+
+    [HttpPut("bank-payout-profile")]
+    public async Task<IActionResult> UpdateBankPayoutProfile([FromBody] UpdateBankPayoutProfileRequestDto request)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!Guid.TryParse(userIdClaim, out var userId))
@@ -310,8 +327,39 @@ public sealed class LandlordController : ControllerBase
         if (landlord == null)
             return NotFound(new ApiResponse<string>("Landlord profile not found."));
 
-        var profile = await _landlordService.UpsertPayoutProfileAsync(landlord.LandlordId, request);
-        return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile));
+        try
+        {
+            var profile = await _landlordService.UpdateBankPayoutProfileAsync(landlord.LandlordId, request);
+            return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpPut("momo-payout-profile")]
+    public async Task<IActionResult> UpdateMomoPayoutProfile([FromBody] UpdateMomoPayoutProfileRequestDto request)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        try
+        {
+            var profile = await _landlordService.UpdateMomoPayoutProfileAsync(landlord.LandlordId, request);
+            return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
     }
 
     [HttpPost("payouts")]

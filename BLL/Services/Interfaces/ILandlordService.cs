@@ -19,5 +19,9 @@ public interface ILandlordService : IBaseService<Landlord>
 
     Task<LandlordPayoutProfileDto?> GetPayoutProfileAsync(Guid landlordId);
 
+    Task<LandlordPayoutProfileDto> UpdateBankPayoutProfileAsync(Guid landlordId, UpdateBankPayoutProfileRequestDto request);
+
+    Task<LandlordPayoutProfileDto> UpdateMomoPayoutProfileAsync(Guid landlordId, UpdateMomoPayoutProfileRequestDto request);
+
     Task<LandlordPayoutProfileDto> UpsertPayoutProfileAsync(Guid landlordId, UpsertLandlordPayoutProfileRequestDto request);
 }

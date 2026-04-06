@@ -114,6 +114,77 @@ public class LandlordService : BaseService<Landlord>, ILandlordService
         return (await GetPayoutProfileAsync(landlordId))!;
     }
 
+    public async Task<LandlordPayoutProfileDto> UpdateBankPayoutProfileAsync(Guid landlordId, UpdateBankPayoutProfileRequestDto request)
+    {
+        var landlord = await _landlordRepository.GetByIdAsync(landlordId)
+            ?? throw new ArgumentException("Landlord profile not found.");
+
+        ValidateBankPayoutProfileRequest(request);
+
+        landlord.PayoutReceiverName = request.ReceiverName?.Trim();
+        landlord.PayoutPersonalId = request.PersonalId?.Trim();
+        landlord.PayoutBankAccountNo = request.BankAccountNo?.Trim();
+        landlord.PayoutBankCardNo = request.BankCardNo?.Trim();
+        landlord.PayoutBankCode = request.BankCode?.Trim();
+        landlord.PreferredPayoutMethod = request.PreferredPayoutMethod?.Trim();
+
+        _landlordRepository.Update(landlord);
+        await _landlordRepository.SaveChangesAsync();
+
+        return (await GetPayoutProfileAsync(landlordId))!;
+    }
+
+    public async Task<LandlordPayoutProfileDto> UpdateMomoPayoutProfileAsync(Guid landlordId, UpdateMomoPayoutProfileRequestDto request)
+    {
+        var landlord = await _landlordRepository.GetByIdAsync(landlordId)
+            ?? throw new ArgumentException("Landlord profile not found.");
+
+        ValidateMomoPayoutProfileRequest(request);
+
+        landlord.MomoWalletPhone = request.MomoWalletPhone?.Trim();
+        landlord.PayoutReceiverName = request.ReceiverName?.Trim();
+        landlord.PayoutPersonalId = request.PersonalId?.Trim();
+        landlord.PreferredPayoutMethod = request.PreferredPayoutMethod?.Trim();
+
+        _landlordRepository.Update(landlord);
+        await _landlordRepository.SaveChangesAsync();
+
+        return (await GetPayoutProfileAsync(landlordId))!;
+    }
+
+    private static void ValidateBankPayoutProfileRequest(UpdateBankPayoutProfileRequestDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ReceiverName))
+        {
+            throw new ArgumentException("ReceiverName is required for bank payout profile.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.BankCode))
+        {
+            throw new ArgumentException("BankCode is required for bank payout profile.");
+        }
+
+        var hasAccountNo = !string.IsNullOrWhiteSpace(request.BankAccountNo);
+        var hasCardNo = !string.IsNullOrWhiteSpace(request.BankCardNo);
+        if (!hasAccountNo && !hasCardNo)
+        {
+            throw new ArgumentException("Either BankAccountNo or BankCardNo is required for bank payout profile.");
+        }
+    }
+
+    private static void ValidateMomoPayoutProfileRequest(UpdateMomoPayoutProfileRequestDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ReceiverName))
+        {
+            throw new ArgumentException("ReceiverName is required for MoMo payout profile.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.MomoWalletPhone))
+        {
+            throw new ArgumentException("MomoWalletPhone is required for MoMo payout profile.");
+        }
+    }
+
     private static string? MaskRight(string? value, int visibleTail)
     {
         if (string.IsNullOrWhiteSpace(value))

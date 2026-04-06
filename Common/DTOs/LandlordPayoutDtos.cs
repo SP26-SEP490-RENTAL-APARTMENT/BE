@@ -26,6 +26,42 @@ public class UpsertLandlordPayoutProfileRequestDto
     public string? PreferredPayoutMethod { get; set; }
 }
 
+public class UpdateBankPayoutProfileRequestDto
+{
+    [MaxLength(150)]
+    public string? ReceiverName { get; set; }
+
+    [MaxLength(30)]
+    public string? PersonalId { get; set; }
+
+    [MaxLength(40)]
+    public string? BankAccountNo { get; set; }
+
+    [MaxLength(40)]
+    public string? BankCardNo { get; set; }
+
+    [MaxLength(20)]
+    public string? BankCode { get; set; }
+
+    [MaxLength(20)]
+    public string? PreferredPayoutMethod { get; set; }
+}
+
+public class UpdateMomoPayoutProfileRequestDto
+{
+    [MaxLength(20)]
+    public string? MomoWalletPhone { get; set; }
+
+    [MaxLength(150)]
+    public string? ReceiverName { get; set; }
+
+    [MaxLength(30)]
+    public string? PersonalId { get; set; }
+
+    [MaxLength(20)]
+    public string? PreferredPayoutMethod { get; set; }
+}
+
 public class LandlordPayoutProfileDto
 {
     public string? MomoWalletPhone { get; set; }
