@@ -48,7 +48,21 @@ public class LandlordService : BaseService<Landlord>, ILandlordService
         string? search = null)
     {
         var filters = new Dictionary<string, string> { { "LandlordId", landlordId.ToString() } };
-        return await _apartmentRepository.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, null);
+        var allowedColumns = new[]
+        {
+            "ApartmentId",
+            "LandlordId",
+            "Title",
+            "Description",
+            "Address",
+            "District",
+            "City",
+            "Status",
+            "BasePricePerNight",
+            "CreatedAt"
+        };
+
+        return await _apartmentRepository.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, allowedColumns);
     }
 
     public async Task<SubscriptionPlanDto?> GetCurrentSubscriptionAsync(Guid landlordId)

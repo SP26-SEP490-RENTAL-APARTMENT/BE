@@ -8,21 +8,32 @@ public static class LandlordWalletSeed
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
-        var landlord = await context.Landlords.SingleOrDefaultAsync(l => l.LandlordId != Guid.Empty, cancellationToken);
-        if (landlord is null)
-            return;
+        var landlordIds = await context.Landlords
+            .Where(l => l.LandlordId != Guid.Empty)
+            .Select(l => l.LandlordId)
+            .ToListAsync(cancellationToken);
 
-        if (!await context.LandlordWallets.AnyAsync(w => w.LandlordId == landlord.LandlordId, cancellationToken))
-        {
-            context.LandlordWallets.Add(new LandlordWallet
+        if (landlordIds.Count == 0) return;
+
+        var existingWalletIds = await context.LandlordWallets
+            .Where(w => landlordIds.Contains(w.LandlordId))
+            .Select(w => w.LandlordId)
+            .ToListAsync(cancellationToken);
+
+        var missingWallets = landlordIds
+            .Except(existingWalletIds)
+            .Select(id => new LandlordWallet
             {
-                LandlordId = landlord.LandlordId,
+                LandlordId = id,
                 PendingBalance = 0m,
                 AvailableBalance = 0m,
                 UpdatedAt = DateTime.UtcNow
-            });
+            })
+            .ToList();
 
-            await context.SaveChangesAsync(cancellationToken);
-        }
+        if (missingWallets.Count == 0) return;
+
+        context.LandlordWallets.AddRange(missingWallets);
+        await context.SaveChangesAsync(cancellationToken);
     }
 }
