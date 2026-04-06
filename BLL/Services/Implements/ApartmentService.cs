@@ -249,8 +249,10 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         // Transition to pending_review
         apartment.Status = "pending_review";
         apartment.BookingStatus = ApartmentBookingStatusEnum.Locked.ToString();
-        _apartmentRepository.Update(apartment);
-        await _apartmentRepository.SaveChangesAsync();
+        await _apartmentRepository.UpdateListingStatusAsync(
+            apartment.ApartmentId,
+            apartment.Status,
+            apartment.BookingStatus);
 
         // Notify landlord that the listing was submitted for review
         await CreateListingNotificationAsync(
