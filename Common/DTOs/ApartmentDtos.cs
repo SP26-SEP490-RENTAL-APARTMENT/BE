@@ -170,8 +170,6 @@ public class ApproveListingDto
 
     [MaxLength(1000)]
     public string? RejectionReason { get; set; }
-
-    public required ICollection<string> ApprovalTags { get; set; }
 }
 
 /// <summary>

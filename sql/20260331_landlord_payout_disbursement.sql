@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS landlord_payouts (
     failed_at TIMESTAMP NULL,
     CONSTRAINT pk_landlord_payouts PRIMARY KEY (payout_id),
     CONSTRAINT fk_landlord_payouts_landlord FOREIGN KEY (landlord_id) REFERENCES landlords (landlord_id) ON DELETE CASCADE
-)
+);
 
 CREATE INDEX idx_landlord_payouts_landlord ON landlord_payouts (landlord_id);
 CREATE INDEX idx_landlord_payouts_landlord_created ON landlord_payouts (landlord_id, created_at);
