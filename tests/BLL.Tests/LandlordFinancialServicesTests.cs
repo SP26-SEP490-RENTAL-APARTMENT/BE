@@ -4,11 +4,15 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Threading;
 using System.Threading.Tasks;
+using AutoMapper;
 using BLL.Services.Implements;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
 
 namespace BLL.Tests;
 
@@ -255,6 +259,467 @@ public class LandlordWalletServiceTests
         Assert.Equal(10m, result.DeductedFromAvailable);
         Assert.Equal(5m, result.DeductedFromPending);
         Assert.Equal(25m, result.DebtRecorded);
+    }
+}
+
+public class BookingServiceQuoteValidationTests
+{
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenCheckoutIsNotLaterThanCheckin()
+    {
+        var sut = FinancialTestHelpers.CreateBookingService();
+
+        var dto = new BookingQuoteRequestDto
+        {
+            ApartmentId = Guid.NewGuid(),
+            CheckInDate = new DateOnly(2026, 5, 10),
+            CheckOutDate = new DateOnly(2026, 5, 10),
+            NoOfAdults = 1,
+            NoOfInfants = 0,
+            NoOfPets = 0
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("Check-out date must be later than check-in date", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenApartmentIsMissing()
+    {
+        var sut = FinancialTestHelpers.CreateBookingService();
+
+        var dto = FinancialTestHelpers.CreateValidQuoteRequest(Guid.NewGuid());
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("Apartment not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenApartmentIsNotPosted()
+    {
+        var apartmentId = Guid.NewGuid();
+        var sut = FinancialTestHelpers.CreateBookingService(
+            apartment: FinancialTestHelpers.CreateApartment(apartmentId, status: "draft"));
+
+        var dto = FinancialTestHelpers.CreateValidQuoteRequest(apartmentId);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("not currently available for booking", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenApartmentIsLocked()
+    {
+        var apartmentId = Guid.NewGuid();
+        var sut = FinancialTestHelpers.CreateBookingService(
+            apartment: FinancialTestHelpers.CreateApartment(apartmentId, bookingStatus: "Locked"));
+
+        var dto = FinancialTestHelpers.CreateValidQuoteRequest(apartmentId);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("locked for booking", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenMinimumStayIsNotMet()
+    {
+        var apartmentId = Guid.NewGuid();
+        var calendar = new ApartmentPriceCalendar
+        {
+            PriceId = Guid.NewGuid(),
+            ApartmentId = apartmentId,
+            StartDate = new DateOnly(2026, 5, 1),
+            EndDate = new DateOnly(2026, 5, 31),
+            MinNights = 3
+        };
+
+        var sut = FinancialTestHelpers.CreateBookingService(
+            apartment: FinancialTestHelpers.CreateApartment(apartmentId),
+            calendars: [calendar]);
+
+        var dto = new BookingQuoteRequestDto
+        {
+            ApartmentId = apartmentId,
+            CheckInDate = new DateOnly(2026, 5, 10),
+            CheckOutDate = new DateOnly(2026, 5, 12),
+            NoOfAdults = 1,
+            NoOfInfants = 0,
+            NoOfPets = 0
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("at least 3 night(s)", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenPackageDoesNotBelongToApartment()
+    {
+        var apartmentId = Guid.NewGuid();
+        var package = new Package
+        {
+            PackageId = Guid.NewGuid(),
+            ApartmentId = Guid.NewGuid(),
+            Name = "Wrong package",
+            Price = 500000m,
+            IsActive = true
+        };
+
+        var sut = FinancialTestHelpers.CreateBookingService(
+            apartment: FinancialTestHelpers.CreateApartment(apartmentId),
+            packages: [package]);
+
+        var dto = FinancialTestHelpers.CreateValidQuoteRequest(apartmentId, package.PackageId);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("Selected package is invalid for this apartment", ex.Message);
+    }
+}
+
+public class LandlordPayoutValidationTests
+{
+    [Fact]
+    public async Task CreatePayoutAsync_ThrowsWhenAmountIsZero()
+    {
+        var landlordId = Guid.NewGuid();
+        var sut = FinancialTestHelpers.CreatePayoutService(
+            landlord: new Landlord
+            {
+                LandlordId = landlordId,
+                PayoutReceiverName = "Landlord",
+                MomoWalletPhone = "0900000001"
+            });
+
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 0,
+            Channel = "wallet"
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
+
+        Assert.Contains("Amount must be greater than zero", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreatePayoutAsync_ThrowsWhenLandlordProfileIsMissing()
+    {
+        var sut = FinancialTestHelpers.CreatePayoutService();
+
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 1500,
+            Channel = "wallet"
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(Guid.NewGuid(), request, CancellationToken.None));
+
+        Assert.Contains("Landlord profile not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreatePayoutAsync_ThrowsWhenBankProfileIsIncomplete()
+    {
+        var landlordId = Guid.NewGuid();
+        var sut = FinancialTestHelpers.CreatePayoutService(
+            landlord: new Landlord
+            {
+                LandlordId = landlordId,
+                PayoutReceiverName = "Landlord",
+                PayoutBankAccountNo = null,
+                PayoutBankCardNo = null,
+                PayoutBankCode = null
+            });
+
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 10000,
+            Channel = "bank"
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
+
+        Assert.Contains("Bank payout profile is incomplete", ex.Message);
+    }
+}
+
+internal static class FinancialTestHelpers
+{
+    public static BookingService CreateBookingService(
+        Apartment? apartment = null,
+        IEnumerable<Booking>? bookings = null,
+        IEnumerable<ApartmentAvailability>? availabilities = null,
+        IEnumerable<ApartmentPriceCalendar>? calendars = null,
+        IEnumerable<Package>? packages = null)
+    {
+        var apartmentRepo = apartment == null
+            ? new InMemoryApartmentRepository()
+            : new InMemoryApartmentRepository(apartment);
+
+        var bookingRepo = new InMemoryBookingRepository(bookings ?? Array.Empty<Booking>());
+        var bookingOfferRepo = new InMemoryBookingOfferRepository();
+        var calendarRepo = new InMemoryApartmentPriceCalendarRepository(calendars?.ToArray() ?? Array.Empty<ApartmentPriceCalendar>());
+        var packageRepo = new InMemoryRepository<Package>(p => p.PackageId, packages?.ToArray() ?? Array.Empty<Package>());
+        var notificationRepo = new InMemoryRepository<DAL.Models.Notification>(n => n.NotificationId);
+        var bookingCheckTimeRepo = new InMemoryRepository<BookingCheckTime>(c => c.CheckTimeId);
+        var temporaryResidenceRepo = new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId);
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
+        var userRepo = new InMemoryRepository<User>(u => u.UserId);
+        var availabilityRepo = new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId, availabilities?.ToArray() ?? Array.Empty<ApartmentAvailability>());
+        var supportTicketRepo = new InMemoryRepository<SupportTicket>(s => s.TicketId);
+        var paymentRepo = new InMemoryRepository<Payment>(p => p.PaymentId);
+        var identityVerificationService = new NoOpIdentityVerificationService();
+        var walletService = new RecordingWalletService();
+        var configuration = new ConfigurationManager();
+        var mapper = new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper();
+
+        return new BookingService(
+            bookingRepo,
+            bookingOfferRepo,
+            apartmentRepo,
+            calendarRepo,
+            packageRepo,
+            notificationRepo,
+            bookingCheckTimeRepo,
+            temporaryResidenceRepo,
+            tenantRepo,
+            userRepo,
+            availabilityRepo,
+            supportTicketRepo,
+            paymentRepo,
+            identityVerificationService,
+            walletService,
+            configuration,
+            mapper);
+    }
+
+    public static LandlordPayoutService CreatePayoutService(Landlord? landlord = null)
+    {
+        var landlordRepo = landlord == null
+            ? new InMemoryRepository<Landlord>(l => l.LandlordId)
+            : new InMemoryRepository<Landlord>(l => l.LandlordId, landlord);
+
+        var payoutRepo = new InMemoryRepository<LandlordPayout>(p => p.PayoutId);
+        var momoService = new FakeMomoService();
+        var walletService = new RecordingWalletService();
+        var momoTransactionService = new InMemoryMomoTransactionService();
+
+        return new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService);
+    }
+
+    public static Apartment CreateApartment(Guid apartmentId, string status = "posted", string? bookingStatus = null)
+    {
+        return new Apartment
+        {
+            ApartmentId = apartmentId,
+            LandlordId = Guid.NewGuid(),
+            Title = "Test Apartment",
+            City = "Hanoi",
+            BasePricePerNight = 1000000m,
+            Status = status,
+            BookingStatus = bookingStatus,
+            Location = new Point(0, 0)
+        };
+    }
+
+    public static BookingQuoteRequestDto CreateValidQuoteRequest(Guid apartmentId, Guid? packageId = null)
+    {
+        return new BookingQuoteRequestDto
+        {
+            ApartmentId = apartmentId,
+            PackageId = packageId,
+            CheckInDate = new DateOnly(2026, 5, 10),
+            CheckOutDate = new DateOnly(2026, 5, 12),
+            NoOfAdults = 1,
+            NoOfInfants = 0,
+            NoOfPets = 0
+        };
+    }
+}
+
+internal sealed class InMemoryBookingRepository : IBookingRepository
+{
+    private readonly List<Booking> _items;
+
+    public InMemoryBookingRepository(IEnumerable<Booking>? seed = null)
+    {
+        _items = seed?.ToList() ?? new List<Booking>();
+    }
+
+    public Task AddAsync(Booking entity)
+    {
+        _items.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<Booking>> FindAsync(Expression<Func<Booking, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<Booking>>(_items.Where(compiled));
+    }
+
+    public Task<(IEnumerable<Booking> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
+    }
+
+    public Task<Booking?> GetByIdAsync(Guid id)
+    {
+        return Task.FromResult(_items.FirstOrDefault(b => b.BookingId == id));
+    }
+
+    public void Remove(Booking entity)
+    {
+        _items.Remove(entity);
+    }
+
+    public void Update(Booking entity)
+    {
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+
+    public Task<(IEnumerable<Booking> Items, int TotalCount)> GetByLandlordAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
+    {
+        return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
+    }
+}
+
+internal sealed class InMemoryBookingOfferRepository : IBookingOfferRepository
+{
+    private readonly List<BookingOffer> _items = new();
+
+    public Task AddAsync(BookingOffer entity)
+    {
+        _items.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<BookingOffer>> FindAsync(Expression<Func<BookingOffer, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<BookingOffer>>(_items.Where(compiled));
+    }
+
+    public Task<(IEnumerable<BookingOffer> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
+    }
+
+    public Task<BookingOffer?> GetByIdAsync(Guid id)
+    {
+        return Task.FromResult<BookingOffer?>(_items.FirstOrDefault(x => x.OfferId == id));
+    }
+
+    public void Remove(BookingOffer entity)
+    {
+        _items.Remove(entity);
+    }
+
+    public void Update(BookingOffer entity)
+    {
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+
+    public Task<BookingOffer?> GetOfferWithDetailsAsync(Guid offerId)
+    {
+        return GetByIdAsync(offerId);
+    }
+
+    public Task<IEnumerable<BookingOffer>> GetPendingOffersForTenantAsync(Guid tenantId, DateTime nowUtc)
+    {
+        return Task.FromResult<IEnumerable<BookingOffer>>(Array.Empty<BookingOffer>());
+    }
+
+    public Task<IEnumerable<BookingOffer>> GetPendingOffersByBookingAsync(Guid bookingId, DateTime nowUtc)
+    {
+        return Task.FromResult<IEnumerable<BookingOffer>>(Array.Empty<BookingOffer>());
+    }
+}
+
+internal sealed class InMemoryApartmentPriceCalendarRepository : IApartmentPriceCalendarRepository
+{
+    private readonly List<ApartmentPriceCalendar> _items;
+
+    public InMemoryApartmentPriceCalendarRepository(IEnumerable<ApartmentPriceCalendar>? seed = null)
+    {
+        _items = seed?.ToList() ?? new List<ApartmentPriceCalendar>();
+    }
+
+    public Task AddAsync(ApartmentPriceCalendar entity)
+    {
+        _items.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> FindAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(_items.Where(compiled));
+    }
+
+    public Task<(IEnumerable<ApartmentPriceCalendar> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
+    }
+
+    public Task<ApartmentPriceCalendar?> GetByIdAsync(Guid id)
+    {
+        return Task.FromResult(_items.FirstOrDefault(x => x.PriceId == id));
+    }
+
+    public void Remove(ApartmentPriceCalendar entity)
+    {
+        _items.Remove(entity);
+    }
+
+    public void Update(ApartmentPriceCalendar entity)
+    {
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
+}
+
+internal sealed class NoOpIdentityVerificationService : IIdentityVerificationService
+{
+    public Task EnsureUserVerifiedForBookingAsync(Guid userId)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
+    {
+        return Task.FromResult(Array.Empty<Guid>());
+    }
+
+    public Task ReviewIdentityDocumentAsync(ReviewIdentityDocumentDto dto)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(Guid userId, int page, int pageSize, string? sortBy = null, string? sortOrder = null)
+    {
+        return Task.FromResult((Items: Enumerable.Empty<IdentityDocumentDto>(), TotalCount: 0));
+    }
+
+    public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null)
+    {
+        return Task.FromResult((Items: Enumerable.Empty<IdentityDocumentDto>(), TotalCount: 0));
     }
 }
 

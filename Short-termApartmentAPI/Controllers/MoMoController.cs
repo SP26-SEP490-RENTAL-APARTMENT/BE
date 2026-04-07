@@ -85,7 +85,6 @@ namespace Short_termApartmentAPI.Controllers
             var orderId = root.TryGetProperty("orderId", out var oi) && oi.ValueKind == JsonValueKind.String ? oi.GetString() : null;
             var transId = root.TryGetProperty("transId", out var tid) && tid.ValueKind == JsonValueKind.String ? tid.GetString() : null;
             var message = root.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String ? msg.GetString() : string.Empty;
-            var amount = root.TryGetProperty("amount", out var amt) ? amt.GetRawText().Trim('"') : null;
 
             // Update ipn log with parsed info
             ipnLog.Status = "verified";
@@ -118,7 +117,7 @@ namespace Short_termApartmentAPI.Controllers
                     var payment = await _paymentService.GetByIdAsync(original.PaymentId.Value);
                     if (payment != null)
                     {
-                        // Idempotent update: if already success, do nothing
+                        // Idempotent payment update: avoid re-writing already successful payment state.
                         if (payment.Status != "success")
                         {
                             payment.TransactionId = transId;
@@ -127,66 +126,20 @@ namespace Short_termApartmentAPI.Controllers
                                 payment.PaidAt = DateTime.UtcNow;
 
                             await _paymentService.UpdateAsync(payment);
+                        }
 
-                            if (resultCode == 0 && payment.RelatedEntityId.HasValue)
+                        // Important: run success side-effects even when payment is already marked success.
+                        // This makes callback retries able to heal partial failures (payment updated, booking not updated).
+                        if (resultCode == 0 && payment.RelatedEntityId.HasValue)
+                        {
+                            var sideEffectError = await ApplySuccessSideEffectsAsync(payment);
+                            if (!string.IsNullOrWhiteSpace(sideEffectError))
                             {
-                                if (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
-                                {
-                                    try
-                                    {
-                                        if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
-                                        }
-                                        else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"[MoMo] Booking payment side-effect failed: {ex.Message}");
-                                    }
-                                }
-                                else if (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.host_subscription.ToString(), StringComparison.OrdinalIgnoreCase))
-                                {
-                                    try
-                                    {
-                                        var subscription = await _landlordSubscriptionService.GetByIdAsync(payment.RelatedEntityId.Value);
-                                        if (subscription != null && !string.Equals(subscription.Status, Status.active.ToString(), StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
-                                            subscription.Status = Status.active.ToString();
-                                            subscription.StartDate = nowDate;
-
-                                            var months = 1;
-                                            if (string.Equals(subscription.RenewalType, RenewalType.annual.ToString(), StringComparison.OrdinalIgnoreCase))
-                                            {
-                                                months = 12;
-                                            }
-
-                                            subscription.EndDate = nowDate.AddMonths(months);
-                                            subscription.PaymentMethod = payment.Method;
-                                            subscription.LastPaymentId = payment.PaymentId;
-                                            subscription.UpdatedAt = DateTime.UtcNow;
-
-                                            await _landlordSubscriptionService.UpdateAsync(subscription);
-
-                                            var landlord = await _landlordService.GetByIdAsync(subscription.LandlordId);
-                                            if (landlord != null)
-                                            {
-                                                landlord.CurrentPlanId = subscription.PlanId;
-                                                landlord.SubscriptionStatus = SubscriptionStatus.active.ToString();
-                                                landlord.SubscriptionExpiresAt = subscription.EndDate;
-                                                await _landlordService.UpdateAsync(landlord);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"[MoMo] Subscription payment side-effect failed: {ex.Message}");
-                                    }
-                                }
+                                original.Status = "success_side_effect_failed";
+                                original.Message = $"{(message ?? string.Empty)} | Side-effect failed: {sideEffectError}";
+                                original.UpdatedAt = DateTime.UtcNow;
+                                await _momoTransactionService.UpdateAsync(original);
+                                Console.WriteLine($"[MoMo] Payment success side-effect failed. paymentId={payment.PaymentId}, error={sideEffectError}");
                             }
                         }
                     }
@@ -195,6 +148,100 @@ namespace Short_termApartmentAPI.Controllers
 
             // Respond per MoMo expectation — keep response small and quick
             return Ok(new { resultCode = 0, message = "OK" });
+        }
+
+        private async Task<string?> ApplySuccessSideEffectsAsync(Payment payment)
+        {
+            if (!payment.RelatedEntityId.HasValue)
+            {
+                return null;
+            }
+
+            if (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var booking = await _bookingService.GetByIdAsync(payment.RelatedEntityId.Value);
+                    if (booking == null)
+                    {
+                        return "Related booking not found.";
+                    }
+
+                    if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (booking.DepositPaid == true)
+                        {
+                            return null;
+                        }
+
+                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                        return null;
+                    }
+
+                    if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return null;
+                        }
+
+                        await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                        return null;
+                    }
+
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    return ex.Message;
+                }
+            }
+
+            if (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.host_subscription.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var subscription = await _landlordSubscriptionService.GetByIdAsync(payment.RelatedEntityId.Value);
+                    if (subscription == null || string.Equals(subscription.Status, Status.active.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        return null;
+                    }
+
+                    var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                    subscription.Status = Status.active.ToString();
+                    subscription.StartDate = nowDate;
+
+                    var months = 1;
+                    if (string.Equals(subscription.RenewalType, RenewalType.annual.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        months = 12;
+                    }
+
+                    subscription.EndDate = nowDate.AddMonths(months);
+                    subscription.PaymentMethod = payment.Method;
+                    subscription.LastPaymentId = payment.PaymentId;
+                    subscription.UpdatedAt = DateTime.UtcNow;
+
+                    await _landlordSubscriptionService.UpdateAsync(subscription);
+
+                    var landlord = await _landlordService.GetByIdAsync(subscription.LandlordId);
+                    if (landlord != null)
+                    {
+                        landlord.CurrentPlanId = subscription.PlanId;
+                        landlord.SubscriptionStatus = SubscriptionStatus.active.ToString();
+                        landlord.SubscriptionExpiresAt = subscription.EndDate;
+                        await _landlordService.UpdateAsync(landlord);
+                    }
+
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    return ex.Message;
+                }
+            }
+
+            return null;
         }
 
         [HttpPost("disbursement-ipn")]
