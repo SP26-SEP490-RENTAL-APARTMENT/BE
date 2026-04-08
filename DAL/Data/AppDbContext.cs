@@ -371,9 +371,17 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.DepositAmount)
                 .HasPrecision(12, 2)
                 .HasColumnName("deposit_amount");
+            entity.Property(e => e.UpfrontPaymentAmount)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("upfront_payment_amount");
             entity.Property(e => e.DepositPaid)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("deposit_paid");
+            entity.Property(e => e.PaymentMode)
+                .HasDefaultValueSql("'partial'")
+                .HasColumnType("enum('partial','full')")
+                .HasColumnName("payment_mode");
             entity.Property(e => e.Nights).HasColumnName("nights");
             entity.Property(e => e.NoOfAdults).HasColumnName("noOfAdults");
             entity.Property(e => e.NoOfInfants).HasColumnName("noOfInfants");
@@ -1037,10 +1045,10 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("paid_at");
             entity.Property(e => e.PaymentPurpose)
                 .HasDefaultValueSql("'booking_deposit'")
-                .HasColumnType("enum('booking_deposit','booking_balance','booking_addon_or_package','subscription_monthly','subscription_annual','subscription_trial','subscription_renewal','refund_booking','refund_subscription','other')")
+                .HasColumnType("enum('booking_deposit','booking_balance','booking_full_payment','booking_addon_or_package','subscription_monthly','subscription_annual','subscription_trial','subscription_renewal','refund_booking','refund_subscription','other')")
                 .HasColumnName("payment_purpose");
             entity.Property(e => e.PaymentType)
-                .HasColumnType("enum('deposit','balance','addon','refund')")
+                .HasColumnType("enum('deposit','balance','addon','refund','upfront')")
                 .HasColumnName("payment_type");
             entity.Property(e => e.RelatedEntityId).HasColumnName("related_entity_id");
             entity.Property(e => e.RelatedEntityType)

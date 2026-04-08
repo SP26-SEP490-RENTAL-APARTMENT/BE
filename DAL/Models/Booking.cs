@@ -31,7 +31,11 @@ public partial class Booking
 
     public decimal DepositAmount { get; set; }
 
+    public decimal UpfrontPaymentAmount { get; set; }
+
     public bool? DepositPaid { get; set; }
+
+    public string? PaymentMode { get; set; }
 
     public DateOnly BalanceDueDate { get; set; }
 

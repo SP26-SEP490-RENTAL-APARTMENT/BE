@@ -33,7 +33,9 @@ public static class BookingSeed
                 PackageId = null,
                 PackagePrice = null,
                 DepositAmount = 2250000m,
+                UpfrontPaymentAmount = 2250000m,
                 DepositPaid = false,
+                PaymentMode = "partial",
                 BalanceDueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(9)),
                 Status = "pending",
                 CreatedAt = DateTime.UtcNow
@@ -53,9 +55,11 @@ public static class BookingSeed
                 PackageId = null,
                 PackagePrice = null,
                 DepositAmount = 3150000m,
+                UpfrontPaymentAmount = 6300000m,
                 DepositPaid = true,
+                PaymentMode = "full",
                 BalanceDueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(26)),
-                Status = "confirmed",
+                Status = "paid",
                 CreatedAt = DateTime.UtcNow
             }
         };

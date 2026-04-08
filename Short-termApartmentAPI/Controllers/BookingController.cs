@@ -118,6 +118,9 @@ namespace Short_termApartmentAPI.Controllers
 			{
 				var created = await _bookingService.CreateWithQuoteAsync(requestDto, userId);
 				var paymentLink = await CreatePaymentLinkIfRequestedAsync(created, requestDto.PaymentProvider);
+				var paymentModeText = string.Equals(created.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase)
+					? "full payment"
+					: "partial payment";
 
 				var response = new CreateBookingResponseDto
 				{
@@ -126,7 +129,7 @@ namespace Short_termApartmentAPI.Controllers
 				};
 
 				return CreatedAtAction(nameof(GetById), new { id = created.BookingId },
-					new ApiResponse<CreateBookingResponseDto>(response, "Booking created. Please complete deposit payment to confirm."));
+					new ApiResponse<CreateBookingResponseDto>(response, $"Booking created. Please complete {paymentModeText} to confirm."));
 			}
 			catch (InvalidOperationException ex)
 			{
@@ -149,21 +152,22 @@ namespace Short_termApartmentAPI.Controllers
 
 			if (normalized == "stripe")
 			{
+				var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
 				var stripeRequest = new StripeCheckoutRequestDto
 				{
-					Amount = (long)Math.Round(booking.DepositAmount),
+					Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
 					RelatedEntityId = booking.BookingId,
-					PaymentType = PaymentTypes.deposit.ToString(),
-					PaymentPurpose = PaymentPurposes.booking_deposit.ToString()
+					PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
+					PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString()
 				};
 
 				var stripeResponse = await _stripeService.CreateCheckoutSessionAsync(stripeRequest);
 
 				var payment = new Payment
 				{
-					Amount = booking.DepositAmount,
-					PaymentType = PaymentTypes.deposit.ToString(),
-					PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
+					Amount = booking.UpfrontPaymentAmount,
+					PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
+					PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
 					RelatedEntityId = booking.BookingId,
 					RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
 					Method = "stripe",
@@ -185,13 +189,14 @@ namespace Short_termApartmentAPI.Controllers
 
 			if (normalized == "momo")
 			{
+				var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
 				var momoRequest = new MomoCreatePaymentRequest
 				{
-					Amount = (long)Math.Round(booking.DepositAmount),
-					OrderInfo = $"Booking deposit {booking.BookingId}",
+					Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
+					OrderInfo = isFullPayment ? $"Booking full payment {booking.BookingId}" : $"Booking deposit {booking.BookingId}",
 					ExtraData = booking.BookingId.ToString(),
-					PaymentType = PaymentTypes.deposit.ToString(),
-					PaymentPurpose = PaymentPurposes.booking_deposit.ToString()
+					PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
+					PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString()
 				};
 
 				var momoResponse = await _momoService.CreateWalletPaymentAsync(momoRequest);
@@ -202,9 +207,9 @@ namespace Short_termApartmentAPI.Controllers
 
 				var payment = new Payment
 				{
-					Amount = booking.DepositAmount,
-					PaymentType = PaymentTypes.deposit.ToString(),
-					PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
+					Amount = booking.UpfrontPaymentAmount,
+					PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
+					PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
 					RelatedEntityId = booking.BookingId,
 					RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
 					Method = "momo_wallet",

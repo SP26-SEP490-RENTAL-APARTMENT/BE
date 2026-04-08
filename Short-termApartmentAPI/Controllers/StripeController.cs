@@ -81,7 +81,8 @@ public sealed class StripeController : ControllerBase
                         {
                             try
                             {
-                                if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase))
+                                if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
+                                    || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
                                 {
                                     await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
                                 }

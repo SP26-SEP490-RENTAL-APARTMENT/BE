@@ -1,6 +1,7 @@
 using BLL.Services.Interfaces;
 using AutoMapper;
 using Common.DTOs;
+using Common.Enums;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using System.Linq;
@@ -15,6 +16,7 @@ namespace BLL.Services.Implements;
 public class BookingService : BaseService<Booking>, IBookingService
 {
     private const decimal SuggestedDepositRate = 0.30m;
+    private const decimal FullPaymentLandlordShareRate = 0.70m;
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DepositConfirmationLocks = new();
     private const int DefaultOfferExpiryHours = 2;
     private const decimal DefaultPriceTolerancePercent = 0.20m;
@@ -325,7 +327,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             PackageAmount = packageAmount,
             TotalPrice = total,
             SuggestedDeposit = suggestedDeposit,
-            RemainingBalance = remaining
+            RemainingBalance = remaining,
+            FullUpfrontPaymentAmount = total,
+            FullUpfrontLandlordShareAmount = Math.Round(total * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
         };
     }
 
@@ -343,6 +347,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             CheckInDate = requestDto.CheckInDate,
             CheckOutDate = requestDto.CheckOutDate
         });
+
+        var paymentMode = requestDto.PaymentMode;
+        var upfrontPaymentAmount = paymentMode == BookingPaymentMode.full
+            ? quote.TotalPrice
+            : quote.SuggestedDeposit;
 
         var depositAmount = quote.SuggestedDeposit;
         if (depositAmount > quote.TotalPrice)
@@ -363,7 +372,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             PackageId = requestDto.PackageId,
             PackagePrice = quote.PackageAmount,
             DepositAmount = depositAmount,
+            UpfrontPaymentAmount = upfrontPaymentAmount,
             DepositPaid = false,
+            PaymentMode = paymentMode.ToString(),
             BalanceDueDate = requestDto.CheckInDate.AddDays(-1),
             Status = "pending",
             CreatedAt = DateTime.UtcNow
@@ -449,6 +460,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             await _identityVerificationService.EnsureUserVerifiedForBookingAsync(booking.TenantId);
 
+            var paymentMode = GetBookingPaymentMode(booking);
             var winningStatuses = new[] { "confirmed", "paid", "completed", "disputed" };
             var existingWinner = (await _bookingRepository.FindAsync(b =>
                 b.BookingId != booking.BookingId &&
@@ -488,7 +500,11 @@ public class BookingService : BaseService<Booking>, IBookingService
                 return booking;
             }
 
-            if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase)
+            if (paymentMode == BookingPaymentMode.full)
+            {
+                booking.Status = "paid";
+            }
+            else if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(booking.Status, "negotiating", StringComparison.OrdinalIgnoreCase))
             {
                 booking.Status = "confirmed";
@@ -500,20 +516,26 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             if (apartment != null)
             {
-                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, booking.DepositAmount);
+                var creditedAmount = paymentMode == BookingPaymentMode.full
+                    ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
+                    : GetUpfrontPaymentAmount(booking);
+
+                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, creditedAmount);
+
+                var paymentDescriptor = paymentMode == BookingPaymentMode.full ? "full payment" : "partial payment";
 
                 await CreateBookingNotificationAsync(
                     apartment.LandlordId,
                     NotificationType.booking_confirmed.ToString(),
                     "New booking confirmed",
-                    $"A booking for apartment '{apartment.Title}' has been confirmed with deposit payment.",
+                    $"A booking for apartment '{apartment.Title}' has been confirmed with {paymentDescriptor}.",
                     booking.BookingId);
 
                 await CreateBookingNotificationAsync(
                     booking.TenantId,
                     NotificationType.booking_confirmed.ToString(),
                     "Booking confirmed",
-                    $"Your booking for apartment '{apartment.Title}' has been confirmed after deposit payment.",
+                    $"Your booking for apartment '{apartment.Title}' has been confirmed after {paymentDescriptor}.",
                     booking.BookingId);
             }
 
@@ -531,6 +553,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new ArgumentException("Booking not found.");
 
+        var paymentMode = GetBookingPaymentMode(booking);
+        if (paymentMode == BookingPaymentMode.full)
+            throw new InvalidOperationException("This booking was paid in full upfront and has no remaining balance.");
+
         if (string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase))
             return booking;
 
@@ -545,7 +571,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
         {
-            var remainingAmount = booking.TotalPrice - booking.DepositAmount;
+            var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
             if (remainingAmount > 0)
             {
                 await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, remainingAmount);
@@ -567,6 +593,18 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return booking;
+    }
+
+    private static BookingPaymentMode GetBookingPaymentMode(Booking booking)
+    {
+        return string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase)
+            ? BookingPaymentMode.full
+            : BookingPaymentMode.partial;
+    }
+
+    private static decimal GetUpfrontPaymentAmount(Booking booking)
+    {
+        return booking.UpfrontPaymentAmount > 0 ? booking.UpfrontPaymentAmount : booking.DepositAmount;
     }
 
     public async Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(

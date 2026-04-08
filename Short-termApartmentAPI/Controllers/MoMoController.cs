@@ -167,7 +167,8 @@ namespace Short_termApartmentAPI.Controllers
                         return "Related booking not found.";
                     }
 
-                    if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
                     {
                         if (booking.DepositPaid == true)
                         {

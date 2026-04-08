@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Common.Enums;
 
 namespace Common.DTOs;
 
@@ -31,7 +32,7 @@ public class CreateBookingRequestDto : IValidatableObject
 
     public Guid? PackageId { get; set; }
 
-    public bool? DepositPaid { get; set; }
+    public BookingPaymentMode PaymentMode { get; set; } = BookingPaymentMode.partial;
 
     [MaxLength(20)]
     public string? PaymentProvider { get; set; }
@@ -116,7 +117,9 @@ public class BookingResponseDto
     public Guid? PackageId { get; set; }
     public decimal? PackagePrice { get; set; }
     public decimal DepositAmount { get; set; }
+    public decimal UpfrontPaymentAmount { get; set; }
     public bool? DepositPaid { get; set; }
+    public string? PaymentMode { get; set; }
     public DateOnly BalanceDueDate { get; set; }
     public string? Status { get; set; }
     public DateTime? CreatedAt { get; set; }
@@ -187,6 +190,8 @@ public class BookingQuoteResponseDto
     public decimal TotalPrice { get; set; }
     public decimal SuggestedDeposit { get; set; }
     public decimal RemainingBalance { get; set; }
+    public decimal FullUpfrontPaymentAmount { get; set; }
+    public decimal FullUpfrontLandlordShareAmount { get; set; }
 }
 
 public class SubmitResidenceReportDto

@@ -263,6 +263,69 @@ public class ControllerBehaviorTests
     }
 
     [Fact]
+    public async Task MomoController_Ipn_TriggersUpfrontPaymentSideEffect_EvenWhenPaymentAlreadySuccess()
+    {
+        var paymentId = Guid.NewGuid();
+        var bookingId = Guid.NewGuid();
+        var paymentService = new PaymentServiceStub();
+        paymentService.PaymentsById[paymentId] = new Payment
+        {
+            PaymentId = paymentId,
+            RelatedEntityType = "booking",
+            RelatedEntityId = bookingId,
+            PaymentType = "upfront",
+            PaymentPurpose = "booking_full_payment",
+            Method = "momo_wallet",
+            Amount = 1000m,
+            Status = "success"
+        };
+
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking
+            {
+                BookingId = bookingId,
+                TenantId = Guid.NewGuid(),
+                PaymentMode = "full",
+                UpfrontPaymentAmount = 1000m,
+                DepositPaid = false,
+                Status = "pending"
+            }
+        };
+
+        var txService = new MomoTransactionServiceStub();
+        txService.ByRequestId["REQ-IPN-2"] = new MomoTransaction
+        {
+            RequestId = "REQ-IPN-2",
+            PaymentId = paymentId,
+            Status = "pending",
+            PartnerCode = "PARTNER",
+            Amount = 1000,
+            Type = "create_wallet_payment",
+            RequestBody = "{}",
+            ResponseBody = "{}",
+            Message = string.Empty,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var controller = CreateMomoController(paymentService: paymentService, bookingService: bookingService, momoTransactionService: txService);
+
+        var payload = BuildValidMomoIpnPayload(
+            accessKey: "ACCESS",
+            secretKey: "SECRET",
+            requestId: "REQ-IPN-2",
+            orderId: "ORD-IPN-2",
+            resultCode: 0);
+        SetRequestBody(controller, payload);
+
+        var result = await controller.Ipn();
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(1, bookingService.MarkDepositPaidCalls);
+    }
+
+    [Fact]
     public async Task MomoController_DisbursementIpn_ValidSignature_TriggersPayoutSync()
     {
         var payoutService = new LandlordPayoutServiceStub();
