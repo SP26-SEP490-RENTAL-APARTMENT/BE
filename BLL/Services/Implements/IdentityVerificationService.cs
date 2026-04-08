@@ -37,17 +37,24 @@ namespace BLL.Services.Implements
         private readonly IRepository<User> _userRepository;
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<UserIdentityDocument> _userIdentityDocumentRepository;
+        private readonly INotificationService _notificationService;
         private readonly IImageService _imageService;
+
+        private const string IdentityDocumentReferenceType = "identity_document";
+        private const string IdentityVerifiedNotificationType = "identity_verified";
+        private const string IdentityRejectedNotificationType = "identity_rejected";
 
         public IdentityVerificationService(
             IRepository<User> userRepository,
             IRepository<Tenant> tenantRepository,
             IRepository<UserIdentityDocument> userIdentityDocumentRepository,
+            INotificationService notificationService,
             IImageService imageService)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _userIdentityDocumentRepository = userIdentityDocumentRepository;
+            _notificationService = notificationService;
             _imageService = imageService;
         }
 
@@ -201,6 +208,33 @@ namespace BLL.Services.Implements
 
             await _userIdentityDocumentRepository.SaveChangesAsync();
             await _userRepository.SaveChangesAsync();
+            await CreateReviewNotificationAsync(document.UserId, document.DocumentId, dto.Approved, dto.RejectionReason);
+        }
+
+        private async Task CreateReviewNotificationAsync(
+            Guid userId,
+            Guid documentId,
+            bool approved,
+            string? rejectionReason)
+        {
+            var notification = new DAL.Models.Notification
+            {
+                NotificationId = Guid.NewGuid(),
+                UserId = userId,
+                Type = approved ? IdentityVerifiedNotificationType : IdentityRejectedNotificationType,
+                Title = approved ? "Identity verification approved" : "Identity verification rejected",
+                Message = approved
+                    ? "Your identity document has been approved."
+                    : string.IsNullOrWhiteSpace(rejectionReason)
+                        ? "Your identity document was rejected. Please upload a new document that meets the verification requirements."
+                        : $"Your identity document was rejected: {rejectionReason}",
+                ReferenceId = documentId,
+                ReferenceType = IdentityDocumentReferenceType,
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _notificationService.CreateAsync(notification);
         }
 
         public async Task EnsureUserVerifiedForBookingAsync(Guid userId)
