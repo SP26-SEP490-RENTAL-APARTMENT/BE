@@ -13,7 +13,9 @@ namespace BLL.Services.Interfaces
         Task<LoginResponseDto?> RegisterAsync(RegisterRequestDto dto);
         Task<RefreshTokenResponseDto?> RefreshTokenAsync(RefreshTokenRequestDto dto);
         Task<bool> LogoutAsync(RefreshTokenRequestDto dto);
-        //Task<bool> RequestPasswordResetAsync(PasswordResetRequestDto dto);
-        //Task<bool> ResetPasswordAsync(string token, PasswordResetDto dto);
+        Task<bool> RequestPasswordResetAsync(PasswordResetRequestDto dto);
+        Task<bool> ResetPasswordAsync(string token, PasswordResetDto dto);
+
+        Task<bool> ChangePasswordAsync(Guid userId, PasswordResetDto dto);
     }
 }

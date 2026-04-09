@@ -10,6 +10,7 @@ using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -19,11 +20,13 @@ namespace BLL.Services.Implements
     {
         private readonly IUserRepository _userRepository;
         private readonly JwtSettings _jwtSettings;
+        private readonly EmailService _emailService;
 
-        public AuthService(IUserRepository userRepository, IOptions<JwtSettings> jwtSettings)
+        public AuthService(IUserRepository userRepository, IOptions<JwtSettings> jwtSettings, EmailService emailService)
         {
             _userRepository = userRepository;
             _jwtSettings = jwtSettings.Value;
+            _emailService = emailService;
         }
 
         public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto dto)
@@ -95,6 +98,20 @@ namespace BLL.Services.Implements
         }
 
 
+        private string GenerateSecureToken()
+        {
+            // This generates a 256-bit token
+            var bytes = new byte[32];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(bytes);
+            }
+            // Convert to URL-safe Base64 string
+            return Convert.ToBase64String(bytes)
+                          .Replace('+', '-')
+                          .Replace('/', '_')
+                          .TrimEnd('='); // Remove padding '=' characters for cleaner URLs
+        }
 
         public Task<RefreshTokenResponseDto?> RefreshTokenAsync(RefreshTokenRequestDto dto)
         {
@@ -105,5 +122,61 @@ namespace BLL.Services.Implements
         {
             throw new NotImplementedException();
         }
+
+        public async Task<bool> RequestPasswordResetAsync(PasswordResetRequestDto dto)
+        {
+            var userList = await _userRepository.FindAsync(u => u.Email == dto.Email);
+            var user = userList.FirstOrDefault();
+            if (user == null) return false;
+
+            user.Token = GenerateSecureToken();
+            user.TokenExpired = DateTime.UtcNow.AddHours(1); // Token valid for 1 hour
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            var resetLink = $"https://doigiumcaiurlnha.com/reset-password?token={user.Token}";
+            var body = $"Please reset your password by clicking here: <a href='{resetLink}'>Reset Password</a>";
+            await _emailService.SendEmailAsync(user.Email, "Password Reset Request", body);
+
+            return true;
+        }
+
+        public async Task<bool> ResetPasswordAsync(string token, PasswordResetDto dto)
+        {
+            var userList = await _userRepository.FindAsync(u => u.Token == token);
+            var user = userList.FirstOrDefault();
+
+            if (user == null || user.TokenExpired == null || user.TokenExpired < DateTime.UtcNow)
+                return false;
+
+            if (dto.NewPassword != dto.ConfirmNewPassword)
+                return false;
+
+            user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
+            user.Token = null;
+            user.TokenExpired = null;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            return true;
+        }
+
+        public async Task<bool> ChangePasswordAsync(Guid userId, PasswordResetDto dto)
+        {
+            var userList = await _userRepository.FindAsync(u => u.UserId == userId);
+            var user = userList.FirstOrDefault();
+            if (user == null)
+                return false;
+            if (!PasswordHasher.VerifyPassword(dto.OldPassword, user.PasswordHash))
+                return false;
+            if (dto.NewPassword != dto.ConfirmNewPassword)
+                return false;
+            user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+            return true;
+        }
     }
+    
 }
