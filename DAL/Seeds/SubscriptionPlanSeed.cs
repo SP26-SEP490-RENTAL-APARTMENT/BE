@@ -19,7 +19,7 @@ public static class SubscriptionPlanSeed
                 MaxApartments = 1,
                 Features = "Basic listing features",
                 IsActive = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -30,7 +30,7 @@ public static class SubscriptionPlanSeed
                 MaxApartments = 10,
                 Features = "Advanced analytics and priority support",
                 IsActive = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -41,7 +41,7 @@ public static class SubscriptionPlanSeed
                 MaxApartments = null,
                 Features = "Custom integrations and dedicated support",
                 IsActive = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             }
         };
 

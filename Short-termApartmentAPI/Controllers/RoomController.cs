@@ -94,7 +94,7 @@ public sealed class RoomController : ControllerBase
         }
 
         var room = _mapper.Map<Room>(dto);
-        room.CreatedAt = DateTime.UtcNow;
+        room.CreatedAt = Common.Utils.VietnamTime.Now;
         var created = await _roomService.CreateAsync(room);
         return CreatedAtAction(nameof(GetById), new { id = created.RoomId }, new ApiResponse<RoomResponseDto>(_mapper.Map<RoomResponseDto>(created)));
     }

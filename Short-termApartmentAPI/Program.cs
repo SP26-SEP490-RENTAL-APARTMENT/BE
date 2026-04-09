@@ -1,5 +1,6 @@
 using BLL.DependencyInjection;
 using Common.Settings;
+using Common.Utils;
 using DAL.Data;
 using DAL.Seeds;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -20,6 +21,8 @@ builder
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.Converters.Add(new VietnamDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new VietnamNullableDateTimeJsonConverter());
         options.JsonSerializerOptions.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
     });
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -73,7 +76,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), mySqlOptions => mySqlOptions.UseNetTopologySuite())
-               .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+               .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+               .AddInterceptors(new VietnamTimeZoneConnectionInterceptor());
 });
 
 builder.Services.AddAuthentication(options =>
@@ -143,6 +147,69 @@ if (string.IsNullOrWhiteSpace(momoDisbursementIpnUrl))
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    
+    // Clean up any conflicting migrations from history
+    try
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        
+        using (var command = connection.CreateCommand())
+        {
+            // Remove any pending migrations that conflict with existing tables
+            command.CommandText = "DELETE FROM __EFMigrationsHistory WHERE MigrationId LIKE '20260409%';";
+            await command.ExecuteNonQueryAsync();
+        }
+        
+        // Add missing User columns if they don't exist
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = @"
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'users' 
+                AND TABLE_SCHEMA = DATABASE()
+                AND COLUMN_NAME IN ('token', 'token_expired');";
+            
+            var existingColumns = new HashSet<string>();
+            using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    existingColumns.Add(reader.GetString(0));
+                }
+            }
+            
+            // Add missing columns
+            if (!existingColumns.Contains("token"))
+            {
+                using (var addCommand = connection.CreateCommand())
+                {
+                    addCommand.CommandText = "ALTER TABLE users ADD COLUMN token VARCHAR(500) NULL COMMENT 'User access token';";
+                    await addCommand.ExecuteNonQueryAsync();
+                }
+                app.Logger.LogInformation("Added token column to users table");
+            }
+            
+            if (!existingColumns.Contains("token_expired"))
+            {
+                using (var addCommand = connection.CreateCommand())
+                {
+                    addCommand.CommandText = "ALTER TABLE users ADD COLUMN token_expired DATETIME NULL COMMENT 'Token expiration time';";
+                    await addCommand.ExecuteNonQueryAsync();
+                }
+                app.Logger.LogInformation("Added token_expired column to users table");
+            }
+        }
+        
+        await connection.CloseAsync();
+        app.Logger.LogInformation("Cleaned up conflicting migrations from history and added missing columns");
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Could not clean migrations history or add columns (tables may not exist yet)");
+    }
+    
     await DbInitializer.SeedAsync(dbContext);
 }
 

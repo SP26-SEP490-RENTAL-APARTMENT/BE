@@ -78,7 +78,7 @@ public sealed class StripeController : ControllerBase
                         if (payment != null && payment.Status != PaymentStatus.success.ToString())
                         {
                             payment.Status = PaymentStatus.success.ToString();
-                            payment.PaidAt = DateTime.UtcNow;
+                            payment.PaidAt = Common.Utils.VietnamTime.Now;
                             payment.TransactionId = transactionId;
 
                             await _paymentService.UpdateAsync(payment);

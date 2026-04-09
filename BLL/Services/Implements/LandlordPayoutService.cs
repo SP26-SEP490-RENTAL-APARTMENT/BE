@@ -59,10 +59,10 @@ public class LandlordPayoutService : ILandlordPayoutService
             Message = momoResponse.Message,
             RequestBody = momoResponse.RequestRaw,
             ResponseBody = momoResponse.ResponseRaw,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CompletedAt = momoResponse.ResultCode == 0 ? DateTime.UtcNow : null,
-            FailedAt = IsFailed(momoResponse.ResultCode) ? DateTime.UtcNow : null
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now,
+            CompletedAt = momoResponse.ResultCode == 0 ? Common.Utils.VietnamTime.Now : null,
+            FailedAt = IsFailed(momoResponse.ResultCode) ? Common.Utils.VietnamTime.Now : null
         };
 
         await _payoutRepository.AddAsync(payout);
@@ -79,8 +79,8 @@ public class LandlordPayoutService : ILandlordPayoutService
             Status = payout.Status,
             ResultCode = momoResponse.ResultCode,
             Message = momoResponse.Message,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         });
 
         if (momoResponse.ResultCode == 0)
@@ -147,16 +147,16 @@ public class LandlordPayoutService : ILandlordPayoutService
             payout.Message = queryResult.Message;
             payout.MomoTransId = string.IsNullOrWhiteSpace(queryResult.TransId) ? payout.MomoTransId : queryResult.TransId;
             payout.ResponseBody = queryResult.ResponseRaw;
-            payout.UpdatedAt = DateTime.UtcNow;
+            payout.UpdatedAt = Common.Utils.VietnamTime.Now;
 
             if (queryResult.ResultCode == 0)
             {
-                payout.CompletedAt = DateTime.UtcNow;
+                payout.CompletedAt = Common.Utils.VietnamTime.Now;
                 await _walletService.FinalizePayoutSuccessAsync(payout.LandlordId, payout.Amount);
             }
             else if (IsFailed(queryResult.ResultCode))
             {
-                payout.FailedAt = DateTime.UtcNow;
+                payout.FailedAt = Common.Utils.VietnamTime.Now;
                 await _walletService.RollbackPayoutAsync(payout.LandlordId, payout.Amount);
             }
 

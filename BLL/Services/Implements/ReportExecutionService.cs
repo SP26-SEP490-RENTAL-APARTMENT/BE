@@ -35,8 +35,8 @@ public class ReportExecutionService : IReportExecutionService
 
         // For initial implementation, support a simple standard report:
         // daily booking counts within optional date range.
-        var from = request.From ?? DateTime.UtcNow.AddDays(-30);
-        var to = request.To ?? DateTime.UtcNow;
+        var from = request.From ?? Common.Utils.VietnamTime.Now.AddDays(-30);
+        var to = request.To ?? Common.Utils.VietnamTime.Now;
 
         var normalizedFrom = DateOnly.FromDateTime(from.Date);
         var normalizedTo = DateOnly.FromDateTime(to.Date.AddDays(1));
@@ -75,11 +75,11 @@ public class ReportExecutionService : IReportExecutionService
             GeneratedReportId = Guid.NewGuid(),
             ReportId = reportId,
             RequestedBy = requestedByUserId,
-            RequestedAt = DateTime.UtcNow,
+            RequestedAt = Common.Utils.VietnamTime.Now,
             Status = "completed",
             ResultSummaryJson = $"{{\"rowCount\":{grouped.Count}}}",
             ResultJson = null,
-            RetentionUntil = DateTime.UtcNow.AddDays(30)
+            RetentionUntil = Common.Utils.VietnamTime.Now.AddDays(30)
         };
 
         await _generatedReportRepository.AddAsync(generated);

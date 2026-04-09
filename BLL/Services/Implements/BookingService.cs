@@ -133,13 +133,13 @@ public class BookingService : BaseService<Booking>, IBookingService
             Method = "landlord_wallet_penalty",
             Status = Common.Enums.PaymentStatus.success.ToString(),
             TransactionId = penaltyTransactionId,
-            PaidAt = DateTime.UtcNow
+            PaidAt = Common.Utils.VietnamTime.Now
         };
 
         await _paymentRepository.AddAsync(payment);
 
         ticket.Status = "resolved";
-        ticket.ResolvedAt = DateTime.UtcNow;
+        ticket.ResolvedAt = Common.Utils.VietnamTime.Now;
         ticket.ResolvedBy = confirmedBy;
         var supportNotes = $"Occupied incident penalty applied. Amount: {booking.DepositAmount:0.00}. " +
                            $"From available: {settlement.DeductedFromAvailable:0.00}, " +
@@ -153,7 +153,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         ticket.ResolutionNotes = string.IsNullOrWhiteSpace(ticket.ResolutionNotes)
             ? supportNotes
             : $"{ticket.ResolutionNotes}\n{supportNotes}";
-        ticket.UpdatedAt = DateTime.UtcNow;
+        ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
         _supportTicketRepository.Update(ticket);
 
         await _paymentRepository.SaveChangesAsync();
@@ -234,7 +234,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ReferenceId = bookingId,
             ReferenceType = "booking",
             IsRead = false,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _notificationRepository.AddAsync(notification);
@@ -395,7 +395,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             PaymentMode = paymentMode.ToString(),
             BalanceDueDate = checkInDate.AddDays(-1),
             Status = "pending",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _bookingRepository.AddAsync(booking);
@@ -408,8 +408,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             ScheduledCheckIn = checkInDateTime,
             ScheduledCheckOut = checkOutDateTime,
             TempResidenceReported = false,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
         await _bookingCheckTimeRepository.AddAsync(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
@@ -706,7 +706,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             TenantNationality = tenant.Nationality!,
             CheckInDate = booking.CheckInDate,
             ReportedToPolice = dto.ReportedToPolice,
-            ReportDate = dto.ReportDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            ReportDate = dto.ReportDate ?? DateOnly.FromDateTime(Common.Utils.VietnamTime.Now),
             ReportNumber = dto.ReportNumber
         };
 
@@ -717,12 +717,12 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (checkTime != null)
         {
             checkTime.TempResidenceReported = true;
-            checkTime.ReportedAt = DateTime.UtcNow;
+            checkTime.ReportedAt = Common.Utils.VietnamTime.Now;
             checkTime.ReportReference = dto.ReportNumber;
             checkTime.RecordedBy = landlordUserId;
-            checkTime.RecordedAt = DateTime.UtcNow;
-            checkTime.UpdatedAt = DateTime.UtcNow;
-            checkTime.ActualCheckIn ??= dto.ActualCheckIn ?? DateTime.UtcNow;
+            checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
+            checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
+            checkTime.ActualCheckIn ??= dto.ActualCheckIn ?? Common.Utils.VietnamTime.Now;
 
             _bookingCheckTimeRepository.Update(checkTime);
             await _bookingCheckTimeRepository.SaveChangesAsync();
@@ -851,7 +851,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (checkTime.ActualCheckIn.HasValue && checkTime.RecordedAt.HasValue)
         {
             var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
-            var timeSinceRecording = DateTime.UtcNow - checkTime.RecordedAt.Value;
+            var timeSinceRecording = Common.Utils.VietnamTime.Now - checkTime.RecordedAt.Value;
             if (timeSinceRecording.TotalHours > correctionWindowHours)
             {
                 throw new InvalidOperationException($"Check-in time cannot be modified after {correctionWindowHours} hours of initial recording. Contact support to dispute.");
@@ -873,7 +873,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.IsEarlyCheckIn = isEarlyCheckIn;
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
         checkTime.RecordedBy = recordedBy;
-        checkTime.RecordedAt = DateTime.UtcNow;
+        checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
         
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
@@ -933,7 +933,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             if (recordedCheckOutTime.HasValue)
             {
                 var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
-                var timeSinceRecording = DateTime.UtcNow - recordedCheckOutTime.Value;
+                var timeSinceRecording = Common.Utils.VietnamTime.Now - recordedCheckOutTime.Value;
                 if (timeSinceRecording.TotalHours > correctionWindowHours)
                 {
                     throw new InvalidOperationException($"Check-out time cannot be modified after {correctionWindowHours} hours of initial recording. Contact support to dispute.");
@@ -956,7 +956,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.ActualCheckOut = dto.ActualCheckOut;
         checkTime.IsLateCheckOut = isLateCheckOut;
         checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
-        checkTime.UpdatedAt = DateTime.UtcNow;
+        checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
         
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
@@ -1009,7 +1009,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (checkTime.RecordedAt.HasValue)
         {
             var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
-            var timeSinceRecording = DateTime.UtcNow - checkTime.RecordedAt.Value;
+            var timeSinceRecording = Common.Utils.VietnamTime.Now - checkTime.RecordedAt.Value;
             isEditable = timeSinceRecording.TotalHours <= correctionWindowHours;
         }
 
@@ -1055,8 +1055,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         await ExpireUnpaidBookingsIfOverdueAsync(apartmentId);
 
         // Set default date range: today to 90 days from today
-        var calendarStartDate = startDate ?? DateTime.UtcNow.Date;
-        var calendarEndDate = endDate ?? DateTime.UtcNow.AddDays(90).Date;
+        var calendarStartDate = startDate ?? Common.Utils.VietnamTime.Now.Date;
+        var calendarEndDate = endDate ?? Common.Utils.VietnamTime.Now.AddDays(90).Date;
 
         // Validate date range
         if (calendarStartDate >= calendarEndDate)
@@ -1145,7 +1145,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             BookingStatus = calendarBookingStatus,
             CalendarStartDate = calendarStartDate,
             CalendarEndDate = calendarEndDate.AddDays(-1), // Return original end date (without the +1 day)
-            GeneratedAt = DateTime.UtcNow,
+            GeneratedAt = Common.Utils.VietnamTime.Now,
             AvailablePeriods = availablePeriods,
             UnavailablePeriods = mergedUnavailable
         };
@@ -1382,8 +1382,8 @@ public class BookingService : BaseService<Booking>, IBookingService
                 StartDate = item.StartDate,
                 EndDate = item.EndDate,
                 Reason = item.Reason,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             });
         }
 
@@ -1508,8 +1508,8 @@ public class BookingService : BaseService<Booking>, IBookingService
                 StartDate = segment.StartDate,
                 EndDate = segment.EndDate,
                 Reason = segment.Reason,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             });
         }
 
@@ -1571,7 +1571,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private async Task ExpireUnpaidBookingsIfOverdueAsync(Guid apartmentId)
     {
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = Common.Utils.VietnamTime.Now;
         var today = DateOnly.FromDateTime(nowUtc.Date);
         var pendingHoldHours = _configuration.GetValue<int>("BookingPaymentSettings:PendingHoldHours", 24);
         var pendingCutoff = nowUtc.AddHours(-pendingHoldHours);
@@ -1770,7 +1770,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         await EnsureNoConflictingBookingsAsync(alternativeApartmentId, booking.CheckInDate, booking.CheckOutDate);
 
-        var now = DateTime.UtcNow;
+        var now = Common.Utils.VietnamTime.Now;
         var existingPendingOffers = await _bookingOfferRepository.GetPendingOffersByBookingAsync(bookingId, now);
         if (existingPendingOffers.Any(o => o.AlternativeApartmentId == alternativeApartmentId))
         {
@@ -1829,14 +1829,14 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     public async Task<IReadOnlyList<BookingOfferResponseDto>> GetTenantActiveOffersAsync(Guid tenantId)
     {
-        var now = DateTime.UtcNow;
+        var now = Common.Utils.VietnamTime.Now;
         var offers = await _bookingOfferRepository.GetPendingOffersForTenantAsync(tenantId, now);
         return offers.Select(MapOfferToResponse).ToList();
     }
 
     public async Task<BookingOfferResponseDto> RespondToAlternativeOfferAsync(Guid offerId, Guid tenantId, bool accepted, string? notes = null)
     {
-        var now = DateTime.UtcNow;
+        var now = Common.Utils.VietnamTime.Now;
         var offer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offerId)
             ?? throw new KeyNotFoundException("Offer not found.");
 
@@ -1953,7 +1953,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (apartment == null)
             return;
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now.Date);
 
         var hasBlackoutOverlap = (await _apartmentAvailabilityRepository.FindAsync(a =>
             a.ApartmentId == apartmentId &&

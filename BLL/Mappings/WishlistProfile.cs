@@ -45,7 +45,7 @@ public class WishlistProfile : Profile
             .ForMember(dest => dest.TenantId, opt => opt.Ignore())
             .ForMember(dest => dest.Notes, opt => opt.MapFrom(src => src.notes))
             .ForMember(dest => dest.IsFavorite, opt => opt.MapFrom(_ => false))
-            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(_ => DateTime.UtcNow))
+            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(_ => Common.Utils.VietnamTime.Now))
             .ForMember(dest => dest.Tenant, opt => opt.Ignore())
             .ForMember(dest => dest.Apartment, opt => opt.Ignore())
             .ForMember(dest => dest.Collection, opt => opt.Ignore());

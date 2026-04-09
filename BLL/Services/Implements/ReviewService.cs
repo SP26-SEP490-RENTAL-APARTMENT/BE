@@ -54,7 +54,7 @@ public sealed class ReviewService : BaseService<Review>, IReviewService
             throw new InvalidOperationException("You can only review your own bookings.");
         }
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
         if (today < booking.CheckOutDate)
         {
             throw new InvalidOperationException("You can only review after your check-out date.");

@@ -12,7 +12,7 @@ public static class SmartPricingHistorySeed
         if (apartment is null)
             return;
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
 
         var pricingHistories = new List<SmartPricingHistory>
         {
@@ -27,7 +27,7 @@ public static class SmartPricingHistorySeed
                 Reason = "High demand period - weekend",
                 OccupancyRate = 0.85m,
                 AcceptedByLandlord = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -40,7 +40,7 @@ public static class SmartPricingHistorySeed
                 Reason = "Standard pricing",
                 OccupancyRate = 0.50m,
                 AcceptedByLandlord = null,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -53,7 +53,7 @@ public static class SmartPricingHistorySeed
                 Reason = "Low demand period - midweek",
                 OccupancyRate = 0.30m,
                 AcceptedByLandlord = false,
-                CreatedAt = DateTime.UtcNow.AddDays(-1)
+                CreatedAt = Common.Utils.VietnamTime.Now.AddDays(-1)
             }
         };
 

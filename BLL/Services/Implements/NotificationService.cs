@@ -67,7 +67,7 @@ public class NotificationService : BaseService<Notification>, INotificationServi
         if (notification.IsRead != true)
         {
             notification.IsRead = true;
-            notification.ReadAt = DateTime.UtcNow;
+            notification.ReadAt = Common.Utils.VietnamTime.Now;
             _repository.Update(notification);
             await _repository.SaveChangesAsync();
         }
@@ -86,7 +86,7 @@ public class NotificationService : BaseService<Notification>, INotificationServi
             if (notification.IsRead != true)
             {
                 notification.IsRead = true;
-                notification.ReadAt = DateTime.UtcNow;
+                notification.ReadAt = Common.Utils.VietnamTime.Now;
                 _repository.Update(notification);
                 updatedCount++;
             }

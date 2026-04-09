@@ -8,7 +8,7 @@ public static class HolidaysEventSeed
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
-        var currentYear = DateTime.UtcNow.Year;
+        var currentYear = Common.Utils.VietnamTime.Now.Year;
 
         var events = new List<HolidaysEvent>
         {
@@ -22,8 +22,8 @@ public static class HolidaysEventSeed
                 Description = "New Year holiday",
                 IsRecurring = true,
                 RecurrenceRule = "FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=1",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -35,8 +35,8 @@ public static class HolidaysEventSeed
                 Description = "Vietnam National Day",
                 IsRecurring = true,
                 RecurrenceRule = "FREQ=YEARLY;BYMONTH=9;BYMONTHDAY=2",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             }
         };
 

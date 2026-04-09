@@ -54,7 +54,7 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
             var user = _mapper.Map<User>(userDto);
-            user.CreatedAt = DateTime.UtcNow;
+            user.CreatedAt = Common.Utils.VietnamTime.Now;
 
             var created = await _userService.CreateAsync(user);
             return CreatedAtAction(nameof(GetById), new { id = created.UserId }, _mapper.Map<UserDto>(created));

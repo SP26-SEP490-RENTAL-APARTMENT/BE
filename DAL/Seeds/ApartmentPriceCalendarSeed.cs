@@ -12,7 +12,7 @@ public static class ApartmentPriceCalendarSeed
         if (apartment is null)
             return;
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
 
         var priceCalendars = new List<ApartmentPriceCalendar>
         {
@@ -26,8 +26,8 @@ public static class ApartmentPriceCalendarSeed
                 IsDiscount = true,
                 PriceType = "low_season",
                 MinNights = 7,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -39,8 +39,8 @@ public static class ApartmentPriceCalendarSeed
                 IsDiscount = true,
                 PriceType = "low_season",
                 MinNights = 30,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             }
         };
 

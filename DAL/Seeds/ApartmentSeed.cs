@@ -35,7 +35,7 @@ public static class ApartmentSeed
                 MaxPets = 0,
                 Status = "draft",
                 BookingStatus = "locked",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -55,7 +55,7 @@ public static class ApartmentSeed
                 MaxPets = 2,
                 Status = "posted",
                 BookingStatus = "available",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -75,7 +75,7 @@ public static class ApartmentSeed
                 MaxPets = 0,
                 Status = "posted",
                 BookingStatus = "available",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             }
         };
 

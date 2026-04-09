@@ -27,7 +27,7 @@ public class LandlordWalletService : ILandlordWalletService
             LandlordId = landlordId,
             PendingBalance = 0m,
             AvailableBalance = 0m,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _walletRepository.AddAsync(wallet);
@@ -45,7 +45,7 @@ public class LandlordWalletService : ILandlordWalletService
 
         var wallet = await GetOrCreateAsync(landlordId);
         wallet.PendingBalance += amount;
-        wallet.UpdatedAt = DateTime.UtcNow;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
 
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
@@ -65,7 +65,7 @@ public class LandlordWalletService : ILandlordWalletService
         }
 
         wallet.AvailableBalance -= amount;
-        wallet.UpdatedAt = DateTime.UtcNow;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
     }
@@ -95,7 +95,7 @@ public class LandlordWalletService : ILandlordWalletService
             wallet.AvailableBalance -= remaining;
         }
 
-        wallet.UpdatedAt = DateTime.UtcNow;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
 
@@ -123,7 +123,7 @@ public class LandlordWalletService : ILandlordWalletService
         }
 
         wallet.AvailableBalance -= value;
-        wallet.UpdatedAt = DateTime.UtcNow;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
     }
@@ -131,7 +131,7 @@ public class LandlordWalletService : ILandlordWalletService
     public async Task FinalizePayoutSuccessAsync(Guid landlordId, long amount)
     {
         var wallet = await GetOrCreateAsync(landlordId);
-        wallet.UpdatedAt = DateTime.UtcNow;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
     }
@@ -145,7 +145,7 @@ public class LandlordWalletService : ILandlordWalletService
 
         var wallet = await GetOrCreateAsync(landlordId);
         wallet.AvailableBalance += Convert.ToDecimal(amount);
-        wallet.UpdatedAt = DateTime.UtcNow;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
         _walletRepository.Update(wallet);
         await _walletRepository.SaveChangesAsync();
     }

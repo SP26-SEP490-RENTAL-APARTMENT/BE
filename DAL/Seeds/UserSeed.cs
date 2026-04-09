@@ -27,7 +27,7 @@ public static class UserSeed
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000000",
                 Role = "landlord",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             };
             context.Users.Add(landlordUser);
         }
@@ -44,7 +44,7 @@ public static class UserSeed
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000001",
                 Role = "tenant",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             };
             context.Users.Add(tenantUser);
         }
@@ -60,7 +60,7 @@ public static class UserSeed
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000002",
                 Role = "admin",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             });
         }
 
@@ -75,7 +75,7 @@ public static class UserSeed
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000003",
                 Role = "staff",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             });
         }
 

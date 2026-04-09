@@ -25,7 +25,7 @@ namespace Common.DTOs
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            var today = DateOnly.FromDateTime(DateTime.Today);
+            var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
             if (ScheduledDate.HasValue && ScheduledDate.Value < today)
             {
                 yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDate) });
@@ -64,7 +64,7 @@ namespace Common.DTOs
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            var today = DateOnly.FromDateTime(DateTime.Today);
+            var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
             if (ScheduledDate.HasValue && ScheduledDate.Value < today)
             {
                 yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDate) });

@@ -26,7 +26,7 @@ public static class RoomSeed
                 BedType = BedTypes.queen.ToString(),
                 SizeSqm = 25m,
                 IsPrivateBathroom = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -38,7 +38,7 @@ public static class RoomSeed
                 BedType = BedTypes.single.ToString(),
                 SizeSqm = 15m,
                 IsPrivateBathroom = false,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -50,7 +50,7 @@ public static class RoomSeed
                 BedType = BedTypes.@double.ToString(),
                 SizeSqm = 20m,
                 IsPrivateBathroom = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             }
         };
 

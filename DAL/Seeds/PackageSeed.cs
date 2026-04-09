@@ -36,7 +36,7 @@ public static class PackageSeed
                 Currency = "VND",
                 IsActive = true,
                 MaxBookings = null,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             };
 
             context.Packages.Add(package);

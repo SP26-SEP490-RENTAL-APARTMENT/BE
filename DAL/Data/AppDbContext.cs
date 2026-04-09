@@ -1059,6 +1059,16 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.TransactionId)
                 .HasMaxLength(100)
                 .HasColumnName("transaction_id");
+            entity.Property(e => e.LandlordId).HasColumnName("landlord_id");
+            entity.Property(e => e.LandlordAmount)
+                .HasPrecision(12, 2)
+                .HasColumnName("landlord_amount");
+            entity.Property(e => e.PlatformFee)
+                .HasPrecision(12, 2)
+                .HasColumnName("platform_fee");
+            entity.Property(e => e.SettlementStatus)
+                .HasMaxLength(20)
+                .HasColumnName("settlement_status");
         });
 
         modelBuilder.Entity<PropertyInspection>(entity =>

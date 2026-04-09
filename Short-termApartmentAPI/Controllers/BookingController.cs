@@ -231,8 +231,8 @@ namespace Short_termApartmentAPI.Controllers
 					ResultCode = momoResponse.ResultCode,
 					Message = momoResponse.Message,
 					PaymentId = payment.PaymentId,
-					CreatedAt = DateTime.UtcNow,
-					UpdatedAt = DateTime.UtcNow
+					CreatedAt = Common.Utils.VietnamTime.Now,
+					UpdatedAt = Common.Utils.VietnamTime.Now
 				};
 
 				await _momoTransactionService.CreateAsync(requestLog);
@@ -462,8 +462,8 @@ namespace Short_termApartmentAPI.Controllers
 				Subject = $"Occupied room incident for booking {booking.BookingId}",
 				Description = dto.Details,
 				Status = "open",
-				CreatedAt = DateTime.UtcNow,
-				UpdatedAt = DateTime.UtcNow
+				CreatedAt = Common.Utils.VietnamTime.Now,
+				UpdatedAt = Common.Utils.VietnamTime.Now
 			};
 
 			var created = await _supportTicketService.CreateTicketAsync(supportTicket);

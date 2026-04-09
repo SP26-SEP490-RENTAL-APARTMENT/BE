@@ -18,12 +18,12 @@ public class RecordCheckInDto : IValidatableObject
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         // Validate that ActualCheckIn is a reasonable timestamp
-        if (ActualCheckIn.Year < 2020 || ActualCheckIn.Year > DateTime.UtcNow.Year + 1)
+        if (ActualCheckIn.Year < 2020 || ActualCheckIn.Year > Common.Utils.VietnamTime.Now.Year + 1)
         {
             yield return new ValidationResult("Check-in date year is invalid.", new[] { nameof(ActualCheckIn) });
         }
 
-        if (ActualCheckIn > DateTime.UtcNow.AddMinutes(5))
+        if (ActualCheckIn > Common.Utils.VietnamTime.Now.AddMinutes(5))
         {
             yield return new ValidationResult("Check-in time cannot be in the future (+5 min grace).", new[] { nameof(ActualCheckIn) });
         }
@@ -44,12 +44,12 @@ public class RecordCheckOutDto : IValidatableObject
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         // Validate that ActualCheckOut is a reasonable timestamp
-        if (ActualCheckOut.Year < 2020 || ActualCheckOut.Year > DateTime.UtcNow.Year + 1)
+        if (ActualCheckOut.Year < 2020 || ActualCheckOut.Year > Common.Utils.VietnamTime.Now.Year + 1)
         {
             yield return new ValidationResult("Check-out date year is invalid.", new[] { nameof(ActualCheckOut) });
         }
 
-        if (ActualCheckOut > DateTime.UtcNow.AddMinutes(5))
+        if (ActualCheckOut > Common.Utils.VietnamTime.Now.AddMinutes(5))
         {
             yield return new ValidationResult("Check-out time cannot be in the future (+5 min grace).", new[] { nameof(ActualCheckOut) });
         }

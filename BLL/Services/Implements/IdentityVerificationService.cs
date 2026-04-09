@@ -155,7 +155,7 @@ namespace BLL.Services.Implements
                     MimeType = file.ContentType,
                     FileSize = file.Length,
                     Notes = dto.Notes,
-                    UploadedAt = DateTime.UtcNow
+                    UploadedAt = Common.Utils.VietnamTime.Now
                 };
 
                 await _userIdentityDocumentRepository.AddAsync(document);
@@ -184,7 +184,7 @@ namespace BLL.Services.Implements
             if (dto.Approved)
             {
                 document.VerificationStatus = "verified";
-                document.VerifiedAt = DateTime.UtcNow;
+                document.VerifiedAt = Common.Utils.VietnamTime.Now;
                 document.RejectionReason = null;
                 user.IdentityVerified = true;
             }
@@ -231,7 +231,7 @@ namespace BLL.Services.Implements
                 ReferenceId = documentId,
                 ReferenceType = IdentityDocumentReferenceType,
                 IsRead = false,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             };
 
             await _notificationService.CreateAsync(notification);
@@ -295,7 +295,7 @@ namespace BLL.Services.Implements
 
             user.IdentityVerified = true;
             tenant.IdentityVerificationStatus = "verified";
-            tenant.LastVerifiedAt = DateTime.UtcNow;
+            tenant.LastVerifiedAt = Common.Utils.VietnamTime.Now;
 
             _userRepository.Update(user);
             _tenantRepository.Update(tenant);

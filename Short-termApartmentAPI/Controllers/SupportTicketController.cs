@@ -108,8 +108,8 @@ namespace Short_termApartmentAPI.Controllers
             var ticket = _mapper.Map<SupportTicket>(ticketDto);
             ticket.UserId = userId; // Ensure the ticket is associated with the authenticated user
 
-            ticket.CreatedAt = DateTime.UtcNow; // Set created date or rely on DB
-            ticket.UpdatedAt = DateTime.UtcNow;
+            ticket.CreatedAt = Common.Utils.VietnamTime.Now; // Set created date or rely on DB
+            ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
 
             var created = await _supportTicketService.CreateTicketAsync(ticket);
             return CreatedAtAction(nameof(GetById), new { id = created.TicketId }, _mapper.Map<SupportTicketDto>(created));

@@ -43,7 +43,7 @@ namespace BLL.Services.Implements
                 ReferenceId = ticketId,
                 ReferenceType = "support_ticket",
                 IsRead = false,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             });
 
             if (saveChanges)
@@ -81,8 +81,8 @@ namespace BLL.Services.Implements
         public async Task<SupportTicket> CreateTicketAsync(SupportTicket ticket)
         {
             ticket.Status ??= "open";
-            ticket.CreatedAt ??= DateTime.UtcNow;
-            ticket.UpdatedAt = DateTime.UtcNow;
+            ticket.CreatedAt ??= Common.Utils.VietnamTime.Now;
+            ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
 
             await _supportTicketRepository.AddAsync(ticket);
             await _supportTicketRepository.SaveChangesAsync();
@@ -100,7 +100,7 @@ namespace BLL.Services.Implements
                     AssignmentId = Guid.NewGuid(),
                     TicketId = ticket.TicketId,
                     StaffId = primaryStaff.UserId,
-                    AssignedAt = DateTime.UtcNow,
+                    AssignedAt = Common.Utils.VietnamTime.Now,
                     RoleInTicket = "primary"
                 };
 
@@ -144,12 +144,12 @@ namespace BLL.Services.Implements
             ticket.Priority = ticketDto.Priority;
             ticket.Status = ticketDto.Status;
             ticket.ResolutionNotes = ticketDto.ResolutionNotes;
-            ticket.UpdatedAt = DateTime.UtcNow;
+            ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
 
             var isResolved = string.Equals(ticketDto.Status, "resolved", StringComparison.OrdinalIgnoreCase);
             if (isResolved)
             {
-                ticket.ResolvedAt = ticketDto.ResolvedAt ?? DateTime.UtcNow;
+                ticket.ResolvedAt = ticketDto.ResolvedAt ?? Common.Utils.VietnamTime.Now;
                 ticket.ResolvedBy = ticketDto.ResolvedBy ?? actorUserId;
             }
             else
@@ -222,7 +222,7 @@ namespace BLL.Services.Implements
             }
 
             original.Status = "escalated";
-            original.UpdatedAt = DateTime.UtcNow;
+            original.UpdatedAt = Common.Utils.VietnamTime.Now;
             _supportTicketRepository.Update(original);
             await _supportTicketRepository.SaveChangesAsync();
 
@@ -240,8 +240,8 @@ namespace BLL.Services.Implements
                 Category = original.Category,
                 Priority = original.Priority ?? "medium",
                 Status = "open",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             };
 
             return await CreateTicketAsync(followUp);

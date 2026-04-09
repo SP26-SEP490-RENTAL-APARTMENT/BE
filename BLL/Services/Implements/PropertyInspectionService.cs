@@ -109,7 +109,7 @@ public sealed class PropertyInspectionService(
         inspection.OverallCondition = dto.OverallCondition;
         inspection.IssuesFound = dto.IssuesFound;
         inspection.Recommendations = dto.Recommendations;
-        inspection.CompletedDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        inspection.CompletedDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
         inspection.Status = "pending";
 
         _repository.Update(inspection);
@@ -141,7 +141,7 @@ public sealed class PropertyInspectionService(
                 FileKey = null,
                 Description = description,
                 IsIssue = isIssue,
-                UploadedAt = DateTime.UtcNow
+                UploadedAt = Common.Utils.VietnamTime.Now
             };
 
             // Keep the in-memory aggregate in sync so response mapping includes uploaded photos.
@@ -192,7 +192,7 @@ public sealed class PropertyInspectionService(
         var isApprove = string.Equals(decision, "approve", StringComparison.OrdinalIgnoreCase);
 
         inspection.ApprovedBy = adminId;
-        inspection.ApprovedAt = DateTime.UtcNow;
+        inspection.ApprovedAt = Common.Utils.VietnamTime.Now;
         inspection.ApprovedForListing = isApprove;
         inspection.Status = isApprove ? "passed" : "re_inspection_needed";
 

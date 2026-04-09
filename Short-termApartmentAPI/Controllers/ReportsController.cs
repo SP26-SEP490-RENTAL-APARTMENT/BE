@@ -73,8 +73,8 @@ public sealed class ReportsController : ControllerBase
             Category = dto.Category,
             IsActive = dto.IsActive,
             CreatedBy = userId,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _reportDefinitionRepository.AddAsync(entity);

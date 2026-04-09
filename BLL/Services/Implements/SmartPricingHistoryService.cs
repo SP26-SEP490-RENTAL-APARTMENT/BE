@@ -84,7 +84,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
                 SuggestedPrice = suggestedPrice,
                 Reason = $"Smart suggestion: {rate:P0} occupancy × {holidayMultiplier:F2} holiday × {locationMultiplier:F2} location → {suggestedPrice:C}",
                 AcceptedByLandlord = false,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             };
 
             await CreateAsync(pricing);

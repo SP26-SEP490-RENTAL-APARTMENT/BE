@@ -29,7 +29,7 @@ public static class LandlordSubscriptionSeed
             .Except(existingSubscriptionIds)
             .Select(landlordId =>
             {
-                var startDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                var startDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
                 return new LandlordSubscription
                 {
                     SubscriptionId = Guid.NewGuid(),
@@ -42,8 +42,8 @@ public static class LandlordSubscriptionSeed
                     AutoRenew = true,
                     PaymentMethod = "credit_card",
                     LastPaymentId = null,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
+                    CreatedAt = Common.Utils.VietnamTime.Now,
+                    UpdatedAt = Common.Utils.VietnamTime.Now
                 };
             })
             .ToList();

@@ -27,7 +27,7 @@ public static class LandlordWalletSeed
                 LandlordId = id,
                 PendingBalance = 0m,
                 AvailableBalance = 0m,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = Common.Utils.VietnamTime.Now
             })
             .ToList();
 

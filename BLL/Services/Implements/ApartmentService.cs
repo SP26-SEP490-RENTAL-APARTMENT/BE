@@ -220,7 +220,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             ReferenceId = apartmentId,
             ReferenceType = "apartment",
             IsRead = false,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now
         });
 
         if (saveChanges)

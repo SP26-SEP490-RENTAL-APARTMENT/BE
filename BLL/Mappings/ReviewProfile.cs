@@ -12,7 +12,7 @@ public class ReviewProfile : Profile
         CreateMap<CreateReviewRequestDto, Review>()
             .ForMember(dest => dest.ReviewId, opt => opt.Ignore())
             .ForMember(dest => dest.ReviewerId, opt => opt.Ignore()) // usually resolved from token
-            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => System.DateTime.UtcNow));
+            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => Common.Utils.VietnamTime.Now));
 
         CreateMap<UpdateReviewRequestDto, Review>()
             .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));

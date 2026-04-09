@@ -30,7 +30,7 @@ public static class ReviewSeed
             Rating = 5,
             CommentEn = "Great apartment! Very clean and comfortable. The landlord was responsive and helpful.",
             CommentVi = "Căn hộ tuyệt vời! Rất sạch sẽ và thoải mái. Chủ nhà rất phản hồi nhanh chóng.",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now
         };
 
         if (!await context.Reviews.AnyAsync(r => r.ReviewId == review.ReviewId, cancellationToken))

@@ -1,4 +1,4 @@
-﻿using BLL.Services.Interfaces;
+using BLL.Services.Interfaces;
 using Common.DTOs;
 using Common.Settings;
 using Common.Utils;
@@ -81,7 +81,7 @@ namespace BLL.Services.Implements
                 FullName = dto.FullName,
                 Phone = dto.Phone,
                 Role = dto.Role,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now
             };
 
             await _userRepository.AddAsync(newUser);
@@ -208,7 +208,7 @@ namespace BLL.Services.Implements
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
-                Expires = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
+                Expires = Common.Utils.VietnamTime.Now.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
                 Issuer = _jwtSettings.Issuer,
                 Audience = _jwtSettings.Audience,
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -254,7 +254,7 @@ namespace BLL.Services.Implements
             if (user == null) return new ResponseDTO { Success = false, Message = "Email not found." };
 
             user.Token = GenerateSecureToken();
-            user.TokenExpired = DateTime.UtcNow.AddHours(1); // Token valid for 1 hour
+            user.TokenExpired = Common.Utils.VietnamTime.Now.AddHours(1); // Token valid for 1 hour
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
 
@@ -270,7 +270,7 @@ namespace BLL.Services.Implements
             var userList = await _userRepository.FindAsync(u => u.Token == token);
             var user = userList.FirstOrDefault();
 
-            if (user == null || user.TokenExpired == null || user.TokenExpired < DateTime.UtcNow)
+            if (user == null || user.TokenExpired == null || user.TokenExpired < Common.Utils.VietnamTime.Now)
                 return new ResponseDTO { Success = false, Message = "Invalid or expired token." };
 
             if (dto.NewPassword != dto.ConfirmNewPassword)

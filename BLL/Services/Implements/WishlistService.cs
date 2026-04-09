@@ -93,7 +93,7 @@ public class WishlistService : BaseService<TenantWishlist>, IWishlistService
             CollectionId = resolvedCollection.CollectionId,
             Notes = notes,
             IsFavorite = false,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _wishlistRepository.AddAsync(wishlistItem);
@@ -182,8 +182,8 @@ public class WishlistService : BaseService<TenantWishlist>, IWishlistService
             Name = trimmedName,
             Description = description,
             IsDefault = false,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _wishlistCollectionRepository.AddAsync(collection);
@@ -231,7 +231,7 @@ public class WishlistService : BaseService<TenantWishlist>, IWishlistService
 
         collection.Name = trimmedName;
         collection.Description = description;
-        collection.UpdatedAt = DateTime.UtcNow;
+        collection.UpdatedAt = Common.Utils.VietnamTime.Now;
 
         _wishlistCollectionRepository.Update(collection);
         await _wishlistCollectionRepository.SaveChangesAsync();
@@ -317,8 +317,8 @@ public class WishlistService : BaseService<TenantWishlist>, IWishlistService
             Name = DefaultCollectionName,
             Description = "Default wishlist collection",
             IsDefault = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _wishlistCollectionRepository.AddAsync(collection);

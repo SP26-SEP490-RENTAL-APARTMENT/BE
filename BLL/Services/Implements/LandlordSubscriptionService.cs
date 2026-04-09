@@ -103,14 +103,14 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             LandlordId = landlord.LandlordId,
             PlanId = plan.PlanId,
             Status = Status.pending_payment.ToString(),
-            StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            StartDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now),
             EndDate = null,
             RenewalType = renewalType,
             AutoRenew = dto.AutoRenew,
             PaymentMethod = "momo_wallet",
             LastPaymentId = null,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         landlordSubscription = await CreateAsync(landlordSubscription);
@@ -149,7 +149,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         await _paymentService.CreateAsync(payment);
 
         landlordSubscription.LastPaymentId = payment.PaymentId;
-        landlordSubscription.UpdatedAt = DateTime.UtcNow;
+        landlordSubscription.UpdatedAt = Common.Utils.VietnamTime.Now;
         await UpdateAsync(landlordSubscription);
 
         var requestLog = new MomoTransaction
@@ -164,8 +164,8 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             ResultCode = momoResult.ResultCode,
             Message = momoResult.Message,
             PaymentId = payment.PaymentId,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         await _momoTransactionService.CreateAsync(requestLog);
@@ -189,14 +189,14 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             LandlordId = landlord.LandlordId,
             PlanId = plan.PlanId,
             Status = Status.pending_payment.ToString(),
-            StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
+            StartDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now),
             EndDate = null,
             RenewalType = renewalType,
             AutoRenew = dto.AutoRenew,
             PaymentMethod = "landlord_wallet",
             LastPaymentId = null,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
         };
 
         subscription = await CreateAsync(subscription);
@@ -218,7 +218,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
                 RelatedEntityType = PaymentRelatedEntityType.host_subscription.ToString(),
                 Method = "landlord_wallet",
                 Status = PaymentStatus.success.ToString(),
-                PaidAt = DateTime.UtcNow,
+                PaidAt = Common.Utils.VietnamTime.Now,
                 TransactionId = $"wallet_sub_{subscription.SubscriptionId:N}"
             };
 
@@ -249,7 +249,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         catch
         {
             subscription.Status = Status.cancelled.ToString();
-            subscription.UpdatedAt = DateTime.UtcNow;
+            subscription.UpdatedAt = Common.Utils.VietnamTime.Now;
             await UpdateAsync(subscription);
             throw;
         }
@@ -295,13 +295,13 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
 
     private static void ApplyActivatedSubscriptionState(LandlordSubscription subscription, Guid paymentId)
     {
-        var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var nowDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
         var months = string.Equals(subscription.RenewalType, RenewalType.annual.ToString(), StringComparison.OrdinalIgnoreCase) ? 12 : 1;
 
         subscription.Status = Status.active.ToString();
         subscription.StartDate = nowDate;
         subscription.EndDate = nowDate.AddMonths(months);
         subscription.LastPaymentId = paymentId;
-        subscription.UpdatedAt = DateTime.UtcNow;
+        subscription.UpdatedAt = Common.Utils.VietnamTime.Now;
     }
 }

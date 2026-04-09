@@ -12,7 +12,7 @@ public class PackageProfile : Profile
             .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.PackagePackages != null ? src.PackagePackages.Select(pp => pp.PackageItem) : null));
         CreateMap<PackageRequestDto, Package>()
             .ForMember(dest => dest.PackageId, opt => opt.Ignore())
-            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => System.DateTime.UtcNow))
+            .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => Common.Utils.VietnamTime.Now))
             .ForMember(dest => dest.PackagePackages, opt => opt.Ignore());
 
         CreateMap<PackageItem, PackageItemResponseDto>();

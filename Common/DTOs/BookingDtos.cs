@@ -51,7 +51,7 @@ public class CreateBookingRequestDto : IValidatableObject
                 yield break;
             }
 
-            if (CheckInDateTime.Value < DateTime.Now)
+            if (CheckInDateTime.Value < Common.Utils.VietnamTime.Now)
             {
                 yield return new ValidationResult("Check-in date-time cannot be earlier than now.", new[] { nameof(CheckInDateTime) });
             }
@@ -81,7 +81,7 @@ public class CreateBookingRequestDto : IValidatableObject
             yield break;
         }
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
         if (CheckInDate.Value < today)
         {
             yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });
@@ -137,7 +137,7 @@ public class UpdateBookingRequestDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
         if (CheckInDate.HasValue && CheckInDate.Value < today)
         {
             yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });
@@ -227,7 +227,7 @@ public class BookingQuoteRequestDto : IValidatableObject
                 yield break;
             }
 
-            if (CheckInDateTime.Value < DateTime.Now)
+            if (CheckInDateTime.Value < Common.Utils.VietnamTime.Now)
             {
                 yield return new ValidationResult("Check-in date-time cannot be earlier than now.", new[] { nameof(CheckInDateTime) });
             }
@@ -257,7 +257,7 @@ public class BookingQuoteRequestDto : IValidatableObject
             yield break;
         }
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
         if (CheckInDate.Value < today)
         {
             yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });

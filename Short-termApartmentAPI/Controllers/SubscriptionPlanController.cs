@@ -54,7 +54,7 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
             var plan = _mapper.Map<SubscriptionPlan>(planDto);
-            plan.CreatedAt = DateTime.UtcNow; // Or omit if handled by DB
+            plan.CreatedAt = Common.Utils.VietnamTime.Now; // Or omit if handled by DB
             var created = await _subscriptionPlanService.CreateAsync(plan);
             return CreatedAtAction(nameof(GetById), new { id = created.PlanId }, _mapper.Map<SubscriptionPlanDto>(created));
         }

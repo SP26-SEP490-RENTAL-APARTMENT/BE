@@ -25,8 +25,8 @@ public static class SupportTicketSeed
                 Category = "property_quality",
                 Priority = "high",
                 Status = "open",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -37,8 +37,8 @@ public static class SupportTicketSeed
                 Category = "payment_problem",
                 Priority = "medium",
                 Status = "in_progress",
-                CreatedAt = DateTime.UtcNow.AddDays(-1),
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now.AddDays(-1),
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -49,8 +49,8 @@ public static class SupportTicketSeed
                 Category = "cancellation",
                 Priority = "medium",
                 Status = "resolved",
-                CreatedAt = DateTime.UtcNow.AddDays(-3),
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now.AddDays(-3),
+                UpdatedAt = Common.Utils.VietnamTime.Now
             }
         };
 

@@ -1,4 +1,4 @@
-﻿using BLL.Services.Interfaces;
+using BLL.Services.Interfaces;
 using Common.Enums;
 using DAL.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -60,8 +60,8 @@ namespace Short_termApartmentAPI.Controllers
                 ResponseBody = string.Empty,
                 Status = "received",
                 Message = "received",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             };
             await _momoTransactionService.CreateAsync(ipnLog);
 
@@ -70,7 +70,7 @@ namespace Short_termApartmentAPI.Controllers
             if (!valid)
             {
                 ipnLog.Status = "invalid_signature";
-                ipnLog.UpdatedAt = DateTime.UtcNow;
+                ipnLog.UpdatedAt = Common.Utils.VietnamTime.Now;
                 await _momoTransactionService.UpdateAsync(ipnLog);
                 return BadRequest(new { resultCode = -1, message = "Invalid signature" });
             }
@@ -90,7 +90,7 @@ namespace Short_termApartmentAPI.Controllers
 
             // Update ipn log with parsed info
             ipnLog.Status = "verified";
-            ipnLog.UpdatedAt = DateTime.UtcNow;
+            ipnLog.UpdatedAt = Common.Utils.VietnamTime.Now;
             ipnLog.ResponseBody = body;
             ipnLog.ResultCode = resultCode;
             ipnLog.Message = message ?? string.Empty;
@@ -109,7 +109,7 @@ namespace Short_termApartmentAPI.Controllers
                 original.ResponseBody = body;
                 original.ResultCode = resultCode;
                 original.Message = message ?? string.Empty;
-                original.UpdatedAt = DateTime.UtcNow;
+                original.UpdatedAt = Common.Utils.VietnamTime.Now;
                 original.Status = resultCode == 0 ? "success" : "failed";
                 await _momoTransactionService.UpdateAsync(original);
 
@@ -126,7 +126,7 @@ namespace Short_termApartmentAPI.Controllers
                             payment.Status = resultCode == 0 ? "success" : "failed";
                             if (resultCode == 0)
                             {
-                                payment.PaidAt = DateTime.UtcNow;
+                                payment.PaidAt = Common.Utils.VietnamTime.Now;
 
                                 // Calculate platform fee split (30% platform, 70% landlord)
                                 payment.PlatformFee = Math.Round(payment.Amount * 0.30m, 2, MidpointRounding.AwayFromZero);
@@ -157,7 +157,7 @@ namespace Short_termApartmentAPI.Controllers
                             {
                                 original.Status = "success_side_effect_failed";
                                 original.Message = $"{(message ?? string.Empty)} | Side-effect failed: {sideEffectError}";
-                                original.UpdatedAt = DateTime.UtcNow;
+                                original.UpdatedAt = Common.Utils.VietnamTime.Now;
                                 await _momoTransactionService.UpdateAsync(original);
                                 Console.WriteLine($"[MoMo] Payment success side-effect failed. paymentId={payment.PaymentId}, error={sideEffectError}");
                             }
@@ -166,7 +166,7 @@ namespace Short_termApartmentAPI.Controllers
                 }
             }
 
-            // Respond per MoMo expectation — keep response small and quick
+            // Respond per MoMo expectation � keep response small and quick
             return Ok(new { resultCode = 0, message = "OK" });
         }
 
@@ -228,7 +228,7 @@ namespace Short_termApartmentAPI.Controllers
                         return null;
                     }
 
-                    var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+                    var nowDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
                     subscription.Status = Status.active.ToString();
                     subscription.StartDate = nowDate;
 
@@ -241,7 +241,7 @@ namespace Short_termApartmentAPI.Controllers
                     subscription.EndDate = nowDate.AddMonths(months);
                     subscription.PaymentMethod = payment.Method;
                     subscription.LastPaymentId = payment.PaymentId;
-                    subscription.UpdatedAt = DateTime.UtcNow;
+                    subscription.UpdatedAt = Common.Utils.VietnamTime.Now;
 
                     await _landlordSubscriptionService.UpdateAsync(subscription);
 
@@ -281,15 +281,15 @@ namespace Short_termApartmentAPI.Controllers
                 ResponseBody = string.Empty,
                 Status = "received",
                 Message = "received",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             };
             await _momoTransactionService.CreateAsync(ipnLog);
 
             if (!_momoService.ValidateDisbursementIpnSignature(body))
             {
                 ipnLog.Status = "invalid_signature";
-                ipnLog.UpdatedAt = DateTime.UtcNow;
+                ipnLog.UpdatedAt = Common.Utils.VietnamTime.Now;
                 await _momoTransactionService.UpdateAsync(ipnLog);
                 return BadRequest(new { resultCode = -1, message = "Invalid signature" });
             }
@@ -304,7 +304,7 @@ namespace Short_termApartmentAPI.Controllers
             ipnLog.ResultCode = resultCode;
             ipnLog.Message = root.TryGetProperty("message", out var msg) ? msg.GetString() ?? string.Empty : string.Empty;
             ipnLog.ResponseBody = body;
-            ipnLog.UpdatedAt = DateTime.UtcNow;
+            ipnLog.UpdatedAt = Common.Utils.VietnamTime.Now;
             await _momoTransactionService.UpdateAsync(ipnLog);
 
             if (!string.IsNullOrWhiteSpace(requestId))

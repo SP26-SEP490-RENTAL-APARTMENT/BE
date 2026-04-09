@@ -23,8 +23,8 @@ public static class ReportDefinitionSeed
                 Category = "revenue",
                 IsActive = true,
                 CreatedBy = adminUser.UserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -35,8 +35,8 @@ public static class ReportDefinitionSeed
                 Category = "booking",
                 IsActive = true,
                 CreatedBy = adminUser.UserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -47,8 +47,8 @@ public static class ReportDefinitionSeed
                 Category = "review",
                 IsActive = true,
                 CreatedBy = adminUser.UserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             },
             new()
             {
@@ -59,8 +59,8 @@ public static class ReportDefinitionSeed
                 Category = "support",
                 IsActive = true,
                 CreatedBy = adminUser.UserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = Common.Utils.VietnamTime.Now,
+                UpdatedAt = Common.Utils.VietnamTime.Now
             }
         };
 
