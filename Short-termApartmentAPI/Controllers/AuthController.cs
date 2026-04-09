@@ -47,14 +47,21 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            var response = await _authService.RegisterAsync(request);
-
-            if (response == null)
+            try
             {
-                return BadRequest(new { message = "Email is already registered." });
-            }
+                var response = await _authService.RegisterAsync(request);
 
-            return Ok(response);
+                if (response == null)
+                {
+                    return BadRequest(new { message = "Email is already registered." });
+                }
+
+                return Ok(response);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpPost("refresh-token")]

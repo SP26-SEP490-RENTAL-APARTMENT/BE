@@ -321,9 +321,14 @@ CREATE TABLE `temporary_residence_reports` (
 CREATE TABLE `tenants` (
   `tenant_id` char(36) PRIMARY KEY NOT NULL,
   `passport_id` varchar(50),
+  `sex` varchar(20),
+  `birthday` date,
   `nationality` char(2) COMMENT 'ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting',
+  `national_id_card_number` varchar(12),
   `identity_verification_status` ENUM ('not_started', 'pending', 'verified', 'rejected') DEFAULT 'not_started',
-  `last_verified_at` timestamp
+  `last_verified_at` timestamp,
+  CONSTRAINT `chk_tenants_national_id_card_number`
+    CHECK (`national_id_card_number` IS NULL OR `national_id_card_number` REGEXP '^0[0-9]{11}$')
 );
 
 CREATE TABLE `user_identity_documents` (

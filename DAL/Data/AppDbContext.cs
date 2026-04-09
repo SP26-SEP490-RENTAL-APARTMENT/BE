@@ -1437,6 +1437,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.LastVerifiedAt)
                 .HasColumnType("timestamp")
                 .HasColumnName("last_verified_at");
+            entity.Property(e => e.Birthday).HasColumnName("birthday");
+            entity.Property(e => e.NationalIdCardNumber)
+                .HasMaxLength(12)
+                .HasColumnName("national_id_card_number");
             entity.Property(e => e.Nationality)
                 .HasMaxLength(2)
                 .IsFixedLength()
@@ -1445,6 +1449,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.PassportId)
                 .HasMaxLength(50)
                 .HasColumnName("passport_id");
+            entity.Property(e => e.Sex)
+                .HasMaxLength(20)
+                .HasColumnName("sex");
 
             entity.HasOne(d => d.TenantNavigation).WithOne(p => p.Tenant)
                 .HasForeignKey<Tenant>(d => d.TenantId)
