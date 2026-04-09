@@ -2,6 +2,9 @@
 using Common.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
+using System;
+using System.Linq;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -99,7 +102,7 @@ namespace Short_termApartmentAPI.Controllers
             var result = await _authService.RequestPasswordResetAsync(request);
 
             // We return Ok even if the email doesn't exist to prevent email enumeration
-            return Ok(new { message = "If the email is registered, a password reset link has been sent." });
+            return Ok(new ResponseDTO { Success = true, Message = "If the email is registered, a password reset link has been sent." });
         }
 
         [HttpPost("reset-password")]
@@ -112,17 +115,17 @@ namespace Short_termApartmentAPI.Controllers
 
             if (string.IsNullOrWhiteSpace(token))
             {
-                return BadRequest(new { message = "Token is required." });
+                return BadRequest(new ResponseDTO { Success = false, Message = "Token is required." });
             }
 
             var result = await _authService.ResetPasswordAsync(token, request);
 
-            if (!result)
+            if (!result.Success)
             {
-                return BadRequest(new { message = "Invalid token, expired token, or incorrect old password." });
+                return BadRequest(result);
             }
 
-            return Ok(new { message = "Password has been successfully reset." });
+            return Ok(result);
         }
 
         [HttpPost("change-password")]   
@@ -132,17 +135,18 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == "id");
+            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
             if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
             {
-                return Unauthorized(new { message = "User ID claim is missing or invalid." });
+                return Unauthorized(new ResponseDTO { Success = false, Message = "User ID claim is missing or invalid." });
             }
+            
             var result = await _authService.ChangePasswordAsync(userId, request);
-            if (!result)
+            if (!result.Success)
             {
-                return BadRequest(new { message = "Incorrect old password." });
+                return BadRequest(result);
             }
-            return Ok(new { message = "Password has been successfully changed." });
+            return Ok(result);
         }
     }
 }

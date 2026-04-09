@@ -123,11 +123,11 @@ namespace BLL.Services.Implements
             throw new NotImplementedException();
         }
 
-        public async Task<bool> RequestPasswordResetAsync(PasswordResetRequestDto dto)
+        public async Task<ResponseDTO> RequestPasswordResetAsync(PasswordResetRequestDto dto)
         {
             var userList = await _userRepository.FindAsync(u => u.Email == dto.Email);
             var user = userList.FirstOrDefault();
-            if (user == null) return false;
+            if (user == null) return new ResponseDTO { Success = false, Message = "Email not found." };
 
             user.Token = GenerateSecureToken();
             user.TokenExpired = DateTime.UtcNow.AddHours(1); // Token valid for 1 hour
@@ -138,19 +138,19 @@ namespace BLL.Services.Implements
             var body = $"Please reset your password by clicking here: <a href='{resetLink}'>Reset Password</a>";
             await _emailService.SendEmailAsync(user.Email, "Password Reset Request", body);
 
-            return true;
+            return new ResponseDTO { Success = true, Message = "Password reset request successful." };
         }
 
-        public async Task<bool> ResetPasswordAsync(string token, PasswordResetDto dto)
+        public async Task<ResponseDTO> ResetPasswordAsync(string token, PasswordResetDto dto)
         {
             var userList = await _userRepository.FindAsync(u => u.Token == token);
             var user = userList.FirstOrDefault();
 
             if (user == null || user.TokenExpired == null || user.TokenExpired < DateTime.UtcNow)
-                return false;
+                return new ResponseDTO { Success = false, Message = "Invalid or expired token." };
 
             if (dto.NewPassword != dto.ConfirmNewPassword)
-                return false;
+                return new ResponseDTO { Success = false, Message = "New passwords do not match." };
 
             user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
             user.Token = null;
@@ -159,23 +159,23 @@ namespace BLL.Services.Implements
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
 
-            return true;
+            return new ResponseDTO { Success = true, Message = "Password reset successful." };
         }
 
-        public async Task<bool> ChangePasswordAsync(Guid userId, PasswordResetDto dto)
+        public async Task<ResponseDTO> ChangePasswordAsync(Guid userId, PasswordResetDto dto)
         {
             var userList = await _userRepository.FindAsync(u => u.UserId == userId);
             var user = userList.FirstOrDefault();
             if (user == null)
-                return false;
+                return new ResponseDTO { Success = false, Message = "User not found." };
             if (!PasswordHasher.VerifyPassword(dto.OldPassword, user.PasswordHash))
-                return false;
+                return new ResponseDTO { Success = false, Message = "Incorrect old password." };
             if (dto.NewPassword != dto.ConfirmNewPassword)
-                return false;
+                return new ResponseDTO { Success = false, Message = "New passwords do not match." };
             user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
-            return true;
+            return new ResponseDTO { Success = true, Message = "Password changed successfully." };
         }
     }
     
