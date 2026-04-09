@@ -17,6 +17,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 {
     private const decimal SuggestedDepositRate = 0.30m;
     private const decimal FullPaymentLandlordShareRate = 0.70m;
+    private const int MaxBookingDays = 30;
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DepositConfirmationLocks = new();
     private const int DefaultOfferExpiryHours = 2;
     private const decimal DefaultPriceTolerancePercent = 0.20m;
@@ -265,8 +266,14 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     public async Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto)
     {
-        if (dto.CheckInDate >= dto.CheckOutDate)
-            throw new ArgumentException("Check-out date must be later than check-in date.");
+        var (checkInDate, checkOutDate, _, _, nights) = ResolveBookingWindow(
+            dto.CheckInDate,
+            dto.CheckOutDate,
+            dto.CheckInDateTime,
+            dto.CheckOutDateTime);
+
+        if (nights > MaxBookingDays)
+            throw new ArgumentException($"Booking duration cannot exceed {MaxBookingDays} days.");
 
         var apartment = await _apartmentRepository.GetByIdAsync(dto.ApartmentId);
         if (apartment == null)
@@ -275,7 +282,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This apartment is not currently available for booking.");
 
-        if (string.Equals(apartment.BookingStatus, ApartmentBookingStatusEnum.Locked.ToString(), StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(apartment.BookingStatus, "locked", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(apartment.BookingStatus, ApartmentBookingStatusEnum.Locked.ToString(), StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This apartment is currently locked for booking.");
 
         ValidateOccupancyLimits(
@@ -283,14 +291,13 @@ public class BookingService : BaseService<Booking>, IBookingService
             dto.NoOfAdults,
             dto.NoOfPets);
 
-        await EnsureNoConflictingBookingsAsync(dto.ApartmentId, dto.CheckInDate, dto.CheckOutDate);
-        var nights = dto.CheckOutDate.DayNumber - dto.CheckInDate.DayNumber;
+        await EnsureNoConflictingBookingsAsync(dto.ApartmentId, checkInDate, checkOutDate);
 
         // Enforce minimum stay based on apartment price calendar rules
         var calendars = await _apartmentPriceCalendarRepository.FindAsync(c =>
             c.ApartmentId == dto.ApartmentId &&
-            c.StartDate <= dto.CheckOutDate &&
-            c.EndDate >= dto.CheckInDate);
+            c.StartDate <= checkOutDate &&
+            c.EndDate >= checkInDate);
 
         if (calendars.Any())
         {
@@ -337,6 +344,15 @@ public class BookingService : BaseService<Booking>, IBookingService
     {
         await _identityVerificationService.EnsureUserVerifiedForBookingAsync(tenantId);
 
+        var (checkInDate, checkOutDate, checkInDateTime, checkOutDateTime, nights) = ResolveBookingWindow(
+            requestDto.CheckInDate,
+            requestDto.CheckOutDate,
+            requestDto.CheckInDateTime,
+            requestDto.CheckOutDateTime);
+
+        if (nights > MaxBookingDays)
+            throw new ArgumentException($"Booking duration cannot exceed {MaxBookingDays} days.");
+
         var quote = await GetQuoteAsync(new BookingQuoteRequestDto
         {
             ApartmentId = requestDto.ApartmentId,
@@ -344,8 +360,10 @@ public class BookingService : BaseService<Booking>, IBookingService
             NoOfAdults = requestDto.NoOfAdults,
             NoOfInfants = requestDto.NoOfInfants,
             NoOfPets = requestDto.NoOfPets,
-            CheckInDate = requestDto.CheckInDate,
-            CheckOutDate = requestDto.CheckOutDate
+            CheckInDate = checkInDate,
+            CheckOutDate = checkOutDate,
+            CheckInDateTime = checkInDateTime,
+            CheckOutDateTime = checkOutDateTime
         });
 
         var paymentMode = requestDto.PaymentMode;
@@ -362,8 +380,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             BookingId = Guid.NewGuid(),
             TenantId = tenantId,
             ApartmentId = requestDto.ApartmentId,
-            CheckInDate = requestDto.CheckInDate,
-            CheckOutDate = requestDto.CheckOutDate,
+            CheckInDate = checkInDate,
+            CheckOutDate = checkOutDate,
             Nights = quote.Nights,
             NoOfAdults = requestDto.NoOfAdults,
             NoOfInfants = requestDto.NoOfInfants,
@@ -375,7 +393,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             UpfrontPaymentAmount = upfrontPaymentAmount,
             DepositPaid = false,
             PaymentMode = paymentMode.ToString(),
-            BalanceDueDate = requestDto.CheckInDate.AddDays(-1),
+            BalanceDueDate = checkInDate.AddDays(-1),
             Status = "pending",
             CreatedAt = DateTime.UtcNow
         };
@@ -387,8 +405,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             CheckTimeId = Guid.NewGuid(),
             BookingId = booking.BookingId,
-            ScheduledCheckIn = booking.CheckInDate.ToDateTime(new TimeOnly(14, 0)),
-            ScheduledCheckOut = booking.CheckOutDate.ToDateTime(new TimeOnly(12, 0)),
+            ScheduledCheckIn = checkInDateTime,
+            ScheduledCheckOut = checkOutDateTime,
             TempResidenceReported = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -415,6 +433,44 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return booking;
+    }
+
+    private static (DateOnly CheckInDate, DateOnly CheckOutDate, DateTime CheckInDateTime, DateTime CheckOutDateTime, int Nights)
+        ResolveBookingWindow(
+            DateOnly? checkInDate,
+            DateOnly? checkOutDate,
+            DateTime? checkInDateTime,
+            DateTime? checkOutDateTime)
+    {
+        if (checkInDateTime.HasValue || checkOutDateTime.HasValue)
+        {
+            if (!checkInDateTime.HasValue || !checkOutDateTime.HasValue)
+                throw new ArgumentException("Both check-in and check-out date-time are required.");
+
+            if (checkInDateTime.Value >= checkOutDateTime.Value)
+                throw new ArgumentException("Check-out date-time must be later than check-in date-time.");
+
+            var resolvedCheckInDate = DateOnly.FromDateTime(checkInDateTime.Value);
+            var resolvedCheckOutDate = DateOnly.FromDateTime(checkOutDateTime.Value);
+            var nights = (int)Math.Ceiling((checkOutDateTime.Value - checkInDateTime.Value).TotalDays);
+            nights = Math.Max(1, nights);
+
+            return (resolvedCheckInDate, resolvedCheckOutDate, checkInDateTime.Value, checkOutDateTime.Value, nights);
+        }
+
+        if (!checkInDate.HasValue || !checkOutDate.HasValue)
+            throw new ArgumentException("Both check-in and check-out dates are required.");
+
+        if (checkInDate.Value >= checkOutDate.Value)
+            throw new ArgumentException("Check-out date must be later than check-in date.");
+
+        var dateNights = checkOutDate.Value.DayNumber - checkInDate.Value.DayNumber;
+        return (
+            checkInDate.Value,
+            checkOutDate.Value,
+            checkInDate.Value.ToDateTime(new TimeOnly(14, 0)),
+            checkOutDate.Value.ToDateTime(new TimeOnly(12, 0)),
+            dateNights);
     }
 
     private static void ValidateOccupancyLimits(
@@ -681,6 +737,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
         {
             throw new ArgumentException("Booking not found.");
+        }
+
+        if (!string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Booking must be in confirmed status to generate the residence report PDF.");
         }
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
@@ -1580,12 +1641,12 @@ public class BookingService : BaseService<Booking>, IBookingService
         bool hasConfirmedReservationOverlap)
     {
         if (IsApartmentListingLocked(apartmentStatus) || hasBlackoutOverlap)
-            return ApartmentBookingStatusEnum.Locked.ToString();
+            return "locked";
 
         if (hasConfirmedReservationOverlap)
-            return ApartmentBookingStatusEnum.ConfirmedReservation.ToString();
+            return "confirmed";
 
-        return ApartmentBookingStatusEnum.Available.ToString();
+        return "available";
     }
 
     public async Task<IReadOnlyList<OccupiedRoomAlternativeOptionDto>> FindAlternativeApartmentsAsync(Guid bookingId, int maxResults = 5)

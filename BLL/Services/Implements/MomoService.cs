@@ -34,6 +34,8 @@ namespace BLL.Services.Implements
             var amountString = request.Amount.ToString();
             var extraData = request.ExtraData ?? string.Empty;
 
+            Console.WriteLine($"[MoMo] CreateWalletPayment request prepared. orderId={orderId}, requestId={requestId}, ipnUrl={_options.IpnUrl}, endpoint={_options.Endpoint}");
+
             var rawSignature =
                 $"accessKey={_options.AccessKey}" +
                 $"&amount={amountString}" +
@@ -77,6 +79,8 @@ namespace BLL.Services.Implements
 
             using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            Console.WriteLine($"[MoMo] CreateWalletPayment response received. orderId={orderId}, requestId={requestId}, httpStatus={(int)response.StatusCode}");
 
             using var doc = JsonDocument.Parse(responseBody);
             var root = doc.RootElement;

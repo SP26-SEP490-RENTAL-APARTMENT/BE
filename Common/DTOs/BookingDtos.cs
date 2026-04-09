@@ -11,20 +11,21 @@ public class CreateBookingRequestDto : IValidatableObject
     [Required]
     public Guid ApartmentId { get; set; }
 
-    [Required]
-    public DateOnly CheckInDate { get; set; }
+    public DateOnly? CheckInDate { get; set; }
 
-    [Required]
-    public DateOnly CheckOutDate { get; set; }
+    public DateOnly? CheckOutDate { get; set; }
 
-    [Required]
+    public DateTime? CheckInDateTime { get; set; }
+
+    public DateTime? CheckOutDateTime { get; set; }
+
     [Range(1, int.MaxValue, ErrorMessage = "Nights must be at least 1.")]
-    public int Nights { get; set; }
+    public int? Nights { get; set; }
 
     [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
     public int? NoOfAdults { get; set; }
 
-    [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
+    [Range(0, 3, ErrorMessage = "Number of infants must be between 0 and 3.")]
     public int? NoOfInfants { get; set; }
 
     [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
@@ -39,15 +40,62 @@ public class CreateBookingRequestDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        var hasDateTimes = CheckInDateTime.HasValue || CheckOutDateTime.HasValue;
+        var hasDates = CheckInDate.HasValue || CheckOutDate.HasValue;
+
+        if (hasDateTimes)
+        {
+            if (!CheckInDateTime.HasValue || !CheckOutDateTime.HasValue)
+            {
+                yield return new ValidationResult("Both check-in and check-out date-time are required when using date-time booking.", new[] { nameof(CheckInDateTime), nameof(CheckOutDateTime) });
+                yield break;
+            }
+
+            if (CheckInDateTime.Value < DateTime.Now)
+            {
+                yield return new ValidationResult("Check-in date-time cannot be earlier than now.", new[] { nameof(CheckInDateTime) });
+            }
+
+            if (CheckInDateTime.Value >= CheckOutDateTime.Value)
+            {
+                yield return new ValidationResult("Check-out date-time must be later than check-in date-time.", new[] { nameof(CheckOutDateTime) });
+            }
+
+            if ((CheckOutDateTime.Value - CheckInDateTime.Value).TotalDays > 30)
+            {
+                yield return new ValidationResult("Booking duration cannot exceed 30 days.", new[] { nameof(CheckOutDateTime) });
+            }
+
+            yield break;
+        }
+
+        if (!hasDates)
+        {
+            yield return new ValidationResult("Provide either check-in/check-out dates or check-in/check-out date-times.", new[] { nameof(CheckInDate), nameof(CheckOutDate), nameof(CheckInDateTime), nameof(CheckOutDateTime) });
+            yield break;
+        }
+
+        if (!CheckInDate.HasValue || !CheckOutDate.HasValue)
+        {
+            yield return new ValidationResult("Both check-in and check-out dates are required.", new[] { nameof(CheckInDate), nameof(CheckOutDate) });
+            yield break;
+        }
+
         var today = DateOnly.FromDateTime(DateTime.Today);
-        if (CheckInDate < today)
+        if (CheckInDate.Value < today)
         {
             yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });
         }
-        
-        if (CheckInDate >= CheckOutDate)
+
+        if (CheckInDate.Value >= CheckOutDate.Value)
         {
             yield return new ValidationResult("Check-out date must be later than check-in date.", new[] { nameof(CheckOutDate) });
+        }
+
+        var nights = CheckOutDate.Value.DayNumber - CheckInDate.Value.DayNumber;
+        if (nights > 30)
+        {
+            yield return new ValidationResult("Booking duration cannot exceed 30 days.", new[] { nameof(CheckOutDate) });
         }
     }
 }
@@ -158,23 +206,72 @@ public class BookingQuoteRequestDto : IValidatableObject
     [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
     public int? NoOfPets { get; set; }
 
-    [Required]
-    public DateOnly CheckInDate { get; set; }
+    public DateOnly? CheckInDate { get; set; }
 
-    [Required]
-    public DateOnly CheckOutDate { get; set; }
+    public DateOnly? CheckOutDate { get; set; }
+
+    public DateTime? CheckInDateTime { get; set; }
+
+    public DateTime? CheckOutDateTime { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        var hasDateTimes = CheckInDateTime.HasValue || CheckOutDateTime.HasValue;
+        var hasDates = CheckInDate.HasValue || CheckOutDate.HasValue;
+
+        if (hasDateTimes)
+        {
+            if (!CheckInDateTime.HasValue || !CheckOutDateTime.HasValue)
+            {
+                yield return new ValidationResult("Both check-in and check-out date-time are required when using date-time quote.", new[] { nameof(CheckInDateTime), nameof(CheckOutDateTime) });
+                yield break;
+            }
+
+            if (CheckInDateTime.Value < DateTime.Now)
+            {
+                yield return new ValidationResult("Check-in date-time cannot be earlier than now.", new[] { nameof(CheckInDateTime) });
+            }
+
+            if (CheckInDateTime.Value >= CheckOutDateTime.Value)
+            {
+                yield return new ValidationResult("Check-out date-time must be later than check-in date-time.", new[] { nameof(CheckOutDateTime) });
+            }
+
+            if ((CheckOutDateTime.Value - CheckInDateTime.Value).TotalDays > 30)
+            {
+                yield return new ValidationResult("Booking duration cannot exceed 30 days.", new[] { nameof(CheckOutDateTime) });
+            }
+
+            yield break;
+        }
+
+        if (!hasDates)
+        {
+            yield return new ValidationResult("Provide either check-in/check-out dates or check-in/check-out date-times.", new[] { nameof(CheckInDate), nameof(CheckOutDate), nameof(CheckInDateTime), nameof(CheckOutDateTime) });
+            yield break;
+        }
+
+        if (!CheckInDate.HasValue || !CheckOutDate.HasValue)
+        {
+            yield return new ValidationResult("Both check-in and check-out dates are required.", new[] { nameof(CheckInDate), nameof(CheckOutDate) });
+            yield break;
+        }
+
         var today = DateOnly.FromDateTime(DateTime.Today);
-        if (CheckInDate < today)
+        if (CheckInDate.Value < today)
         {
             yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });
         }
 
-        if (CheckInDate >= CheckOutDate)
+        if (CheckInDate.Value >= CheckOutDate.Value)
         {
             yield return new ValidationResult("Check-out date must be later than check-in date.", new[] { nameof(CheckOutDate) });
+        }
+
+        var nights = CheckOutDate.Value.DayNumber - CheckInDate.Value.DayNumber;
+        if (nights > 30)
+        {
+            yield return new ValidationResult("Booking duration cannot exceed 30 days.", new[] { nameof(CheckOutDate) });
         }
     }
 }

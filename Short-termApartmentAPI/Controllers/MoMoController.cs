@@ -125,9 +125,27 @@ namespace Short_termApartmentAPI.Controllers
                             payment.TransactionId = transId;
                             payment.Status = resultCode == 0 ? "success" : "failed";
                             if (resultCode == 0)
+                            {
                                 payment.PaidAt = DateTime.UtcNow;
 
+                                // Calculate platform fee split (30% platform, 70% landlord)
+                                payment.PlatformFee = Math.Round(payment.Amount * 0.30m, 2, MidpointRounding.AwayFromZero);
+                                payment.LandlordAmount = Math.Round(payment.Amount * 0.70m, 2, MidpointRounding.AwayFromZero);
+                                payment.SettlementStatus = "pending";
+                            }
+
                             await _paymentService.UpdateAsync(payment);
+                        }
+                        else
+                        {
+                            // Ensure fee split is populated even for idempotent retries
+                            if (payment.PlatformFee == 0 && payment.LandlordAmount == 0 && resultCode == 0)
+                            {
+                                payment.PlatformFee = Math.Round(payment.Amount * 0.30m, 2, MidpointRounding.AwayFromZero);
+                                payment.LandlordAmount = Math.Round(payment.Amount * 0.70m, 2, MidpointRounding.AwayFromZero);
+                                payment.SettlementStatus = "pending";
+                                await _paymentService.UpdateAsync(payment);
+                            }
                         }
 
                         // Important: run success side-effects even when payment is already marked success.

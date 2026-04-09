@@ -17,6 +17,14 @@ public partial class Payment
 
     public string? RelatedEntityType { get; set; }
 
+    public Guid? LandlordId { get; set; }
+
+    public decimal LandlordAmount { get; set; }
+
+    public decimal PlatformFee { get; set; }
+
+    public string SettlementStatus { get; set; } = "pending";
+
     public string Method { get; set; } = null!;
 
     public string? Status { get; set; }

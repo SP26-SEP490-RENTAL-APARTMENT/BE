@@ -381,6 +381,151 @@ public class BookingServiceQuoteValidationTests
     }
 }
 
+public class BookingServiceResidenceReportTests
+{
+    [Fact]
+    public async Task GetResidenceReportDetailsAsync_ReturnsDetailsForConfirmedBooking()
+    {
+        var landlordId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingId = Guid.NewGuid();
+        var apartmentId = Guid.NewGuid();
+
+        var apartment = new Apartment
+        {
+            ApartmentId = apartmentId,
+            LandlordId = landlordId,
+            Title = "Residence Apartment",
+            Address = "123 Main Street",
+            District = "District 1",
+            City = "Hanoi",
+            Status = "posted"
+        };
+
+        var bookingRepo = new InMemoryBookingRepository(new[]
+        {
+            new Booking
+            {
+                BookingId = bookingId,
+                TenantId = tenantId,
+                ApartmentId = apartmentId,
+                CheckInDate = new DateOnly(2026, 5, 1),
+                CheckOutDate = new DateOnly(2026, 5, 5),
+                Nights = 4,
+                TotalPrice = 4000000m,
+                DepositAmount = 1200000m,
+                UpfrontPaymentAmount = 1200000m,
+                BalanceDueDate = new DateOnly(2026, 4, 25),
+                Status = "confirmed"
+            }
+        });
+
+        var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var reportRepo = new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId,
+            new TemporaryResidenceReport
+            {
+                ReportId = Guid.NewGuid(),
+                BookingId = bookingId,
+                LandlordId = landlordId,
+                TenantPassportId = "P1234567",
+                TenantNationality = "VN",
+                ReportedToPolice = true,
+                ReportDate = new DateOnly(2026, 5, 6),
+                ReportNumber = "RPT-001"
+            });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
+        var userRepo = new InMemoryRepository<User>(u => u.UserId,
+            new User { UserId = landlordId, FullName = "Landlord User", Phone = "0900000001", Role = "landlord" },
+            new User { UserId = tenantId, FullName = "Tenant User", Phone = "0900000002", Role = "tenant" });
+
+        var sut = new BookingService(
+            bookingRepo,
+            new InMemoryBookingOfferRepository(),
+            apartmentRepo,
+            new InMemoryApartmentPriceCalendarRepository(),
+            new InMemoryRepository<Package>(p => p.PackageId),
+            new InMemoryRepository<DAL.Models.Notification>(n => n.NotificationId),
+            new InMemoryRepository<BookingCheckTime>(c => c.CheckTimeId),
+            reportRepo,
+            tenantRepo,
+            userRepo,
+            new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
+            new InMemoryRepository<SupportTicket>(s => s.TicketId),
+            new InMemoryRepository<Payment>(p => p.PaymentId),
+            new NoOpIdentityVerificationService(),
+            new RecordingWalletService(),
+            new ConfigurationManager(),
+            new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper());
+
+        var details = await sut.GetResidenceReportDetailsAsync(bookingId, landlordId);
+
+        Assert.Equal(bookingId, details.BookingId);
+        Assert.Equal(landlordId, details.LandlordId);
+        Assert.Equal(tenantId, details.TenantId);
+        Assert.Equal("Residence Apartment", details.ApartmentTitle);
+        Assert.Equal("RPT-001", details.ReportNumber);
+    }
+
+    [Fact]
+    public async Task GetResidenceReportDetailsAsync_ThrowsWhenBookingIsNotConfirmed()
+    {
+        var landlordId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingId = Guid.NewGuid();
+        var apartmentId = Guid.NewGuid();
+
+        var apartment = new Apartment
+        {
+            ApartmentId = apartmentId,
+            LandlordId = landlordId,
+            Title = "Residence Apartment",
+            Status = "posted"
+        };
+
+        var bookingRepo = new InMemoryBookingRepository(new[]
+        {
+            new Booking
+            {
+                BookingId = bookingId,
+                TenantId = tenantId,
+                ApartmentId = apartmentId,
+                CheckInDate = new DateOnly(2026, 5, 1),
+                CheckOutDate = new DateOnly(2026, 5, 5),
+                Nights = 4,
+                TotalPrice = 4000000m,
+                DepositAmount = 1200000m,
+                UpfrontPaymentAmount = 1200000m,
+                BalanceDueDate = new DateOnly(2026, 4, 25),
+                Status = "pending"
+            }
+        });
+
+        var sut = new BookingService(
+            bookingRepo,
+            new InMemoryBookingOfferRepository(),
+            new InMemoryApartmentRepository(apartment),
+            new InMemoryApartmentPriceCalendarRepository(),
+            new InMemoryRepository<Package>(p => p.PackageId),
+            new InMemoryRepository<DAL.Models.Notification>(n => n.NotificationId),
+            new InMemoryRepository<BookingCheckTime>(c => c.CheckTimeId),
+            new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId),
+            new InMemoryRepository<Tenant>(t => t.TenantId),
+            new InMemoryRepository<User>(u => u.UserId),
+            new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
+            new InMemoryRepository<SupportTicket>(s => s.TicketId),
+            new InMemoryRepository<Payment>(p => p.PaymentId),
+            new NoOpIdentityVerificationService(),
+            new RecordingWalletService(),
+            new ConfigurationManager(),
+            new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetResidenceReportDetailsAsync(bookingId, landlordId));
+
+        Assert.Contains("confirmed status", ex.Message);
+    }
+}
+
 public class LandlordPayoutValidationTests
 {
     [Fact]

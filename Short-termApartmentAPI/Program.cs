@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using MoMoApi;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -107,22 +108,37 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy", policy =>
     {
-        policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "https://rental-apartment-web.vercel.app"
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials()
-            .WithExposedHeaders("Content-Disposition", "content-disposition");
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
     });
 });
 
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var app = builder.Build();
+
+var momoConfig = app.Configuration.GetSection(MomoOptions.SectionName);
+var momoIpnUrl = momoConfig["IpnUrl"] ?? string.Empty;
+var momoDisbursementIpnUrl = momoConfig["DisbursementIpnUrl"] ?? string.Empty;
+var momoPartnerCode = momoConfig["PartnerCode"] ?? string.Empty;
+
+app.Logger.LogInformation(
+    "Startup config: Environment={Environment}, MoMoPartnerCode={PartnerCode}, MoMoIpnUrl={IpnUrl}, MoMoDisbursementIpnUrl={DisbursementIpnUrl}",
+    app.Environment.EnvironmentName,
+    momoPartnerCode,
+    momoIpnUrl,
+    momoDisbursementIpnUrl);
+
+if (string.IsNullOrWhiteSpace(momoIpnUrl))
+{
+    app.Logger.LogWarning("MoMo IPN URL is empty. Callbacks will not be delivered correctly.");
+}
+
+if (string.IsNullOrWhiteSpace(momoDisbursementIpnUrl))
+{
+    app.Logger.LogWarning("MoMo disbursement IPN URL is empty. Disbursement callbacks may fail.");
+}
 
 using (var scope = app.Services.CreateScope())
 {

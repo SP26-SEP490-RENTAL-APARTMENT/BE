@@ -152,7 +152,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         var apartment = _mapper.Map<Apartment>(requestDto);
         apartment.LandlordId = landlordId;
-        apartment.BookingStatus = ApartmentBookingStatusEnum.Available.ToString();
+        apartment.BookingStatus = "available";
 
         var created = await CreateAsync(apartment);
 
@@ -248,7 +248,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         // Transition to pending_review
         apartment.Status = "pending_review";
-        apartment.BookingStatus = ApartmentBookingStatusEnum.Locked.ToString();
+        apartment.BookingStatus = "locked";
         await _apartmentRepository.UpdateListingStatusAsync(
             apartment.ApartmentId,
             apartment.Status,
@@ -301,7 +301,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         {
             // Approve: transition to posted
             apartment.Status = "posted";
-            apartment.BookingStatus = ApartmentBookingStatusEnum.Available.ToString();
+            apartment.BookingStatus = "available";
 
             type = NotificationType.listing_approved.ToString();
             title = "Listing approved";
@@ -314,7 +314,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 throw new InvalidOperationException("A rejection reason must be provided when rejecting a listing.");
 
             apartment.Status = "blocked";
-            apartment.BookingStatus = ApartmentBookingStatusEnum.Locked.ToString();
+            apartment.BookingStatus = "locked";
 
             type = NotificationType.listing_rejected.ToString();
             title = "Listing rejected";

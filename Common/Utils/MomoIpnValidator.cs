@@ -11,8 +11,16 @@ public static class MomoIpnValidator
     // NOTE: BuildRawSignature must match MoMo's exact canonical field order for IPN callbacks.
     public static bool Validate(string requestBody, string accessKey, string secretKey)
     {
-        using var doc = JsonDocument.Parse(requestBody);
-        var root = doc.RootElement;
+        JsonElement root;
+        try
+        {
+            using var doc = JsonDocument.Parse(requestBody);
+            root = doc.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
 
         // Extract signature from payload (adjust if MoMo sends it in header)
         if (!root.TryGetProperty("signature", out var signatureElement) || signatureElement.ValueKind != JsonValueKind.String)
@@ -96,8 +104,16 @@ public static class MomoIpnValidator
     // Canonical signature for MoMo disbursement IPN (no payType field)
     public static bool ValidateDisbursement(string requestBody, string accessKey, string secretKey)
     {
-        using var doc = JsonDocument.Parse(requestBody);
-        var root = doc.RootElement;
+        JsonElement root;
+        try
+        {
+            using var doc = JsonDocument.Parse(requestBody);
+            root = doc.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
 
         if (!root.TryGetProperty("signature", out var signatureElement) || signatureElement.ValueKind != JsonValueKind.String)
             return false;
