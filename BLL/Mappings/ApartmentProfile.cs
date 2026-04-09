@@ -13,7 +13,7 @@ public class ApartmentProfile : Profile
             .ForMember(dest => dest.Location, opt => opt.MapFrom(src => new NetTopologySuite.Geometries.Point((double)src.longitude.GetValueOrDefault(), (double)src.latitude.GetValueOrDefault()) { SRID = 4326 }))
             .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => System.DateTime.UtcNow))
             .ForMember(dest => dest.Status, opt => opt.MapFrom(src => "draft"))
-            .ForMember(dest => dest.BookingStatus, opt => opt.MapFrom(src => ApartmentBookingStatusEnum.Available.ToString()))
+            .ForMember(dest => dest.BookingStatus, opt => opt.MapFrom(src => "available"))
             .ForMember(dest => dest.ApartmentId, opt => opt.Ignore())
             .ForMember(dest => dest.LandlordId, opt => opt.Ignore());
 

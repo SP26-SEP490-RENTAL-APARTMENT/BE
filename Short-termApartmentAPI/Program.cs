@@ -120,6 +120,8 @@ builder.Services.AddCors(options =>
     });
 });
 
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())

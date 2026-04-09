@@ -11,8 +11,8 @@ namespace BLL.DependencyInjection
         {
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
             services.Configure<CloudinarySettings>(configuration.GetSection("CloudinarySettings"));
-            services.Configure<MomoOptions>(configuration.GetSection(MomoOptions.SectionName));
-            services.Configure<StripeSettings>(configuration.GetSection(StripeSettings.SectionName));
+            services.Configure<MomoOptions>(configuration.GetSection("Momo"));
+            services.Configure<StripeSettings>(configuration.GetSection("Stripe"));
             return services;
         }
     }

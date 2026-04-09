@@ -57,7 +57,9 @@ namespace Short_termApartmentAPI.Controllers
                 Amount = 0,
                 Type = "ipn",
                 RequestBody = body,
+                ResponseBody = string.Empty,
                 Status = "received",
+                Message = "received",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };

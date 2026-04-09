@@ -23,8 +23,6 @@ public static class DbInitializer
         // Dependent entities
         await LandlordWalletSeed.SeedAsync(context, cancellationToken);
         await LandlordSubscriptionSeed.SeedAsync(context, cancellationToken);
-        await BookingSeed.SeedAsync(context, cancellationToken);
-        await PaymentSeed.SeedAsync(context, cancellationToken);
         // TODO: Fix unique constraint for reviews
         // await ReviewSeed.SeedAsync(context, cancellationToken);
         await SupportTicketSeed.SeedAsync(context, cancellationToken);

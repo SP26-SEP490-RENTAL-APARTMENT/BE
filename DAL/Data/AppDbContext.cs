@@ -182,8 +182,8 @@ public partial class AppDbContext : DbContext
                 .HasPrecision(12, 2)
                 .HasColumnName("base_price_per_night");
             entity.Property(e => e.BookingStatus)
-                .HasDefaultValueSql("'Available'")
-                .HasColumnType("enum('Available','ConfirmedReservation','Locked')")
+                .HasDefaultValueSql("'available'")
+                .HasColumnType("enum('available','confirmed','locked')")
                 .HasColumnName("booking_status");
             entity.Property(e => e.City)
                 .HasMaxLength(100)

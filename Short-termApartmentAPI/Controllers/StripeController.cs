@@ -11,96 +11,118 @@ namespace Short_termApartmentAPI.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public sealed class StripeController : ControllerBase
 {
+    private readonly ILogger<StripeController> _logger;
     private readonly IPaymentService _paymentService;
     private readonly IBookingService _bookingService;
-    private readonly Common.Settings.StripeSettings _settings;
+    private readonly IConfiguration _configuration;
 
     public StripeController(
+        ILogger<StripeController> logger,
         IPaymentService paymentService,
         IBookingService bookingService,
-        IOptions<Common.Settings.StripeSettings> stripeOptions)
+        IConfiguration configuration)
     {
+        _logger = logger;
         _paymentService = paymentService;
         _bookingService = bookingService;
-        _settings = stripeOptions.Value;
+        _configuration = configuration;
     }
 
     [HttpPost("webhook")]
     [AllowAnonymous]
     public async Task<IActionResult> Webhook()
     {
-        var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-        var signatureHeader = Request.Headers["Stripe-Signature"].FirstOrDefault();
+        var signatureHeader = Request.Headers["Stripe-Signature"].ToString();
+        _logger.LogInformation("Stripe-Signature header: {Signature}", signatureHeader);
 
-        if (string.IsNullOrEmpty(signatureHeader))
-        {
-            return BadRequest();
-        }
+        // Read raw body as string (and log its length)
+        var json = await new StreamReader(Request.Body).ReadToEndAsync();
+        _logger.LogInformation("Raw JSON length: {Length}, first 100 chars: {Preview}",
+            json.Length, json.Substring(0, Math.Min(100, json.Length)));
 
-        Event stripeEvent;
+        var webhookSecret = _configuration["Stripe:WebhookSecret"];
         try
         {
-            stripeEvent = EventUtility.ConstructEvent(json, signatureHeader, _settings.WebhookSecret);
-        }
-        catch (StripeException)
-        {
-            return BadRequest();
-        }
+            // 3. Construct and verify the event using the raw JSON string
+            var stripeEvent = EventUtility.ConstructEvent(json, signatureHeader, webhookSecret);
 
-        if (stripeEvent.Type == Events.CheckoutSessionCompleted)
-        {
-            var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
-            if (session != null)
+            // 4. Log success for debugging
+            _logger.LogInformation("Webhook verified for Event ID: {EventId}, Type: {EventType}", stripeEvent.Id, stripeEvent.Type);
+
+
+            if (string.IsNullOrEmpty(signatureHeader))
             {
-                var transactionId = session.Id;
+                return BadRequest();
+            }
 
-                // Find payment by stored SessionId
-                var paymentsRepoField = typeof(BLL.Services.Implements.BaseService<Payment>)
-                    .GetField("_repository", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-                var repo = paymentsRepoField?.GetValue(_paymentService) as DAL.Repository.Interfaces.IRepository<Payment>;
-                if (repo != null)
+            if (stripeEvent.Type == "checkout.session.completed")
+            {
+                var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+                if (session != null)
                 {
-                    var matches = await repo.FindAsync(p =>
-                        p.Method == "stripe" &&
-                        p.TransactionId == transactionId);
-                    var payment = matches.FirstOrDefault();
-                    if (payment != null && payment.Status != PaymentStatus.success.ToString())
+                    var transactionId = session.Id;
+
+                    // Find payment by stored SessionId
+                    var paymentsRepoField = typeof(BLL.Services.Implements.BaseService<Payment>)
+                        .GetField("_repository", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+                    var repo = paymentsRepoField?.GetValue(_paymentService) as DAL.Repository.Interfaces.IRepository<Payment>;
+                    if (repo != null)
                     {
-                        payment.Status = PaymentStatus.success.ToString();
-                        payment.PaidAt = DateTime.UtcNow;
-                        payment.TransactionId = transactionId;
-
-                        await _paymentService.UpdateAsync(payment);
-
-                        if (payment.RelatedEntityId.HasValue &&
-                            string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
+                        var matches = await repo.FindAsync(p =>
+                            p.Method == "stripe" &&
+                            p.TransactionId == transactionId);
+                        var payment = matches.FirstOrDefault();
+                        if (payment != null && payment.Status != PaymentStatus.success.ToString())
                         {
-                            try
+                            payment.Status = PaymentStatus.success.ToString();
+                            payment.PaidAt = DateTime.UtcNow;
+                            payment.TransactionId = transactionId;
+
+                            await _paymentService.UpdateAsync(payment);
+
+                            if (payment.RelatedEntityId.HasValue &&
+                                string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
                             {
-                                if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
-                                    || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
+                                try
                                 {
-                                    await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                    if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
+                                        || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                    }
+                                    else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                                    }
                                 }
-                                else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
+                                catch (Exception ex)
                                 {
-                                    await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                                    Console.WriteLine($"[Stripe] Booking payment side-effect failed: {ex.Message}");
                                 }
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"[Stripe] Booking payment side-effect failed: {ex.Message}");
                             }
                         }
                     }
                 }
             }
+            else
+            {
+                _logger.LogInformation("Unhandled Stripe event type: {EventType}", stripeEvent.Type);
+            }
+            return Ok();
         }
-
-        return Ok();
+        catch (StripeException ex)
+        {
+            _logger.LogError(ex, "Verification failed. Secret used: {SecretPrefix}",
+            webhookSecret?.Substring(0, 8));
+            return BadRequest();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing Stripe webhook: {Message}", ex.Message);
+            return StatusCode(500);
+        }
     }
 }
