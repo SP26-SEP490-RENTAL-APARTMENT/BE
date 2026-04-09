@@ -114,24 +114,15 @@ public sealed class PropertyInspectionService(
 
         _repository.Update(inspection);
 
-        for (var index = 0; index < dto.Photos.Count; index++)
+        foreach (var photoItem in dto.PhotoItems)
         {
-            var photo = dto.Photos[index];
+            var photo = photoItem.File;
             if (photo == null || photo.Length == 0)
             {
                 throw new ArgumentException("Each inspection photo must be a non-empty file.");
             }
 
             var fileUrl = await _imageService.UploadImageAsync(photo);
-            var description = dto.PhotoDescriptions != null && index < dto.PhotoDescriptions.Count
-                ? dto.PhotoDescriptions[index]
-                : null;
-
-            bool? isIssue = null;
-            if (dto.PhotoIsIssues != null && index < dto.PhotoIsIssues.Count)
-            {
-                isIssue = dto.PhotoIsIssues[index];
-            }
 
             var inspectionPhoto = new InspectionPhoto
             {
@@ -139,8 +130,8 @@ public sealed class PropertyInspectionService(
                 InspectionId = inspection.InspectionId,
                 FileUrl = fileUrl,
                 FileKey = null,
-                Description = description,
-                IsIssue = isIssue,
+                Description = photoItem.Description,
+                IsIssue = photoItem.IsIssue,
                 UploadedAt = Common.Utils.VietnamTime.Now
             };
 

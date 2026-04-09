@@ -99,6 +99,16 @@ namespace Common.DTOs
         public DateTime? UploadedAt { get; set; }
     }
 
+    public class InspectionPhotoUploadDto
+    {
+        [Required]
+        public IFormFile File { get; set; } = null!;
+
+        public string? Description { get; set; }
+
+        public bool? IsIssue { get; set; }
+    }
+
     public class CompletePropertyInspectionDto
     {
         public string? OverallCondition { get; set; }
@@ -108,11 +118,7 @@ namespace Common.DTOs
         public string? Recommendations { get; set; }
 
         [MinLength(1, ErrorMessage = "At least one inspection photo is required.")]
-        public List<IFormFile> Photos { get; set; } = new();
-
-        public List<string>? PhotoDescriptions { get; set; }
-
-        public List<bool?>? PhotoIsIssues { get; set; }
+        public List<InspectionPhotoUploadDto> PhotoItems { get; set; } = new();
     }
 
     public class CancelPropertyInspectionDto

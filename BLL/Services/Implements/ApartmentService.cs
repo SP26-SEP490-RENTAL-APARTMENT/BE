@@ -91,13 +91,20 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
     public async Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)
     {
+        if (amenityIds == null || amenityIds.Count == 0)
+        {
+            throw new ArgumentException("At least one amenity is required.");
+        }
+
+        var uniqueAmenityIds = amenityIds.Distinct().ToList();
+
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
         if (apartment == null)
         {
             throw new ArgumentException("Apartment not found.");
         }
 
-        foreach (var amenityId in amenityIds)
+        foreach (var amenityId in uniqueAmenityIds)
         {
             if (!apartment.Amenities.Any(a => a.AmenityId == amenityId))
             {

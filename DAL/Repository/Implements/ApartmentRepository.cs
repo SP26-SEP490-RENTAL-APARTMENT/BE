@@ -16,6 +16,7 @@ namespace DAL.Repository.Implements
         public async Task<Apartment?> GetApartmentWithDetailsAsync(Guid id)
         {
             return await _dbSet
+                .AsTracking()
                 .Include(a => a.Room)
                 .Include(a => a.Amenities)
                 .Include(a => a.ApartmentMedia)

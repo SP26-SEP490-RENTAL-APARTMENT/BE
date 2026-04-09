@@ -25,6 +25,7 @@ namespace Short_termApartmentAPI.Controllers
 		private readonly IMomoTransactionService _momoTransactionService;
 		private readonly MomoOptions _momoOptions;
 		private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
+		private readonly IResidenceReportDocxGenerator _residenceReportDocxGenerator;
 		private readonly IMapper _mapper;
 
 		public BookingController(
@@ -36,6 +37,7 @@ namespace Short_termApartmentAPI.Controllers
 			IMomoTransactionService momoTransactionService,
 			IOptions<MomoOptions> momoOptions,
 			IResidenceReportPdfGenerator residenceReportPdfGenerator,
+			IResidenceReportDocxGenerator residenceReportDocxGenerator,
 			IMapper mapper)
 		{
 			_bookingService = bookingService;
@@ -46,6 +48,7 @@ namespace Short_termApartmentAPI.Controllers
 			_momoTransactionService = momoTransactionService;
 			_momoOptions = momoOptions.Value;
 			_residenceReportPdfGenerator = residenceReportPdfGenerator;
+			_residenceReportDocxGenerator = residenceReportDocxGenerator;
 			_mapper = mapper;
 		}
 
@@ -305,6 +308,33 @@ namespace Short_termApartmentAPI.Controllers
 				var pdfBytes = await _residenceReportPdfGenerator.GenerateAsync(details);
 				var fileName = $"residence-report-{id}.pdf";
 				return File(pdfBytes, "application/pdf", fileName);
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpGet("{id:guid}/residence-report/docx")]
+		[Authorize(Roles = "landlord")]
+		public async Task<IActionResult> ExportResidenceReportDocx(Guid id)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var landlordUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var details = await _bookingService.GetResidenceReportDetailsAsync(id, landlordUserId);
+				var docxBytes = await _residenceReportDocxGenerator.GenerateAsync(details);
+				var fileName = $"residence-report-{id}.docx";
+				return File(docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName);
 			}
 			catch (InvalidOperationException ex)
 			{

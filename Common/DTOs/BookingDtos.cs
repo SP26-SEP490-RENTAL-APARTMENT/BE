@@ -322,6 +322,10 @@ public class TemporaryResidenceReportDetailsDto
 
     public string? TenantPhone { get; set; }
 
+    public string? TenantEmail { get; set; }
+
+    public string? TenantSex { get; set; }
+
     public string? LandlordFullName { get; set; }
 
     public string? LandlordPhone { get; set; }
