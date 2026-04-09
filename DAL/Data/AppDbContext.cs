@@ -159,7 +159,6 @@ public partial class AppDbContext : DbContext
             entity.HasIndex(e => e.LandlordId, "idx_landlord");
 
             entity.HasIndex(e => e.Location, "idx_location")
-                .HasAnnotation("MySql:IndexPrefixLength", new[] { 32 })
                 .HasAnnotation("MySql:SpatialIndex", true);
 
             entity.HasIndex(e => e.Status, "idx_status");
@@ -697,7 +696,6 @@ public partial class AppDbContext : DbContext
             entity.ToTable("nearby_attractions");
 
             entity.HasIndex(e => e.Location, "idx_location")
-                .HasAnnotation("MySql:IndexPrefixLength", new[] { 32 })
                 .HasAnnotation("MySql:SpatialIndex", true);
 
             entity.Property(e => e.AttractionId).HasColumnName("attraction_id");
@@ -1304,6 +1302,12 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Phone)
                 .HasMaxLength(20)
                 .HasColumnName("phone");
+            entity.Property(e => e.Token)
+                .HasMaxLength(500)
+                .HasColumnName("token");
+            entity.Property(e => e.TokenExpired)
+                .HasColumnType("timestamp")
+                .HasColumnName("token_expired");
             entity.Property(e => e.Role)
                 .HasColumnType("enum('tenant','landlord','admin','staff')")
                 .HasColumnName("role");
