@@ -108,11 +108,8 @@ namespace Common.DTOs
         public string? Recommendations { get; set; }
 
         [MinLength(1, ErrorMessage = "At least one inspection photo is required.")]
-        public List<IFormFile> Photos { get; set; } = new();
-
-        public List<string>? PhotoDescriptions { get; set; }
-
-        public List<bool?>? PhotoIsIssues { get; set; }
+        [Required]
+        public List<IFormFile> Photos { get; set; } = null!;
     }
 
     public class CancelPropertyInspectionDto

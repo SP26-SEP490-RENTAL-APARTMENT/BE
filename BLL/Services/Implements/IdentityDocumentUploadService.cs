@@ -11,13 +11,14 @@ using System.Threading.Tasks;
 
 namespace BLL.Services.Implements
 {
-    public class ImageService : IImageService
+    public class IdentityDocumentUploadService : IIdentityDocumentUploadService
     {
         private const long MaxUploadSizeBytes = 25 * 1024 * 1024;
 
         private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"
+            ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"
         };
 
         private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -26,12 +27,19 @@ namespace BLL.Services.Implements
             "image/png",
             "image/gif",
             "image/webp",
-            "image/bmp"
+            "image/bmp",
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         };
 
         private readonly Cloudinary _cloudinary;
 
-        public ImageService(IOptions<CloudinarySettings> config)
+        public IdentityDocumentUploadService(IOptions<CloudinarySettings> config)
         {
             var acc = new Account(
                 config.Value.CloudName,
@@ -42,7 +50,7 @@ namespace BLL.Services.Implements
             _cloudinary = new Cloudinary(acc);
         }
 
-        public async Task<string> UploadImageAsync(IFormFile file)
+        public async Task<string> UploadIdentityDocumentAsync(IFormFile file)
         {
             if (file == null)
             {
@@ -62,24 +70,21 @@ namespace BLL.Services.Implements
             var extension = Path.GetExtension(file.FileName);
             if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
             {
-                throw new ArgumentException("Unsupported file type. Allowed types are image files only (jpg, jpeg, png, gif, webp, bmp).");
+                throw new ArgumentException("Unsupported identity document type.");
             }
 
             if (!string.IsNullOrWhiteSpace(file.ContentType) && !AllowedContentTypes.Contains(file.ContentType))
             {
-                throw new ArgumentException("Unsupported file content type.");
+                throw new ArgumentException("Unsupported identity document content type.");
             }
 
-            var uploadResult = new ImageUploadResult();
-
             using var stream = file.OpenReadStream();
-            var uploadParams = new ImageUploadParams
+            var uploadParams = new RawUploadParams
             {
                 File = new FileDescription(file.FileName, stream),
             };
 
-            uploadResult = await _cloudinary.UploadAsync(uploadParams);
-
+            var uploadResult = await _cloudinary.UploadAsync(uploadParams);
             return uploadResult.SecureUrl?.AbsoluteUri ?? string.Empty;
         }
     }

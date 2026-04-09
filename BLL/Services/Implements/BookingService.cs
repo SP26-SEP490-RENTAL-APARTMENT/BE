@@ -774,6 +774,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             TenantPassportId = report.TenantPassportId,
             TenantNationality = report.TenantNationality,
             TenantPhone = tenantUser?.Phone,
+            TenantEmail = tenantUser?.Email,
             LandlordFullName = landlordUser?.FullName,
             LandlordPhone = landlordUser?.Phone,
             ApartmentTitle = apartment.Title,

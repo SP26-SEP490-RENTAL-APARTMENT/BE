@@ -2,6 +2,7 @@ using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Stripe.Forwarding;
 
 namespace BLL.Services.Implements;
 
@@ -114,24 +115,19 @@ public sealed class PropertyInspectionService(
 
         _repository.Update(inspection);
 
-        for (var index = 0; index < dto.Photos.Count; index++)
+        if (dto.Photos == null || dto.Photos.Count == 0)
         {
-            var photo = dto.Photos[index];
+            throw new ArgumentException("At least one inspection photo is required.");
+        }
+
+        foreach (var photo in dto.Photos)
+        {
             if (photo == null || photo.Length == 0)
             {
                 throw new ArgumentException("Each inspection photo must be a non-empty file.");
             }
 
             var fileUrl = await _imageService.UploadImageAsync(photo);
-            var description = dto.PhotoDescriptions != null && index < dto.PhotoDescriptions.Count
-                ? dto.PhotoDescriptions[index]
-                : null;
-
-            bool? isIssue = null;
-            if (dto.PhotoIsIssues != null && index < dto.PhotoIsIssues.Count)
-            {
-                isIssue = dto.PhotoIsIssues[index];
-            }
 
             var inspectionPhoto = new InspectionPhoto
             {
@@ -139,8 +135,6 @@ public sealed class PropertyInspectionService(
                 InspectionId = inspection.InspectionId,
                 FileUrl = fileUrl,
                 FileKey = null,
-                Description = description,
-                IsIssue = isIssue,
                 UploadedAt = Common.Utils.VietnamTime.Now
             };
 

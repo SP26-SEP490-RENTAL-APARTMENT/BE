@@ -91,13 +91,20 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
     public async Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)
     {
+        if (amenityIds == null || amenityIds.Count == 0)
+        {
+            throw new ArgumentException("At least one amenity is required.");
+        }
+
+        var uniqueAmenityIds = amenityIds.Distinct().ToList();
+
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
         if (apartment == null)
         {
             throw new ArgumentException("Apartment not found.");
         }
 
-        foreach (var amenityId in amenityIds)
+        foreach (var amenityId in uniqueAmenityIds)
         {
             if (!apartment.Amenities.Any(a => a.AmenityId == amenityId))
             {
@@ -107,6 +114,34 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                     apartment.Amenities.Add(amenity);
                 }
             }
+        }
+
+        _apartmentRepository.Update(apartment);
+        await _apartmentRepository.SaveChangesAsync();
+    }
+
+    public async Task RemoveAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)
+    {
+        if (amenityIds == null || amenityIds.Count == 0)
+        {
+            throw new ArgumentException("At least one amenity is required.");
+        }
+
+        var uniqueAmenityIds = amenityIds.Distinct().ToHashSet();
+
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+        {
+            throw new ArgumentException("Apartment not found.");
+        }
+
+        var amenitiesToRemove = apartment.Amenities
+            .Where(a => uniqueAmenityIds.Contains(a.AmenityId))
+            .ToList();
+
+        foreach (var amenity in amenitiesToRemove)
+        {
+            apartment.Amenities.Remove(amenity);
         }
 
         _apartmentRepository.Update(apartment);

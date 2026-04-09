@@ -38,7 +38,7 @@ namespace BLL.Services.Implements
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<UserIdentityDocument> _userIdentityDocumentRepository;
         private readonly INotificationService _notificationService;
-        private readonly IImageService _imageService;
+        private readonly IIdentityDocumentUploadService _identityDocumentUploadService;
 
         private const string IdentityDocumentReferenceType = "identity_document";
         private const string IdentityVerifiedNotificationType = "identity_verified";
@@ -49,13 +49,13 @@ namespace BLL.Services.Implements
             IRepository<Tenant> tenantRepository,
             IRepository<UserIdentityDocument> userIdentityDocumentRepository,
             INotificationService notificationService,
-            IImageService imageService)
+            IIdentityDocumentUploadService identityDocumentUploadService)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _userIdentityDocumentRepository = userIdentityDocumentRepository;
             _notificationService = notificationService;
-            _imageService = imageService;
+            _identityDocumentUploadService = identityDocumentUploadService;
         }
 
         public async Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(
@@ -142,7 +142,7 @@ namespace BLL.Services.Implements
                     throw new ArgumentException("Each identity document file must be non-empty.");
                 }
 
-                var fileUrl = await _imageService.UploadImageAsync(file);
+                var fileUrl = await _identityDocumentUploadService.UploadIdentityDocumentAsync(file);
 
                 var document = new UserIdentityDocument
                 {

@@ -204,14 +204,95 @@ public sealed class ApartmentsController : ControllerBase
     [Authorize(Roles = "landlord")]
     public async Task<IActionResult> AddAmenities(Guid id, [FromBody] List<Guid> amenityIds)
     {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var apartment = await _apartmentService.GetByIdAsync(id);
+        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
         try
         {
             await _apartmentService.AddAmenitiesAsync(id, amenityIds);
-            return Ok("Amenity Added!");
+
+            var updatedApartment = await _apartmentService.GetApartmentWithDetailsAsync(id);
+            if (updatedApartment == null)
+            {
+                return NotFound(new ApiResponse<string>("Apartment not found."));
+            }
+
+            return Ok(new ApiResponse<string>("Amenities added successfully."));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
         }
         catch (ArgumentException ex)
         {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpDelete("{id:guid}/amenities")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> RemoveAmenities(Guid id, [FromBody] List<Guid> amenityIds)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var apartment = await _apartmentService.GetByIdAsync(id);
+        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        try
+        {
+            await _apartmentService.RemoveAmenitiesAsync(id, amenityIds);
+
+            var updatedApartment = await _apartmentService.GetApartmentWithDetailsAsync(id);
+            if (updatedApartment == null)
+            {
+                return NotFound(new ApiResponse<string>("Apartment not found."));
+            }
+
+            return Ok(new ApiResponse<string>("Amenities removed successfully."));
+        }
+        catch (KeyNotFoundException ex)
+        {
             return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
         }
     }
 

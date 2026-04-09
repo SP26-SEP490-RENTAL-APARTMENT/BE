@@ -42,7 +42,7 @@ public class IdentityVerificationServiceTests
 
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, documentRepo, notificationService, new NoOpImageService());
+        var sut = new IdentityVerificationService(userRepo, tenantRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
 
         await sut.ReviewIdentityDocumentAsync(new ReviewIdentityDocumentDto
         {
@@ -105,7 +105,7 @@ public class IdentityVerificationServiceTests
 
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, documentRepo, notificationService, new NoOpImageService());
+        var sut = new IdentityVerificationService(userRepo, tenantRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
 
         await sut.ReviewIdentityDocumentAsync(new ReviewIdentityDocumentDto
         {
@@ -137,9 +137,9 @@ public class IdentityVerificationServiceTests
     }
 }
 
-internal sealed class NoOpImageService : IImageService
+internal sealed class NoOpIdentityDocumentUploadService : IIdentityDocumentUploadService
 {
-    public Task<string> UploadImageAsync(Microsoft.AspNetCore.Http.IFormFile file)
+    public Task<string> UploadIdentityDocumentAsync(Microsoft.AspNetCore.Http.IFormFile file)
     {
         return Task.FromResult(string.Empty);
     }
