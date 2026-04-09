@@ -19,6 +19,10 @@ public partial class User
 
     public bool? IdentityVerified { get; set; }
 
+    public string? Token { get; set; }
+
+    public DateTime? TokenExpired { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<AdminAction> AdminActions { get; set; } = new List<AdminAction>();

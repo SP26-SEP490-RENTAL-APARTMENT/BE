@@ -48,6 +48,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IIdentityVerificationService, IdentityVerificationService>();
             services.AddScoped<IReportExecutionService, ReportExecutionService>();
             services.AddScoped<IWishlistService, WishlistService>();
+            services.AddScoped<EmailService, EmailService>();
             return services;
         }
     }

@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using System;
+using System.Linq;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -98,7 +101,6 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var userId))
             {
@@ -123,6 +125,63 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return Conflict(new { message = ex.Message });
             }
+        }
+
+        [HttpPost("request-password-reset")]
+        public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            var result = await _authService.RequestPasswordResetAsync(request);
+
+            // We return Ok even if the email doesn't exist to prevent email enumeration
+            return Ok(new ResponseDTO { Success = true, Message = "If the email is registered, a password reset link has been sent." });
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromQuery] string token, [FromBody] PasswordResetDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return BadRequest(new ResponseDTO { Success = false, Message = "Token is required." });
+            }
+
+            var result = await _authService.ResetPasswordAsync(token, request);
+
+            if (!result.Success)
+            {
+                return BadRequest(result);
+            }
+
+            return Ok(result);
+        }
+
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] PasswordResetDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            {
+                return Unauthorized(new ResponseDTO { Success = false, Message = "User ID claim is missing or invalid." });
+            }
+
+            var result = await _authService.ChangePasswordAsync(userId, request);
+            if (!result.Success)
+            {
+                return BadRequest(result);
+            }
+            return Ok(result);
         }
     }
 }

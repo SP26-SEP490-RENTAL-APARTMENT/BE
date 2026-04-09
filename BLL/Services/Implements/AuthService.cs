@@ -10,6 +10,7 @@ using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -21,17 +22,20 @@ namespace BLL.Services.Implements
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<Landlord> _landlordRepository;
         private readonly JwtSettings _jwtSettings;
+        private readonly EmailService _emailService;
 
         public AuthService(
-            IUserRepository userRepository,
-            IRepository<Tenant> tenantRepository,
+            IUserRepository userRepository, 
+            IRepository<Tenant> tenantRepository, 
             IRepository<Landlord> landlordRepository,
-            IOptions<JwtSettings> jwtSettings)
+            IOptions<JwtSettings> jwtSettings, 
+            EmailService emailService)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _landlordRepository = landlordRepository;
             _jwtSettings = jwtSettings.Value;
+            _emailService = emailService;
         }
 
         public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto dto)
@@ -124,6 +128,20 @@ namespace BLL.Services.Implements
                 Role = user.Role,
                 Roles = roles
             };
+        }
+        private string GenerateSecureToken()
+        {
+            // This generates a 256-bit token
+            var bytes = new byte[32];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(bytes);
+            }
+            // Convert to URL-safe Base64 string
+            return Convert.ToBase64String(bytes)
+                          .Replace('+', '-')
+                          .Replace('/', '_')
+                          .TrimEnd('='); // Remove padding '=' characters for cleaner URLs
         }
 
         public Task<RefreshTokenResponseDto?> RefreshTokenAsync(RefreshTokenRequestDto dto)
@@ -228,5 +246,61 @@ namespace BLL.Services.Implements
             return string.Equals(role, "tenant", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(role, "landlord", StringComparison.OrdinalIgnoreCase);
         }
+
+        public async Task<ResponseDTO> RequestPasswordResetAsync(PasswordResetRequestDto dto)
+        {
+            var userList = await _userRepository.FindAsync(u => u.Email == dto.Email);
+            var user = userList.FirstOrDefault();
+            if (user == null) return new ResponseDTO { Success = false, Message = "Email not found." };
+
+            user.Token = GenerateSecureToken();
+            user.TokenExpired = DateTime.UtcNow.AddHours(1); // Token valid for 1 hour
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            var resetLink = $"https://doigiumcaiurlnha.com/reset-password?token={user.Token}";
+            var body = $"Please reset your password by clicking here: <a href='{resetLink}'>Reset Password</a>";
+            await _emailService.SendEmailAsync(user.Email, "Password Reset Request", body);
+
+            return new ResponseDTO { Success = true, Message = "Password reset request successful." };
+        }
+
+        public async Task<ResponseDTO> ResetPasswordAsync(string token, PasswordResetDto dto)
+        {
+            var userList = await _userRepository.FindAsync(u => u.Token == token);
+            var user = userList.FirstOrDefault();
+
+            if (user == null || user.TokenExpired == null || user.TokenExpired < DateTime.UtcNow)
+                return new ResponseDTO { Success = false, Message = "Invalid or expired token." };
+
+            if (dto.NewPassword != dto.ConfirmNewPassword)
+                return new ResponseDTO { Success = false, Message = "New passwords do not match." };
+
+            user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
+            user.Token = null;
+            user.TokenExpired = null;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            return new ResponseDTO { Success = true, Message = "Password reset successful." };
+        }
+
+        public async Task<ResponseDTO> ChangePasswordAsync(Guid userId, PasswordResetDto dto)
+        {
+            var userList = await _userRepository.FindAsync(u => u.UserId == userId);
+            var user = userList.FirstOrDefault();
+            if (user == null)
+                return new ResponseDTO { Success = false, Message = "User not found." };
+            if (!PasswordHasher.VerifyPassword(dto.OldPassword, user.PasswordHash))
+                return new ResponseDTO { Success = false, Message = "Incorrect old password." };
+            if (dto.NewPassword != dto.ConfirmNewPassword)
+                return new ResponseDTO { Success = false, Message = "New passwords do not match." };
+            user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+            return new ResponseDTO { Success = true, Message = "Password changed successfully." };
+        }
     }
+    
 }
