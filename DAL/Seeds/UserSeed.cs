@@ -41,6 +41,7 @@ public static class UserSeed
                 Email = tenantEmail,
                 FullName = "Seed Tenant",
                 IdentityVerified = false,
+                Nationality = "VN",
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword("Seed@123"),
                 Phone = "0000000001",
                 Role = "tenant",
@@ -89,7 +90,6 @@ public static class UserSeed
             {
                 TenantId = tenantUser.UserId,
                 PassportId = "P0000000",
-                Nationality = "VN",
                 IdentityVerificationStatus = "not_started",
                 LastVerifiedAt = null
             });

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,8 +24,10 @@ namespace BLL.Services.Implements
             public const string ApartmentTitle = "{{ApartmentTitle}}";
             public const string ApartmentAddress = "{{ApartmentAddress}}";
             public const string LandlordName = "{{LandlordName}}";
+            public const string LandlordNationalID = "{{LandlordNationalID}}";
             public const string LandlordPhone = "{{LandlordPhone}}";
             public const string TenantFullName = "{{TenantFullName}}";
+            public const string TenantNationalID = "{{TenantNationalID}}";
             public const string TenantSex = "{{TenantSex}}";
             public const string TenantNationality = "{{TenantNationality}}";
             public const string TenantPassportId = "{{TenantPassportId}}";
@@ -47,6 +50,42 @@ namespace BLL.Services.Implements
 
             cancellationToken.ThrowIfCancellationRequested();
 
+            var occupants = GetNormalizedOccupants(details);
+            var isVietnameseTemplate = string.Equals(details.TenantNationality, "VN", StringComparison.OrdinalIgnoreCase);
+
+            if (isVietnameseTemplate && occupants.Count > 1)
+            {
+                var zipBytes = BuildVietnameseOccupantZip(details, occupants);
+                return Task.FromResult(zipBytes);
+            }
+
+            var primaryDetails = CreateDetailsForOccupant(details, occupants[0]);
+            var docxBytes = GenerateSingleDocx(primaryDetails, isVietnameseTemplate ? null : occupants);
+            return Task.FromResult(docxBytes);
+        }
+
+        private static byte[] BuildVietnameseOccupantZip(TemporaryResidenceReportDetailsDto baseDetails, IReadOnlyList<ResidenceReportOccupantDto> occupants)
+        {
+            using var zipStream = new MemoryStream();
+            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var occupant in occupants)
+                {
+                    var occupantDetails = CreateDetailsForOccupant(baseDetails, occupant);
+                    var docxBytes = GenerateSingleDocx(occupantDetails, null);
+                    var entryName = $"residence-report-{baseDetails.BookingId}-occupant-{occupant.Order:00}.docx";
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
+                    using var entryStream = entry.Open();
+                    using var contentStream = new MemoryStream(docxBytes);
+                    contentStream.CopyTo(entryStream);
+                }
+            }
+
+            return zipStream.ToArray();
+        }
+
+        private static byte[] GenerateSingleDocx(TemporaryResidenceReportDetailsDto details, IReadOnlyList<ResidenceReportOccupantDto>? occupants)
+        {
             var templatePath = ResolveTemplatePath(details.TenantNationality);
 
             using var templateStream = File.OpenRead(templatePath);
@@ -57,10 +96,71 @@ namespace BLL.Services.Implements
             using (var document = WordprocessingDocument.Open(outputStream, true))
             {
                 ApplyTemplate(document, details);
+                if (occupants != null && occupants.Count > 1)
+                {
+                    PopulateForeignOccupantRows(document, occupants);
+                }
+
                 document.MainDocumentPart?.Document.Save();
             }
 
-            return Task.FromResult(outputStream.ToArray());
+            return outputStream.ToArray();
+        }
+
+        private static TemporaryResidenceReportDetailsDto CreateDetailsForOccupant(TemporaryResidenceReportDetailsDto source, ResidenceReportOccupantDto occupant)
+        {
+            return new TemporaryResidenceReportDetailsDto
+            {
+                ReportId = source.ReportId,
+                BookingId = source.BookingId,
+                LandlordId = source.LandlordId,
+                TenantId = source.TenantId,
+                TenantFullName = occupant.FullName,
+                TenantPassportId = occupant.PassportId ?? string.Empty,
+                TenantNationalIdCardNumber = occupant.NationalIdCardNumber,
+                TenantNationality = occupant.Nationality ?? source.TenantNationality,
+                TenantPhone = occupant.Phone,
+                TenantEmail = occupant.Email,
+                TenantSex = occupant.Sex,
+                LandlordFullName = source.LandlordFullName,
+                LandlordNationalIdCardNumber = source.LandlordNationalIdCardNumber,
+                LandlordPhone = source.LandlordPhone,
+                ApartmentTitle = source.ApartmentTitle,
+                ApartmentAddress = source.ApartmentAddress,
+                ApartmentDistrict = source.ApartmentDistrict,
+                ApartmentCity = source.ApartmentCity,
+                CheckInDate = source.CheckInDate,
+                CheckOutDate = source.CheckOutDate,
+                ReportedToPolice = source.ReportedToPolice,
+                ReportDate = source.ReportDate,
+                ReportNumber = source.ReportNumber,
+                OccupantCount = source.OccupantCount,
+                Occupants = source.Occupants
+            };
+        }
+
+        private static List<ResidenceReportOccupantDto> GetNormalizedOccupants(TemporaryResidenceReportDetailsDto details)
+        {
+            if (details.Occupants.Count > 0)
+            {
+                return details.Occupants.OrderBy(o => o.Order).ToList();
+            }
+
+            return new List<ResidenceReportOccupantDto>
+            {
+                new ResidenceReportOccupantDto
+                {
+                    Order = 1,
+                    IsPrimary = true,
+                    FullName = details.TenantFullName,
+                    PassportId = details.TenantPassportId,
+                    NationalIdCardNumber = details.TenantNationalIdCardNumber,
+                    Nationality = details.TenantNationality,
+                    Sex = details.TenantSex,
+                    Phone = details.TenantPhone,
+                    Email = details.TenantEmail
+                }
+            };
         }
 
         private static string ResolveTemplatePath(string? tenantNationality)
@@ -97,6 +197,29 @@ namespace BLL.Services.Implements
 
             var placeholderValues = BuildPlaceholderValues(details);
             ReplacePlaceholders(body, placeholderValues);
+            PopulateNationalIdTablesIfAvailable(document, details);
+        }
+
+        public static void PopulateTwoTables(WordprocessingDocument document, string twelveDigitNumber1, string twelveDigitNumber2)
+        {
+            if (document?.MainDocumentPart == null)
+            {
+                throw new ArgumentNullException(nameof(document));
+            }
+
+            // Validate 12-digit inputs because each digit maps to one table cell.
+            if (!IsTwelveDigitNumber(twelveDigitNumber1) || !IsTwelveDigitNumber(twelveDigitNumber2))
+            {
+                throw new ArgumentException("Input must be exactly 12 digits.");
+            }
+
+            var tableA = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartA")
+                ?? throw new InvalidOperationException("Table_PartA not found.");
+            var tableB = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartB")
+                ?? throw new InvalidOperationException("Table_PartB not found.");
+
+            PopulateTableRowWithString(tableA, twelveDigitNumber1);
+            PopulateTableRowWithString(tableB, twelveDigitNumber2);
         }
 
         private static Dictionary<string, string> BuildPlaceholderValues(TemporaryResidenceReportDetailsDto details)
@@ -108,8 +231,10 @@ namespace BLL.Services.Implements
                 [PlaceholderTags.ApartmentTitle] = details.ApartmentTitle ?? string.Empty,
                 [PlaceholderTags.ApartmentAddress] = BuildApartmentAddress(details),
                 [PlaceholderTags.LandlordName] = details.LandlordFullName ?? string.Empty,
+                [PlaceholderTags.LandlordNationalID] = details.LandlordNationalIdCardNumber ?? string.Empty,
                 [PlaceholderTags.LandlordPhone] = details.LandlordPhone ?? string.Empty,
                 [PlaceholderTags.TenantFullName] = details.TenantFullName ?? "N/A",
+                [PlaceholderTags.TenantNationalID] = details.TenantNationalIdCardNumber ?? string.Empty,
                 [PlaceholderTags.TenantSex] = details.TenantSex ?? string.Empty,
                 [PlaceholderTags.TenantNationality] = details.TenantNationality ?? string.Empty,
                 [PlaceholderTags.TenantPassportId] = details.TenantPassportId ?? string.Empty,
@@ -122,6 +247,130 @@ namespace BLL.Services.Implements
                 [PlaceholderTags.Month] = reportDate.Month.ToString("00"),
                 [PlaceholderTags.Year] = reportDate.Year.ToString(),
             };
+        }
+
+        private static void PopulateNationalIdTablesIfAvailable(WordprocessingDocument document, TemporaryResidenceReportDetailsDto details)
+        {
+            if (document.MainDocumentPart == null)
+            {
+                return;
+            }
+
+            var tenantNationalId = details.TenantNationalIdCardNumber;
+            var landlordNationalId = details.LandlordNationalIdCardNumber;
+            if (tenantNationalId == null || landlordNationalId == null)
+            {
+                return;
+            }
+
+            if (!IsTwelveDigitNumber(tenantNationalId) || !IsTwelveDigitNumber(landlordNationalId))
+            {
+                return;
+            }
+
+            var tableA = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartA");
+            var tableB = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartB");
+            if (tableA == null || tableB == null)
+            {
+                return;
+            }
+
+            PopulateTableRowWithString(tableA, tenantNationalId);
+            PopulateTableRowWithString(tableB, landlordNationalId);
+        }
+
+        private static void PopulateForeignOccupantRows(WordprocessingDocument document, IReadOnlyList<ResidenceReportOccupantDto> occupants)
+        {
+            if (document.MainDocumentPart == null || occupants.Count <= 1)
+            {
+                return;
+            }
+
+            var table = GetTableByContentControlTag(document.MainDocumentPart, "Occupants_Table");
+            if (table == null)
+            {
+                return;
+            }
+
+            var rows = table.Elements<TableRow>().ToList();
+            if (rows.Count == 0)
+            {
+                return;
+            }
+
+            var templateRow = rows.Last();
+            for (var index = 1; index < occupants.Count; index++)
+            {
+                var rowClone = (TableRow)templateRow.CloneNode(true);
+                FillOccupantRow(rowClone, occupants[index]);
+                table.AppendChild(rowClone);
+            }
+
+            FillOccupantRow(templateRow, occupants[0]);
+        }
+
+        private static void FillOccupantRow(TableRow row, ResidenceReportOccupantDto occupant)
+        {
+            var cells = row.Elements<TableCell>().ToList();
+            if (cells.Count == 0)
+            {
+                return;
+            }
+
+            SetCell(cells, 0, occupant.Order.ToString("00"));
+            SetCell(cells, 1, occupant.FullName ?? string.Empty);
+            SetCell(cells, 2, occupant.Nationality ?? string.Empty);
+            SetCell(cells, 3, occupant.PassportId ?? string.Empty);
+            SetCell(cells, 4, occupant.NationalIdCardNumber ?? string.Empty);
+            SetCell(cells, 5, occupant.Sex ?? string.Empty);
+            SetCell(cells, 6, occupant.Phone ?? string.Empty);
+        }
+
+        private static void SetCell(List<TableCell> cells, int index, string value)
+        {
+            if (index < cells.Count)
+            {
+                UpdateCellText(cells[index], value);
+            }
+        }
+
+        private static Table? GetTableByContentControlTag(MainDocumentPart mainPart, string tag)
+        {
+            var sdt = mainPart.Document.Descendants<SdtBlock>()
+                .FirstOrDefault(s =>
+                    s.SdtProperties != null &&
+                    string.Equals(s.SdtProperties.GetFirstChild<Tag>()?.Val?.Value, tag, StringComparison.Ordinal));
+
+            return sdt?.Descendants<Table>().FirstOrDefault();
+        }
+
+        private static void PopulateTableRowWithString(Table table, string data)
+        {
+            var firstRow = table.Elements<TableRow>().FirstOrDefault();
+            if (firstRow == null)
+            {
+                return;
+            }
+
+            var cells = firstRow.Elements<TableCell>().ToList();
+            for (var i = 0; i < cells.Count && i < data.Length; i++)
+            {
+                UpdateCellText(cells[i], data[i].ToString());
+            }
+        }
+
+        private static void UpdateCellText(TableCell cell, string newText)
+        {
+            var paragraph = cell.Elements<Paragraph>().FirstOrDefault() ?? cell.AppendChild(new Paragraph());
+            var run = paragraph.Elements<Run>().FirstOrDefault() ?? paragraph.AppendChild(new Run());
+            var text = run.Elements<Text>().FirstOrDefault() ?? run.AppendChild(new Text());
+            text.Text = newText;
+            text.Space = SpaceProcessingModeValues.Preserve;
+        }
+
+        private static bool IsTwelveDigitNumber(string? value)
+        {
+            return !string.IsNullOrWhiteSpace(value) && value.Length == 12 && value.All(char.IsDigit);
         }
 
         private static void ReplacePlaceholders(OpenXmlCompositeElement root, IReadOnlyDictionary<string, string> placeholderValues)

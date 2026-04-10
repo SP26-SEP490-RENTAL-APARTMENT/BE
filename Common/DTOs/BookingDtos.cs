@@ -318,6 +318,8 @@ public class TemporaryResidenceReportDetailsDto
 
     public string TenantPassportId { get; set; } = null!;
 
+    public string? TenantNationalIdCardNumber { get; set; }
+
     public string TenantNationality { get; set; } = null!;
 
     public string? TenantPhone { get; set; }
@@ -327,6 +329,8 @@ public class TemporaryResidenceReportDetailsDto
     public string? TenantSex { get; set; }
 
     public string? LandlordFullName { get; set; }
+
+    public string? LandlordNationalIdCardNumber { get; set; }
 
     public string? LandlordPhone { get; set; }
 
@@ -347,4 +351,84 @@ public class TemporaryResidenceReportDetailsDto
     public DateOnly? ReportDate { get; set; }
 
     public string? ReportNumber { get; set; }
+
+    public int OccupantCount { get; set; }
+
+    public List<ResidenceReportOccupantDto> Occupants { get; set; } = new();
+}
+
+public class ResidenceReportOccupantDto
+{
+    public int Order { get; set; }
+
+    public bool IsPrimary { get; set; }
+
+    public string? FullName { get; set; }
+
+    public string? PassportId { get; set; }
+
+    public string? NationalIdCardNumber { get; set; }
+
+    public string? Nationality { get; set; }
+
+    public string? Sex { get; set; }
+
+    public string? Phone { get; set; }
+
+    public string? Email { get; set; }
+}
+
+public class AddBookingOccupantDto
+{
+    [Required]
+    public int OccupantOrder { get; set; }
+
+    public bool IsPrimary { get; set; }
+
+    [MaxLength(150)]
+    public string? FullName { get; set; }
+
+    [MaxLength(50)]
+    public string? PassportId { get; set; }
+
+    [MaxLength(20)]
+    public string? NationalIdCardNumber { get; set; }
+
+    [MaxLength(2)]
+    public string? Nationality { get; set; }
+
+    [MaxLength(20)]
+    public string? Sex { get; set; }
+
+    [MaxLength(20)]
+    public string? Phone { get; set; }
+
+    [MaxLength(255)]
+    public string? Email { get; set; }
+}
+
+public class UpdateBookingOccupantDto
+{
+    public bool? IsPrimary { get; set; }
+
+    [MaxLength(150)]
+    public string? FullName { get; set; }
+
+    [MaxLength(50)]
+    public string? PassportId { get; set; }
+
+    [MaxLength(20)]
+    public string? NationalIdCardNumber { get; set; }
+
+    [MaxLength(2)]
+    public string? Nationality { get; set; }
+
+    [MaxLength(20)]
+    public string? Sex { get; set; }
+
+    [MaxLength(20)]
+    public string? Phone { get; set; }
+
+    [MaxLength(255)]
+    public string? Email { get; set; }
 }

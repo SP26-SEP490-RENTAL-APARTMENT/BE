@@ -13,6 +13,8 @@ using Microsoft.Extensions.Options;
 using MoMoApi;
 using Short_termApartmentAPI.Controllers;
 
+#pragma warning disable CS8602
+
 namespace Short_termApartmentAPI.IntegrationTests;
 
 public class ControllerBehaviorTests
@@ -68,7 +70,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.GetPaymentHistory();
 
-        var ok = Assert.IsType<OkObjectResult>(result);
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
         var items = GetProperty<IEnumerable<PaymentHistoryDto>>(ok.Value!, "Items");
         var totalCount = GetProperty<int>(ok.Value!, "TotalCount");
 
@@ -195,10 +197,12 @@ public class ControllerBehaviorTests
 
         var result = await controller.GetPaymentById(paymentId);
 
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<PaymentHistoryDto>>(ok.Value);
-        Assert.Equal(777m, response.Data.Amount);
-        Assert.Equal("txn-tenant-1", response.Data.TransactionId);
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<PaymentHistoryDto>
+            ?? throw new InvalidOperationException("Expected payment response.");
+        var data = response.Data!;
+        Assert.Equal(777m, data.Amount);
+        Assert.Equal("txn-tenant-1", data.TransactionId);
     }
 
     [Fact]
@@ -258,7 +262,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.Ipn();
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.True(result is OkObjectResult);
         Assert.Equal(1, bookingService.MarkDepositPaidCalls);
     }
 
@@ -321,7 +325,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.Ipn();
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.True(result is OkObjectResult);
         Assert.Equal(1, bookingService.MarkDepositPaidCalls);
     }
 
@@ -344,8 +348,130 @@ public class ControllerBehaviorTests
 
         var result = await controller.DisbursementIpn();
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.True(result is OkObjectResult);
         Assert.Equal(1, payoutService.SyncCalls);
+    }
+
+    [Fact]
+    public async Task BookingController_GetOccupants_ReturnsMappedOccupants()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking { BookingId = bookingId, TenantId = tenantId }
+        };
+        bookingService.OccupantsByBooking[bookingId] = new List<ResidenceReportOccupantDto>
+        {
+            new ResidenceReportOccupantDto { Order = 1, FullName = "Tenant One", PassportId = "P1" },
+            new ResidenceReportOccupantDto { Order = 2, FullName = "Tenant Two", PassportId = "P2" }
+        };
+
+        var controller = CreateBookingController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var result = await controller.GetOccupants(bookingId);
+
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<IReadOnlyList<ResidenceReportOccupantDto>>
+            ?? throw new InvalidOperationException("Expected occupants response.");
+        var data = response.Data!;
+        Assert.Equal(2, data.Count);
+        Assert.Equal("Tenant One", data.First().FullName);
+        Assert.Equal("Tenant Two", data.Last().FullName);
+    }
+
+    [Fact]
+    public async Task BookingController_AddOccupant_AddsOccupantAndReturnsOk()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking { BookingId = bookingId, TenantId = tenantId }
+        };
+
+        var controller = CreateBookingController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var result = await controller.AddOccupant(bookingId, new AddBookingOccupantDto
+        {
+            OccupantOrder = 2,
+            FullName = "New Occupant",
+            PassportId = "P-NEW",
+            NationalIdCardNumber = "123456789012",
+            Nationality = "VN",
+            Sex = "female"
+        });
+
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<ResidenceReportOccupantDto>
+            ?? throw new InvalidOperationException("Expected occupant response.");
+    var data = response.Data!;
+        Assert.Equal(2, data.Order);
+        Assert.Equal("New Occupant", data.FullName);
+        Assert.Single(bookingService.OccupantsByBooking[bookingId]);
+    }
+
+    [Fact]
+    public async Task BookingController_UpdateOccupant_UpdatesOccupantAndReturnsOk()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking { BookingId = bookingId, TenantId = tenantId }
+        };
+        bookingService.OccupantsByBooking[bookingId] = new List<ResidenceReportOccupantDto>
+        {
+            new ResidenceReportOccupantDto { Order = 1, FullName = "Old Name", PassportId = "OLD" }
+        };
+
+        var controller = CreateBookingController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var result = await controller.UpdateOccupant(bookingId, 1, new UpdateBookingOccupantDto
+        {
+            FullName = "Updated Name",
+            PassportId = "NEW",
+            IsPrimary = true
+        });
+
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<ResidenceReportOccupantDto>
+            ?? throw new InvalidOperationException("Expected occupant response.");
+    var data = response.Data!;
+        Assert.Equal("Updated Name", data.FullName);
+        Assert.True(data.IsPrimary);
+        Assert.Equal("NEW", data.PassportId);
+    }
+
+    [Fact]
+    public async Task BookingController_RemoveOccupant_RemovesOccupantAndReturnsOk()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking { BookingId = bookingId, TenantId = tenantId }
+        };
+        bookingService.OccupantsByBooking[bookingId] = new List<ResidenceReportOccupantDto>
+        {
+            new ResidenceReportOccupantDto { Order = 1, FullName = "Primary" },
+            new ResidenceReportOccupantDto { Order = 2, FullName = "Secondary" }
+        };
+
+        var controller = CreateBookingController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var result = await controller.RemoveOccupant(bookingId, 2);
+
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<string>
+            ?? throw new InvalidOperationException("Expected success response.");
+        Assert.Equal("Occupant removed successfully.", response.Message);
+        Assert.Single(bookingService.OccupantsByBooking[bookingId]);
+        Assert.Equal(1, bookingService.OccupantsByBooking[bookingId][0].Order);
     }
 
     private static LandlordController CreateLandlordController(
@@ -387,6 +513,34 @@ public class ControllerBehaviorTests
                 AccessKey = "ACCESS",
                 SecretKey = "SECRET"
             }));
+    }
+
+    private static BookingController CreateBookingController(
+        IBookingService? bookingService = null,
+        IPaymentService? paymentService = null,
+        ISupportTicketService? supportTicketService = null,
+        IStripeService? stripeService = null,
+        IMomoService? momoService = null,
+        IMomoTransactionService? momoTransactionService = null,
+        IResidenceReportPdfGenerator? residenceReportPdfGenerator = null,
+        IResidenceReportDocxGenerator? residenceReportDocxGenerator = null)
+    {
+        return new BookingController(
+            bookingService ?? new BookingServiceStub(),
+            paymentService ?? new PaymentServiceStub(),
+            supportTicketService ?? new SupportTicketServiceStub(),
+            stripeService ?? new StripeServiceStub(),
+            momoService ?? new MomoServiceStub(),
+            momoTransactionService ?? new MomoTransactionServiceStub(),
+            Options.Create(new MomoOptions
+            {
+                PartnerCode = "PARTNER",
+                AccessKey = "ACCESS",
+                SecretKey = "SECRET"
+            }),
+            residenceReportPdfGenerator ?? new ResidenceReportPdfGeneratorStub(),
+            residenceReportDocxGenerator ?? new ResidenceReportDocxGeneratorStub(),
+            CreateMapper());
     }
 
     private static TenantController CreateTenantController(
@@ -531,6 +685,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Booking? BookingById { get; set; }
     public int MarkDepositPaidCalls { get; private set; }
     public int MarkBalancePaidCalls { get; private set; }
+    public Dictionary<Guid, List<ResidenceReportOccupantDto>> OccupantsByBooking { get; } = new();
 
     public override Task<Booking?> GetByIdAsync(Guid id)
         => Task.FromResult(BookingById != null && BookingById.BookingId == id ? BookingById : null);
@@ -550,6 +705,65 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     }
     public Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto) => Task.FromResult(new TemporaryResidenceReport());
     public Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId) => Task.FromResult(new TemporaryResidenceReportDetailsDto());
+    public Task<IReadOnlyList<ResidenceReportOccupantDto>> GetOccupantsAsync(Guid bookingId, Guid tenantUserId)
+        => Task.FromResult<IReadOnlyList<ResidenceReportOccupantDto>>(GetOccupantsInternal(bookingId));
+
+    public Task<ResidenceReportOccupantDto> AddOccupantAsync(Guid bookingId, Guid tenantUserId, AddBookingOccupantDto dto)
+    {
+        var occupants = GetOccupantsInternal(bookingId).ToList();
+        var occupant = new ResidenceReportOccupantDto
+        {
+            Order = dto.OccupantOrder,
+            IsPrimary = dto.IsPrimary,
+            FullName = dto.FullName,
+            PassportId = dto.PassportId,
+            NationalIdCardNumber = dto.NationalIdCardNumber,
+            Nationality = dto.Nationality,
+            Sex = dto.Sex,
+            Phone = dto.Phone,
+            Email = dto.Email
+        };
+
+        occupants.RemoveAll(x => x.Order == occupant.Order);
+        occupants.Add(occupant);
+        OccupantsByBooking[bookingId] = occupants.OrderBy(x => x.Order).ToList();
+        return Task.FromResult(occupant);
+    }
+
+    public Task<ResidenceReportOccupantDto> UpdateOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder, UpdateBookingOccupantDto dto)
+    {
+        var occupants = GetOccupantsInternal(bookingId).ToList();
+        var occupant = occupants.FirstOrDefault(x => x.Order == occupantOrder) ?? new ResidenceReportOccupantDto { Order = occupantOrder };
+
+        occupant.IsPrimary = dto.IsPrimary ?? occupant.IsPrimary;
+        occupant.FullName = dto.FullName ?? occupant.FullName;
+        occupant.PassportId = dto.PassportId ?? occupant.PassportId;
+        occupant.NationalIdCardNumber = dto.NationalIdCardNumber ?? occupant.NationalIdCardNumber;
+        occupant.Nationality = dto.Nationality ?? occupant.Nationality;
+        occupant.Sex = dto.Sex ?? occupant.Sex;
+        occupant.Phone = dto.Phone ?? occupant.Phone;
+        occupant.Email = dto.Email ?? occupant.Email;
+
+        occupants.RemoveAll(x => x.Order == occupantOrder);
+        occupants.Add(occupant);
+        OccupantsByBooking[bookingId] = occupants.OrderBy(x => x.Order).ToList();
+        return Task.FromResult(occupant);
+    }
+
+    public Task RemoveOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder)
+    {
+        var occupants = GetOccupantsInternal(bookingId).ToList();
+        occupants.RemoveAll(x => x.Order == occupantOrder);
+        OccupantsByBooking[bookingId] = occupants.OrderBy(x => x.Order).ToList();
+        return Task.CompletedTask;
+    }
+
+    private List<ResidenceReportOccupantDto> GetOccupantsInternal(Guid bookingId)
+    {
+        return OccupantsByBooking.TryGetValue(bookingId, out var occupants)
+            ? occupants.ToList()
+            : new List<ResidenceReportOccupantDto>();
+    }
     public Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
         => Task.FromResult((Enumerable.Empty<Booking>(), 0));
     public Task<BookingCheckTimeResponseDto> RecordCheckInAsync(Guid bookingId, RecordCheckInDto dto, Guid recordedBy) => Task.FromResult(new BookingCheckTimeResponseDto());
@@ -620,6 +834,35 @@ internal sealed class MomoServiceStub : IMomoService
     public bool ValidateDisbursementIpnSignature(string requestBody) => ValidateDisbursementSignature;
 }
 
+internal sealed class SupportTicketServiceStub : BaseServiceStub<SupportTicket>, ISupportTicketService
+{
+    public Task<SupportTicket> CreateTicketAsync(SupportTicket ticket) => Task.FromResult(ticket);
+
+    public Task<SupportTicket> UpdateTicketByStaffAsync(Guid ticketId, UpdateSupportTicketDto ticketDto, Guid actorUserId)
+        => Task.FromResult(new SupportTicket());
+
+    public Task<SupportTicket> CreateFollowUpTicketAsync(Guid originalTicketId, Guid requesterUserId, string details)
+        => Task.FromResult(new SupportTicket());
+}
+
+internal sealed class StripeServiceStub : IStripeService
+{
+    public Task<StripeCheckoutResponseDto> CreateCheckoutSessionAsync(StripeCheckoutRequestDto request, CancellationToken cancellationToken = default)
+        => Task.FromResult(new StripeCheckoutResponseDto());
+}
+
+internal sealed class ResidenceReportPdfGeneratorStub : IResidenceReportPdfGenerator
+{
+    public Task<byte[]> GenerateAsync(TemporaryResidenceReportDetailsDto details, CancellationToken cancellationToken = default)
+        => Task.FromResult(Array.Empty<byte>());
+}
+
+internal sealed class ResidenceReportDocxGeneratorStub : IResidenceReportDocxGenerator
+{
+    public Task<byte[]> GenerateAsync(TemporaryResidenceReportDetailsDto details, CancellationToken cancellationToken = default)
+        => Task.FromResult(Array.Empty<byte>());
+}
+
 internal sealed class LandlordSubscriptionServiceStub : BaseServiceStub<LandlordSubscription>, ILandlordSubscriptionService
 {
     public Task<(IEnumerable<LandlordSubscription> Items, int TotalCount)> GetHistoryForLandlordAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
@@ -685,3 +928,5 @@ internal sealed class WishlistServiceStub : BaseServiceStub<TenantWishlist>, IWi
     public Task<WishlistItemResponseDto> MoveWishlistItemAsync(Guid tenantId, Guid apartmentId, Guid sourceCollectionId, Guid targetCollectionId)
         => Task.FromResult(new WishlistItemResponseDto());
 }
+
+#pragma warning restore CS8602

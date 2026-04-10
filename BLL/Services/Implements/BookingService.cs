@@ -30,6 +30,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<DAL.Models.Notification> _notificationRepository;
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
+    private readonly IRepository<BookingOccupant>? _bookingOccupantRepository;
     private readonly IRepository<Tenant> _tenantRepository;
     private readonly IRepository<User> _userRepository;
     private readonly IRepository<ApartmentAvailability> _apartmentAvailabilityRepository;
@@ -57,7 +58,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             IIdentityVerificationService identityVerificationService,
             ILandlordWalletService landlordWalletService,
             IConfiguration configuration,
-            IMapper mapper) : base(repository)
+            IMapper mapper,
+            IRepository<BookingOccupant>? bookingOccupantRepository = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -76,6 +78,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
         _mapper = mapper;
+        _bookingOccupantRepository = bookingOccupantRepository;
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -690,7 +693,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Only the apartment landlord can submit residence reports.");
 
         var tenant = await _tenantRepository.GetByIdAsync(booking.TenantId);
-        if (tenant == null || string.IsNullOrWhiteSpace(tenant.PassportId) || string.IsNullOrWhiteSpace(tenant.Nationality))
+        var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+        if (tenant == null || tenantUser == null || string.IsNullOrWhiteSpace(tenant.PassportId) || string.IsNullOrWhiteSpace(tenantUser.Nationality))
             throw new InvalidOperationException("Tenant passport and nationality are required before residence reporting.");
 
         var existingReport = (await _temporaryResidenceReportRepository.FindAsync(r => r.BookingId == bookingId)).FirstOrDefault();
@@ -703,7 +707,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             BookingId = bookingId,
             LandlordId = landlordUserId,
             TenantPassportId = tenant.PassportId!,
-            TenantNationality = tenant.Nationality!,
+            TenantNationality = tenantUser.Nationality!,
             CheckInDate = booking.CheckInDate,
             ReportedToPolice = dto.ReportedToPolice,
             ReportDate = dto.ReportDate ?? DateOnly.FromDateTime(Common.Utils.VietnamTime.Now),
@@ -763,6 +767,9 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
         var landlordUser = await _userRepository.GetByIdAsync(apartment.LandlordId);
+        var occupants = await BuildReportOccupantsAsync(booking, report, tenantUser);
+        var primaryOccupant = occupants.First();
+        var occupantCount = occupants.Count;
 
         return new TemporaryResidenceReportDetailsDto
         {
@@ -770,12 +777,15 @@ public class BookingService : BaseService<Booking>, IBookingService
             BookingId = report.BookingId,
             LandlordId = report.LandlordId,
             TenantId = booking.TenantId,
-            TenantFullName = tenantUser?.FullName,
-            TenantPassportId = report.TenantPassportId,
-            TenantNationality = report.TenantNationality,
-            TenantPhone = tenantUser?.Phone,
-            TenantEmail = tenantUser?.Email,
+            TenantFullName = primaryOccupant.FullName,
+            TenantPassportId = primaryOccupant.PassportId ?? report.TenantPassportId,
+            TenantNationalIdCardNumber = primaryOccupant.NationalIdCardNumber,
+            TenantNationality = primaryOccupant.Nationality ?? report.TenantNationality,
+            TenantPhone = primaryOccupant.Phone,
+            TenantEmail = primaryOccupant.Email,
+            TenantSex = primaryOccupant.Sex,
             LandlordFullName = landlordUser?.FullName,
+            LandlordNationalIdCardNumber = landlordUser?.NationalIdCardNumber,
             LandlordPhone = landlordUser?.Phone,
             ApartmentTitle = apartment.Title,
             ApartmentAddress = apartment.Address,
@@ -785,7 +795,227 @@ public class BookingService : BaseService<Booking>, IBookingService
             CheckOutDate = booking.CheckOutDate,
             ReportedToPolice = report.ReportedToPolice,
             ReportDate = report.ReportDate,
-            ReportNumber = report.ReportNumber
+            ReportNumber = report.ReportNumber,
+            OccupantCount = occupantCount,
+            Occupants = occupants
+        };
+    }
+
+    public async Task<IReadOnlyList<ResidenceReportOccupantDto>> GetOccupantsAsync(Guid bookingId, Guid tenantUserId)
+    {
+        var booking = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        var report = (await _temporaryResidenceReportRepository.FindAsync(r => r.BookingId == bookingId)).FirstOrDefault();
+        var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+        return await BuildReportOccupantsAsync(booking, report, tenantUser);
+    }
+
+    public async Task<ResidenceReportOccupantDto> AddOccupantAsync(Guid bookingId, Guid tenantUserId, AddBookingOccupantDto dto)
+    {
+        if (_bookingOccupantRepository == null)
+        {
+            throw new InvalidOperationException("Booking occupant persistence is not configured.");
+        }
+
+        var booking = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
+        if (apartment.MaxOccupants.HasValue && existing.Count >= apartment.MaxOccupants.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} occupant(s).");
+        }
+
+        if (existing.Any(o => o.OccupantOrder == dto.OccupantOrder))
+        {
+            throw new InvalidOperationException("Occupant order already exists for this booking.");
+        }
+
+        if (dto.IsPrimary)
+        {
+            foreach (var item in existing.Where(e => e.IsPrimary))
+            {
+                item.IsPrimary = false;
+                _bookingOccupantRepository.Update(item);
+            }
+        }
+
+        var entity = new BookingOccupant
+        {
+            OccupantId = Guid.NewGuid(),
+            BookingId = bookingId,
+            OccupantOrder = dto.OccupantOrder,
+            IsPrimary = dto.IsPrimary || !existing.Any(),
+            FullName = dto.FullName,
+            PassportId = dto.PassportId,
+            NationalIdCardNumber = dto.NationalIdCardNumber,
+            Nationality = dto.Nationality,
+            Sex = dto.Sex,
+            Phone = dto.Phone,
+            Email = dto.Email,
+            CreatedAt = Common.Utils.VietnamTime.Now
+        };
+
+        await _bookingOccupantRepository.AddAsync(entity);
+        await _bookingOccupantRepository.SaveChangesAsync();
+
+        return MapBookingOccupant(entity);
+    }
+
+    public async Task<ResidenceReportOccupantDto> UpdateOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder, UpdateBookingOccupantDto dto)
+    {
+        if (_bookingOccupantRepository == null)
+        {
+            throw new InvalidOperationException("Booking occupant persistence is not configured.");
+        }
+
+        _ = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+
+        var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
+        var occupant = existing.FirstOrDefault(o => o.OccupantOrder == occupantOrder)
+            ?? throw new ArgumentException("Occupant not found for this booking.");
+
+        if (dto.IsPrimary == true)
+        {
+            foreach (var item in existing.Where(e => e.IsPrimary && e.OccupantId != occupant.OccupantId))
+            {
+                item.IsPrimary = false;
+                _bookingOccupantRepository.Update(item);
+            }
+
+            occupant.IsPrimary = true;
+        }
+        else if (dto.IsPrimary == false)
+        {
+            var anotherPrimaryExists = existing.Any(e => e.OccupantId != occupant.OccupantId && e.IsPrimary);
+            if (!anotherPrimaryExists)
+            {
+                throw new InvalidOperationException("Booking must have at least one primary occupant.");
+            }
+
+            occupant.IsPrimary = false;
+        }
+
+        occupant.FullName = dto.FullName ?? occupant.FullName;
+        occupant.PassportId = dto.PassportId ?? occupant.PassportId;
+        occupant.NationalIdCardNumber = dto.NationalIdCardNumber ?? occupant.NationalIdCardNumber;
+        occupant.Nationality = dto.Nationality ?? occupant.Nationality;
+        occupant.Sex = dto.Sex ?? occupant.Sex;
+        occupant.Phone = dto.Phone ?? occupant.Phone;
+        occupant.Email = dto.Email ?? occupant.Email;
+
+        _bookingOccupantRepository.Update(occupant);
+        await _bookingOccupantRepository.SaveChangesAsync();
+
+        return MapBookingOccupant(occupant);
+    }
+
+    public async Task RemoveOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder)
+    {
+        if (_bookingOccupantRepository == null)
+        {
+            throw new InvalidOperationException("Booking occupant persistence is not configured.");
+        }
+
+        _ = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+
+        var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
+        var occupant = existing.FirstOrDefault(o => o.OccupantOrder == occupantOrder)
+            ?? throw new ArgumentException("Occupant not found for this booking.");
+
+        if (existing.Count <= 1)
+        {
+            throw new InvalidOperationException("At least one occupant must remain on the booking.");
+        }
+
+        var wasPrimary = occupant.IsPrimary;
+        _bookingOccupantRepository.Remove(occupant);
+
+        if (wasPrimary)
+        {
+            var promote = existing.Where(o => o.OccupantId != occupant.OccupantId)
+                .OrderBy(o => o.OccupantOrder)
+                .FirstOrDefault();
+            if (promote != null)
+            {
+                promote.IsPrimary = true;
+                _bookingOccupantRepository.Update(promote);
+            }
+        }
+
+        await _bookingOccupantRepository.SaveChangesAsync();
+    }
+
+    private async Task<Booking> EnsureBookingOwnedByTenantAsync(Guid bookingId, Guid tenantUserId)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        if (booking.TenantId != tenantUserId)
+        {
+            throw new InvalidOperationException("You are not allowed to manage occupants for this booking.");
+        }
+
+        return booking;
+    }
+
+    private async Task<List<ResidenceReportOccupantDto>> BuildReportOccupantsAsync(Booking booking, TemporaryResidenceReport? report, User? tenantUser)
+    {
+        if (_bookingOccupantRepository != null)
+        {
+            var persisted = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == booking.BookingId))
+                .OrderBy(o => o.OccupantOrder)
+                .ToList();
+
+            if (persisted.Count > 0)
+            {
+                return persisted.Select(MapBookingOccupant).ToList();
+            }
+        }
+
+        var primary = new ResidenceReportOccupantDto
+        {
+            Order = 1,
+            IsPrimary = true,
+            FullName = tenantUser?.FullName,
+            PassportId = report?.TenantPassportId,
+            NationalIdCardNumber = tenantUser?.NationalIdCardNumber,
+            Nationality = report?.TenantNationality,
+            Sex = tenantUser?.Sex,
+            Phone = tenantUser?.Phone,
+            Email = tenantUser?.Email
+        };
+
+        var fallbackCount = Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0));
+        return Enumerable.Range(1, fallbackCount)
+            .Select(index => new ResidenceReportOccupantDto
+            {
+                Order = index,
+                IsPrimary = index == 1,
+                FullName = primary.FullName,
+                PassportId = primary.PassportId,
+                NationalIdCardNumber = primary.NationalIdCardNumber,
+                Nationality = primary.Nationality,
+                Sex = primary.Sex,
+                Phone = primary.Phone,
+                Email = primary.Email
+            })
+            .ToList();
+    }
+
+    private static ResidenceReportOccupantDto MapBookingOccupant(BookingOccupant occupant)
+    {
+        return new ResidenceReportOccupantDto
+        {
+            Order = occupant.OccupantOrder,
+            IsPrimary = occupant.IsPrimary,
+            FullName = occupant.FullName,
+            PassportId = occupant.PassportId,
+            NationalIdCardNumber = occupant.NationalIdCardNumber,
+            Nationality = occupant.Nationality,
+            Sex = occupant.Sex,
+            Phone = occupant.Phone,
+            Email = occupant.Email
         };
     }
 

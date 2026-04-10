@@ -333,6 +333,14 @@ namespace Short_termApartmentAPI.Controllers
 			{
 				var details = await _bookingService.GetResidenceReportDetailsAsync(id, landlordUserId);
 				var docxBytes = await _residenceReportDocxGenerator.GenerateAsync(details);
+				var isVietnamese = string.Equals(details.TenantNationality, "VN", StringComparison.OrdinalIgnoreCase);
+				var hasMultipleOccupants = (details.Occupants?.Count ?? 0) > 1;
+				if (isVietnamese && hasMultipleOccupants)
+				{
+					var zipName = $"residence-report-{id}.zip";
+					return File(docxBytes, "application/zip", zipName);
+				}
+
 				var fileName = $"residence-report-{id}.docx";
 				return File(docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName);
 			}
@@ -373,6 +381,116 @@ namespace Short_termApartmentAPI.Controllers
 			catch (InvalidOperationException ex)
 			{
 				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpGet("{id:guid}/occupants")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> GetOccupants(Guid id)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				var occupants = await _bookingService.GetOccupantsAsync(id, tenantUserId);
+				return Ok(new ApiResponse<IReadOnlyList<ResidenceReportOccupantDto>>(occupants));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpPost("{id:guid}/occupants")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> AddOccupant(Guid id, [FromBody] AddBookingOccupantDto dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			try
+			{
+				var occupant = await _bookingService.AddOccupantAsync(id, tenantUserId, dto);
+				return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant added successfully."));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpPut("{id:guid}/occupants/{occupantOrder:int}")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> UpdateOccupant(Guid id, int occupantOrder, [FromBody] UpdateBookingOccupantDto dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			try
+			{
+				var occupant = await _bookingService.UpdateOccupantAsync(id, tenantUserId, occupantOrder, dto);
+				return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant updated successfully."));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
+		[HttpDelete("{id:guid}/occupants/{occupantOrder:int}")]
+		[Authorize(Roles = "tenant")]
+		public async Task<IActionResult> RemoveOccupant(Guid id, int occupantOrder)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			try
+			{
+				await _bookingService.RemoveOccupantAsync(id, tenantUserId, occupantOrder);
+				return Ok(new ApiResponse<string>("Occupant removed successfully."));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
 			}
 		}
 

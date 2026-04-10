@@ -20,13 +20,13 @@ public class IdentityVerificationServiceTests
         {
             UserId = userId,
             Role = "tenant",
+            Nationality = "VN",
             IdentityVerified = false
         });
 
         var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
         {
             TenantId = userId,
-            Nationality = "VN",
             IdentityVerificationStatus = null
         });
 
@@ -82,13 +82,13 @@ public class IdentityVerificationServiceTests
         {
             UserId = userId,
             Role = "tenant",
+            Nationality = "US",
             IdentityVerified = true
         });
 
         var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
         {
             TenantId = userId,
-            Nationality = "US",
             IdentityVerificationStatus = "verified"
         });
 

@@ -11,6 +11,10 @@ public interface IBookingService : IBaseService<Booking>
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
 	Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto);
 	Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId);
+	Task<IReadOnlyList<ResidenceReportOccupantDto>> GetOccupantsAsync(Guid bookingId, Guid tenantUserId);
+	Task<ResidenceReportOccupantDto> AddOccupantAsync(Guid bookingId, Guid tenantUserId, AddBookingOccupantDto dto);
+	Task<ResidenceReportOccupantDto> UpdateOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder, UpdateBookingOccupantDto dto);
+	Task RemoveOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder);
 	Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(
 		Guid landlordId,
 		int page,

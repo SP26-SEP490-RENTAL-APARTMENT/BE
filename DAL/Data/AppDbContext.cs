@@ -33,6 +33,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<BookingOffer> BookingOffers { get; set; }
 
+    public virtual DbSet<BookingOccupant> BookingOccupants { get; set; }
+
     public virtual DbSet<BookingCheckTime> BookingCheckTimes { get; set; }
 
     public virtual DbSet<HolidaysEvent> HolidaysEvents { get; set; }
@@ -411,6 +413,57 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Tenant).WithMany(p => p.Bookings)
                 .HasForeignKey(d => d.TenantId)
                 .HasConstraintName("bookings_ibfk_1");
+        });
+
+        modelBuilder.Entity<BookingOccupant>(entity =>
+        {
+            entity.HasKey(e => e.OccupantId).HasName("PRIMARY");
+
+            entity.ToTable("booking_occupants");
+
+            entity.HasIndex(e => e.BookingId, "idx_booking");
+
+            entity.HasIndex(e => new { e.BookingId, e.OccupantOrder }, "uk_booking_order").IsUnique();
+
+            entity.HasIndex(e => new { e.BookingId, e.IsPrimary }, "idx_booking_primary");
+
+            entity.Property(e => e.OccupantId).HasColumnName("occupant_id");
+            entity.Property(e => e.BookingId).HasColumnName("booking_id");
+            entity.Property(e => e.OccupantOrder).HasColumnName("occupant_order");
+            entity.Property(e => e.IsPrimary)
+                .HasDefaultValueSql("'0'")
+                .HasColumnName("is_primary");
+            entity.Property(e => e.FullName)
+                .HasMaxLength(150)
+                .HasColumnName("full_name");
+            entity.Property(e => e.PassportId)
+                .HasMaxLength(50)
+                .HasColumnName("passport_id");
+            entity.Property(e => e.NationalIdCardNumber)
+                .HasMaxLength(20)
+                .HasColumnName("national_id_card_number");
+            entity.Property(e => e.Nationality)
+                .HasMaxLength(2)
+                .IsFixedLength()
+                .HasColumnName("nationality");
+            entity.Property(e => e.Sex)
+                .HasMaxLength(20)
+                .HasColumnName("sex");
+            entity.Property(e => e.Phone)
+                .HasMaxLength(20)
+                .HasColumnName("phone");
+            entity.Property(e => e.Email)
+                .HasMaxLength(255)
+                .HasColumnName("email");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Booking).WithMany(p => p.BookingOccupants)
+                .HasForeignKey(d => d.BookingId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("booking_occupants_ibfk_1");
         });
 
         modelBuilder.Entity<BookingOffer>(entity =>
@@ -1437,21 +1490,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.LastVerifiedAt)
                 .HasColumnType("timestamp")
                 .HasColumnName("last_verified_at");
-            entity.Property(e => e.Birthday).HasColumnName("birthday");
-            entity.Property(e => e.NationalIdCardNumber)
-                .HasMaxLength(12)
-                .HasColumnName("national_id_card_number");
-            entity.Property(e => e.Nationality)
-                .HasMaxLength(2)
-                .IsFixedLength()
-                .HasComment("ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting")
-                .HasColumnName("nationality");
             entity.Property(e => e.PassportId)
                 .HasMaxLength(50)
                 .HasColumnName("passport_id");
-            entity.Property(e => e.Sex)
-                .HasMaxLength(20)
-                .HasColumnName("sex");
 
             entity.HasOne(d => d.TenantNavigation).WithOne(p => p.Tenant)
                 .HasForeignKey<Tenant>(d => d.TenantId)
@@ -1568,6 +1609,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp")
                 .HasColumnName("created_at");
+            entity.Property(e => e.Birthday).HasColumnName("birthday");
             entity.Property(e => e.Email).HasColumnName("email");
             entity.Property(e => e.FullName)
                 .HasMaxLength(100)
@@ -1575,12 +1617,23 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.IdentityVerified)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("identity_verified");
+            entity.Property(e => e.NationalIdCardNumber)
+                .HasMaxLength(12)
+                .HasColumnName("national_id_card_number");
+            entity.Property(e => e.Nationality)
+                .HasMaxLength(2)
+                .IsFixedLength()
+                .HasComment("ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting")
+                .HasColumnName("nationality");
             entity.Property(e => e.PasswordHash)
                 .HasMaxLength(255)
                 .HasColumnName("password_hash");
             entity.Property(e => e.Phone)
                 .HasMaxLength(20)
                 .HasColumnName("phone");
+            entity.Property(e => e.Sex)
+                .HasMaxLength(20)
+                .HasColumnName("sex");
             entity.Property(e => e.Token)
                 .HasMaxLength(500)
                 .HasColumnName("token");

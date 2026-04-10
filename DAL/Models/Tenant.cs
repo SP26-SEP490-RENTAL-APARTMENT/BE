@@ -9,17 +9,6 @@ public partial class Tenant
 
     public string? PassportId { get; set; }
 
-    public string? Sex { get; set; }
-
-    public DateOnly? Birthday { get; set; }
-
-    /// <summary>
-    /// ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting
-    /// </summary>
-    public string? Nationality { get; set; }
-
-    public string? NationalIdCardNumber { get; set; }
-
     public string? IdentityVerificationStatus { get; set; }
 
     public DateTime? LastVerifiedAt { get; set; }

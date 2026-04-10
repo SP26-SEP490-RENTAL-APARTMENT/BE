@@ -257,12 +257,12 @@ namespace BLL.Services.Implements
                 throw new InvalidOperationException("Tenant profile is required before booking.");
             }
 
-            if (string.IsNullOrWhiteSpace(tenant.Nationality))
+            if (string.IsNullOrWhiteSpace(user.Nationality))
             {
                 throw new InvalidOperationException("Tenant nationality is required before booking.");
             }
 
-            var isVietnamese = string.Equals(tenant.Nationality, "VN", StringComparison.OrdinalIgnoreCase);
+            var isVietnamese = string.Equals(user.Nationality, "VN", StringComparison.OrdinalIgnoreCase);
 
             var documents = await _userIdentityDocumentRepository.FindAsync(d =>
                 d.UserId == userId &&
