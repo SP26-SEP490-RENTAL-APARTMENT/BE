@@ -59,6 +59,42 @@ namespace Short_termApartmentAPI.Controllers
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }
 
+        [HttpGet("staff/{staffId:guid}")]
+        [Authorize(Roles = "admin")]
+        public async Task<IActionResult> GetByStaffId(
+            Guid staffId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+        {
+            var (items, totalCount) = await _propertyInspectionService.GetByStaffIdAsync(staffId, page, pageSize, sortBy, sortOrder, search, filters);
+            var mappedItems = _mapper.Map<IEnumerable<PropertyInspectionResponseDto>>(items);
+            return Ok(new { Items = mappedItems, TotalCount = totalCount });
+        }
+
+        [HttpGet("staff/me")]
+        [Authorize(Roles = "staff")]
+        public async Task<IActionResult> GetMyInspections(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+        {
+            if (!TryGetCurrentUserId(out var staffId))
+            {
+                return Unauthorized("Invalid user token.");
+            }
+
+            var (items, totalCount) = await _propertyInspectionService.GetByStaffIdAsync(staffId, page, pageSize, sortBy, sortOrder, search, filters);
+            var mappedItems = _mapper.Map<IEnumerable<PropertyInspectionResponseDto>>(items);
+            return Ok(new { Items = mappedItems, TotalCount = totalCount });
+        }
+
         [HttpPost]
         [Authorize(Roles = "admin")]
         public async Task<IActionResult> Create([FromBody] CreatePropertyInspectionDto propertyInspectionDto)
@@ -83,6 +119,11 @@ namespace Short_termApartmentAPI.Controllers
             if (!string.Equals(inspector.Role, "staff", StringComparison.OrdinalIgnoreCase))
             {
                 return BadRequest("Inspector must be a staff user.");
+            }
+
+            if (apartment.Status != "pending_review")
+            {
+                return BadRequest("Apartment must be in 'pending_review' status to schedule an inspection.");
             }
 
             var propertyInspection = _mapper.Map<PropertyInspection>(propertyInspectionDto);

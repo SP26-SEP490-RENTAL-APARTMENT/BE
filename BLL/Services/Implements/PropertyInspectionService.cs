@@ -14,6 +14,19 @@ public sealed class PropertyInspectionService(
 {
     private readonly IRepository<InspectionPhoto> _inspectionPhotoRepository = inspectionPhotoRepository;
     private readonly IImageService _imageService = imageService;
+    private static readonly string[] InspectionAllowedColumns =
+    {
+        "InspectionId",
+        "ApartmentId",
+        "InspectorId",
+        "ScheduledDate",
+        "CompletedDate",
+        "Status",
+        "OverallCondition",
+        "ApprovedForListing",
+        "ApprovedAt",
+        "ApprovedBy"
+    };
 
     public override async Task<(IEnumerable<PropertyInspection> Items, int TotalCount)> GetAllAsync(
         int page,
@@ -24,21 +37,7 @@ public sealed class PropertyInspectionService(
         Dictionary<string, string>? filters = null,
         IEnumerable<string>? allowedColumns = null)
     {
-        var effectiveAllowedColumns = new[]
-        {
-            "InspectionId",
-            "ApartmentId",
-            "InspectorId",
-            "ScheduledDate",
-            "CompletedDate",
-            "Status",
-            "OverallCondition",
-            "ApprovedForListing",
-            "ApprovedAt",
-            "ApprovedBy"
-        };
-
-        var (items, totalCount) = await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+        var (items, totalCount) = await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, InspectionAllowedColumns);
         var inspectionList = items.ToList();
 
         if (!inspectionList.Any())
@@ -69,6 +68,39 @@ public sealed class PropertyInspectionService(
         var photos = await _inspectionPhotoRepository.FindAsync(p => p.InspectionId == id);
         inspection.InspectionPhotos = photos.ToList();
         return inspection;
+    }
+
+    public async Task<(IEnumerable<PropertyInspection> Items, int TotalCount)> GetByStaffIdAsync(
+        Guid staffId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null)
+    {
+        var effectiveFilters = filters != null
+            ? new Dictionary<string, string>(filters)
+            : new Dictionary<string, string>();
+        effectiveFilters["InspectorId"] = staffId.ToString();
+
+        var (items, totalCount) = await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters, InspectionAllowedColumns);
+        var inspections = items.ToList();
+        if (!inspections.Any())
+        {
+            return (inspections, totalCount);
+        }
+
+        var inspectionIds = inspections.Select(i => i.InspectionId).ToList();
+        var allPhotos = await _inspectionPhotoRepository.FindAsync(p => inspectionIds.Contains(p.InspectionId));
+        var photoLookup = allPhotos.ToLookup(p => p.InspectionId);
+
+        foreach (var inspection in inspections)
+        {
+            inspection.InspectionPhotos = photoLookup[inspection.InspectionId].ToList();
+        }
+
+        return (inspections, totalCount);
     }
 
     public async Task<PropertyInspection> StartInspectionAsync(Guid inspectionId, Guid staffId)
