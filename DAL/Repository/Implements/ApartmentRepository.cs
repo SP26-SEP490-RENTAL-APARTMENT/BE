@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using DAL.Data;
 using DAL.Models;
@@ -27,16 +28,28 @@ namespace DAL.Repository.Implements
 
         public async Task UpdateListingStatusAsync(Guid apartmentId, string status, string bookingStatus)
         {
-            var apartment = new Apartment
-            {
-                ApartmentId = apartmentId,
-                Status = status,
-                BookingStatus = bookingStatus
-            };
+            var trackedApartment = _context.Set<Apartment>()
+                .Local
+                .FirstOrDefault(a => a.ApartmentId == apartmentId);
 
-            _context.Attach(apartment);
-            _context.Entry(apartment).Property(a => a.Status).IsModified = true;
-            _context.Entry(apartment).Property(a => a.BookingStatus).IsModified = true;
+            if (trackedApartment != null)
+            {
+                trackedApartment.Status = status;
+                trackedApartment.BookingStatus = bookingStatus;
+            }
+            else
+            {
+                var apartment = new Apartment
+                {
+                    ApartmentId = apartmentId,
+                    Status = status,
+                    BookingStatus = bookingStatus
+                };
+
+                _context.Attach(apartment);
+                _context.Entry(apartment).Property(a => a.Status).IsModified = true;
+                _context.Entry(apartment).Property(a => a.BookingStatus).IsModified = true;
+            }
 
             await _context.SaveChangesAsync();
         }
