@@ -9,6 +9,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
 {
     private readonly IRepository<SmartPricingHistory> _repository;
     private readonly IApartmentRepository _apartmentRepository;
+    private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IHolidaysEventRepository _holidaysEventRepository;
     private readonly INearbyAttractionRepository _nearbyAttractionRepository;
 
@@ -18,12 +19,14 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
     public SmartPricingHistoryService(
         IRepository<SmartPricingHistory> repository,
         IApartmentRepository apartmentRepository,
+        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
         IHolidaysEventRepository holidaysEventRepository,
         INearbyAttractionRepository nearbyAttractionRepository)
         : base(repository)
     {
         _repository = repository;
         _apartmentRepository = apartmentRepository;
+        _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _holidaysEventRepository = holidaysEventRepository;
         _nearbyAttractionRepository = nearbyAttractionRepository;
     }
@@ -111,7 +114,59 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         pricing.AcceptedByLandlord = true;
         
         await UpdateAsync(pricing);
+
+        await UpsertManualOverrideCalendarAsync(pricing.ApartmentId, pricing.Date, pricing.SuggestedPrice);
+
         return pricing;
+    }
+
+    public async Task<bool> HasAcceptedSuggestionAsync(Guid apartmentId)
+    {
+        var accepted = await _repository.FindAsync(p =>
+            p.ApartmentId == apartmentId &&
+            p.AcceptedByLandlord == true);
+
+        return accepted.Any();
+    }
+
+    private async Task UpsertManualOverrideCalendarAsync(Guid apartmentId, DateOnly date, decimal acceptedPrice)
+    {
+        var existingOverrides = await _apartmentPriceCalendarRepository.FindAsync(c =>
+            c.ApartmentId == apartmentId &&
+            c.PriceType != null &&
+            c.PriceType.ToLower() == "manual_override" &&
+            c.StartDate <= date &&
+            c.EndDate > date);
+
+        var overrideEntry = existingOverrides
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (overrideEntry != null)
+        {
+            overrideEntry.DiscountPercentage = acceptedPrice;
+            overrideEntry.IsDiscount = false;
+            overrideEntry.UpdatedAt = Common.Utils.VietnamTime.Now;
+            _apartmentPriceCalendarRepository.Update(overrideEntry);
+            await _apartmentPriceCalendarRepository.SaveChangesAsync();
+            return;
+        }
+
+        await _apartmentPriceCalendarRepository.AddAsync(new ApartmentPriceCalendar
+        {
+            PriceId = Guid.NewGuid(),
+            ApartmentId = apartmentId,
+            StartDate = date,
+            EndDate = date.AddDays(1),
+            DiscountPercentage = acceptedPrice,
+            IsDiscount = false,
+            PriceType = "manual_override",
+            MinNights = 1,
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
+        });
+
+        await _apartmentPriceCalendarRepository.SaveChangesAsync();
     }
 
     private async Task<decimal> GetHolidayMultiplierAsync(Apartment apartment, DateOnly date)

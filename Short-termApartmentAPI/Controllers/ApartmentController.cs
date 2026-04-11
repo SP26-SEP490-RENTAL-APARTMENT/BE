@@ -17,17 +17,20 @@ public sealed class ApartmentsController : ControllerBase
     private readonly IApartmentService _apartmentService;
     private readonly ILandlordService _landlordService;
     private readonly IBookingService _bookingService;
+    private readonly ISmartPricingHistoryService _smartPricingHistoryService;
     private readonly IMapper _mapper;
 
     public ApartmentsController(
         IApartmentService apartmentService,
         ILandlordService landlordService,
         IBookingService bookingService,
+        ISmartPricingHistoryService smartPricingHistoryService,
         IMapper mapper)
     {
         _apartmentService = apartmentService;
         _landlordService = landlordService;
         _bookingService = bookingService;
+        _smartPricingHistoryService = smartPricingHistoryService;
         _mapper = mapper;
     }
 
@@ -359,7 +362,12 @@ public sealed class ApartmentsController : ControllerBase
 
             var updated = await _apartmentService.SubmitForReviewAsync(id, landlord.LandlordId, dto);
             var response = _mapper.Map<ApartmentResponseDto>(updated);
-            return Ok(new ApiResponse<ApartmentResponseDto>(response, "Apartment submitted for review successfully."));
+            var hasAcceptedRecommendation = await _smartPricingHistoryService.HasAcceptedSuggestionAsync(id);
+            var message = hasAcceptedRecommendation
+                ? "Apartment submitted for review successfully."
+                : "Apartment submitted for review successfully. Warning: no smart pricing recommendation has been accepted yet.";
+
+            return Ok(new ApiResponse<ApartmentResponseDto>(response, message));
         }
         catch (InvalidOperationException ex)
         {

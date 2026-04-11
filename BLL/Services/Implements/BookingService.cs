@@ -308,7 +308,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             }
         }
 
-        var baseAmount = apartment.BasePricePerNight * nights;
+        var baseAmount = CalculateBaseAmountForRange(
+            checkInDate,
+            checkOutDate,
+            apartment.BasePricePerNight,
+            calendars.ToList());
 
         decimal packageAmount = 0m;
         if (dto.PackageId.HasValue)
@@ -574,7 +578,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             {
                 var creditedAmount = paymentMode == BookingPaymentMode.full
                     ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
-                    : GetUpfrontPaymentAmount(booking);
+                    : Math.Round(GetUpfrontPaymentAmount(booking) * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
 
                 await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, creditedAmount);
 
@@ -630,7 +634,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
             if (remainingAmount > 0)
             {
-                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, remainingAmount);
+                var landlordShareAmount = Math.Round(remainingAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, landlordShareAmount);
             }
 
             await CreateBookingNotificationAsync(
@@ -1294,15 +1299,86 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (!overlappingCalendars.Any())
             return null;
 
-        // If multiple overlapping calendars, use average or first
-        // For now, using the first matching calendar's discount
-        var firstCalendar = overlappingCalendars.First();
-        if (firstCalendar.IsDiscount == true && firstCalendar.DiscountPercentage.HasValue)
+        var manualOverride = overlappingCalendars
+            .Where(c =>
+                c.PriceType != null &&
+                c.PriceType.Equals("manual_override", StringComparison.OrdinalIgnoreCase) &&
+                c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (manualOverride != null)
+        {
+            return manualOverride.DiscountPercentage;
+        }
+
+        var firstCalendar = overlappingCalendars
+            .Where(c => c.IsDiscount == true && c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (firstCalendar != null)
         {
             return defaultPrice * (1 - firstCalendar.DiscountPercentage.Value / 100);
         }
 
-        return null;
+        return defaultPrice;
+    }
+
+    private decimal CalculateBaseAmountForRange(
+        DateOnly checkInDate,
+        DateOnly checkOutDate,
+        decimal defaultPrice,
+        List<DAL.Models.ApartmentPriceCalendar> calendars)
+    {
+        decimal total = 0m;
+        var cursor = checkInDate;
+
+        while (cursor < checkOutDate)
+        {
+            total += ResolveNightlyPrice(cursor, defaultPrice, calendars);
+            cursor = cursor.AddDays(1);
+        }
+
+        return total;
+    }
+
+    private decimal ResolveNightlyPrice(
+        DateOnly date,
+        decimal defaultPrice,
+        List<DAL.Models.ApartmentPriceCalendar> calendars)
+    {
+        var matching = calendars.Where(c => c.StartDate <= date && c.EndDate > date).ToList();
+
+        if (!matching.Any())
+        {
+            return defaultPrice;
+        }
+
+        var manualOverride = matching
+            .Where(c =>
+                c.PriceType != null &&
+                c.PriceType.Equals("manual_override", StringComparison.OrdinalIgnoreCase) &&
+                c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (manualOverride != null)
+        {
+            return manualOverride.DiscountPercentage!.Value;
+        }
+
+        var discountCalendar = matching
+            .Where(c => c.IsDiscount == true && c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (discountCalendar != null)
+        {
+            return defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m);
+        }
+
+        return defaultPrice;
     }
 
     public async Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(

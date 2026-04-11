@@ -18,6 +18,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IAmenityRepository _amenityRepository;
     private readonly IUserRepository _userRepository;
     private readonly IRepository<Notification> _notificationRepository;
+    private readonly IRepository<PropertyInspection> _propertyInspectionRepository;
 
     public ApartmentService(
         IApartmentRepository repository,
@@ -26,7 +27,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IApartmentMediumService apartmentMediumService,
         IMapper mapper,
         IUserRepository userRepository,
-        IRepository<Notification> notificationRepository)
+        IRepository<Notification> notificationRepository,
+        IRepository<PropertyInspection> propertyInspectionRepository)
         : base(repository)
     {
         _apartmentRepository = repository;
@@ -36,6 +38,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _mapper = mapper;
         _userRepository = userRepository;
         _notificationRepository = notificationRepository;
+        _propertyInspectionRepository = propertyInspectionRepository;
     }
 
     public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
@@ -327,6 +330,14 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         // Validate status is pending_review
         if (!string.Equals(apartment.Status, "pending_review", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Only pending_review apartments can be approved or rejected.");
+
+        // Require inspection completion before admin can decide listing status.
+        var completedInspections = await _propertyInspectionRepository.FindAsync(i =>
+            i.ApartmentId == apartmentId &&
+            i.CompletedDate != null);
+
+        if (!completedInspections.Any())
+            throw new InvalidOperationException("Listing decision is allowed only after at least one completed property inspection.");
 
         string type;
         string title;

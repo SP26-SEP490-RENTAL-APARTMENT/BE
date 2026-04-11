@@ -48,6 +48,8 @@ namespace BLL.DependencyInjection
             services.AddScoped<IResidenceReportDocxGenerator, ResidenceReportDocxGenerator>();
             services.AddScoped<IIdentityVerificationService, IdentityVerificationService>();
             services.AddScoped<IReportExecutionService, ReportExecutionService>();
+            services.AddScoped<IReportExportService, ReportExportService>();
+            services.AddScoped<IAdminAnalyticsService, AdminAnalyticsService>();
             services.AddScoped<IWishlistService, WishlistService>();
             services.AddScoped<EmailService, EmailService>();
             return services;
