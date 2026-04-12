@@ -74,6 +74,7 @@ namespace DAL.Repository.Implements
                 .Include(a => a.Room)
                 .Include(a => a.Amenities)
                 .Include(a => a.ApartmentMedia)
+                .Include(a => a.PropertyInspections)
                 .Include(a => a.Landlord)
                     .ThenInclude(l => l.LandlordNavigation)
                 .Skip((page - 1) * pageSize)

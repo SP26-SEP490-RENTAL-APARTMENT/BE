@@ -81,7 +81,17 @@ public sealed class ApartmentsController : ControllerBase
         effectiveFilters["status"] = "pending_review";
 
         var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
-        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        var mappedItems = items.Select(apartment =>
+        {
+            var dto = _mapper.Map<ApartmentResponseDto>(apartment);
+            dto.InspectionStatus = apartment.PropertyInspections
+                .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
+                .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
+                .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                .Select(i => i.Status)
+                .FirstOrDefault();
+            return dto;
+        });
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
@@ -104,7 +114,17 @@ public sealed class ApartmentsController : ControllerBase
         effectiveFilters["landlordId"] = landlordId.ToString();
 
         var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
-        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        var mappedItems = items.Select(apartment =>
+        {
+            var dto = _mapper.Map<ApartmentResponseDto>(apartment);
+            dto.InspectionStatus = apartment.PropertyInspections
+                .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
+                .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
+                .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                .Select(i => i.Status)
+                .FirstOrDefault();
+            return dto;
+        });
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 

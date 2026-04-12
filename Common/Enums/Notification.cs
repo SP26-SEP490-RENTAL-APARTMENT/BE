@@ -28,6 +28,9 @@ namespace Common.Enums
         system_announcement, 
             check_in_recorded,
             check_out_recorded,
+            check_time_confirmed,
+            check_time_disputed,
+            check_time_dispute_resolved,
         other
     }
 }

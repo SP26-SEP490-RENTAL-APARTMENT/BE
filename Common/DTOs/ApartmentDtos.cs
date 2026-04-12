@@ -145,6 +145,7 @@ public class ApartmentResponseDto
     public string? Status { get; set; }
     public string? BookingStatus { get; set; }
     public DateTime? CreatedAt { get; set; }
+    public string? InspectionStatus { get; set; }
     public List<string> Photos { get; set; } = new List<string>();
     public RoomResponseDto? Room { get; set; }
     public List<AmenityResponseDto> Amenities { get; set; } = new List<AmenityResponseDto>();

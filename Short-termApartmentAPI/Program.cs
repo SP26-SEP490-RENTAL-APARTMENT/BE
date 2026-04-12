@@ -169,41 +169,11 @@ using (var scope = app.Services.CreateScope())
         using (var command = connection.CreateCommand())
         {
             command.CommandText = @"
-                SELECT COLUMN_NAME 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME = 'users' 
-                AND TABLE_SCHEMA = DATABASE()
-                AND COLUMN_NAME IN ('token', 'token_expired');";
-            
-            var existingColumns = new HashSet<string>();
-            using (var reader = await command.ExecuteReaderAsync())
-            {
-                while (await reader.ReadAsync())
-                {
-                    existingColumns.Add(reader.GetString(0));
-                }
-            }
-            
-            // Add missing columns
-            if (!existingColumns.Contains("token"))
-            {
-                using (var addCommand = connection.CreateCommand())
-                {
-                    addCommand.CommandText = "ALTER TABLE users ADD COLUMN token VARCHAR(500) NULL COMMENT 'User access token';";
-                    await addCommand.ExecuteNonQueryAsync();
-                }
-                app.Logger.LogInformation("Added token column to users table");
-            }
-            
-            if (!existingColumns.Contains("token_expired"))
-            {
-                using (var addCommand = connection.CreateCommand())
-                {
-                    addCommand.CommandText = "ALTER TABLE users ADD COLUMN token_expired DATETIME NULL COMMENT 'Token expiration time';";
-                    await addCommand.ExecuteNonQueryAsync();
-                }
-                app.Logger.LogInformation("Added token_expired column to users table");
-            }
+                ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS token VARCHAR(500) NULL COMMENT 'User access token',
+                    ADD COLUMN IF NOT EXISTS token_expired DATETIME NULL COMMENT 'Token expiration time';";
+            await command.ExecuteNonQueryAsync();
+            app.Logger.LogInformation("Ensured token columns exist on users table");
         }
         
         await connection.CloseAsync();

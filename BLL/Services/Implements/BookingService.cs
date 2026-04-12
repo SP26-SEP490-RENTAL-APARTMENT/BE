@@ -880,6 +880,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
         checkTime.RecordedBy = recordedBy;
         checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
+        checkTime.TenantResponseStatus = "pending";
+        checkTime.TenantRespondedBy = null;
+        checkTime.TenantRespondedAt = null;
+        checkTime.TenantDisputeReason = null;
+        checkTime.TenantDisputeNotes = null;
+        checkTime.DisputeResolutionStatus = null;
+        checkTime.DisputeResolvedBy = null;
+        checkTime.DisputeResolvedAt = null;
+        checkTime.DisputeResolutionNotes = null;
         
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
@@ -963,6 +972,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.IsLateCheckOut = isLateCheckOut;
         checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
         checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
+        checkTime.TenantResponseStatus = "pending";
+        checkTime.TenantRespondedBy = null;
+        checkTime.TenantRespondedAt = null;
+        checkTime.TenantDisputeReason = null;
+        checkTime.TenantDisputeNotes = null;
+        checkTime.DisputeResolutionStatus = null;
+        checkTime.DisputeResolvedBy = null;
+        checkTime.DisputeResolvedAt = null;
+        checkTime.DisputeResolutionNotes = null;
         
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
@@ -1035,8 +1053,192 @@ public class BookingService : BaseService<Booking>, IBookingService
             RecordedAt = checkTime.RecordedAt,
             Notes = checkTime.Notes,
             LastModifiedAt = checkTime.UpdatedAt ?? checkTime.RecordedAt,
-            IsEditable = isEditable
+            IsEditable = isEditable,
+            TenantResponseStatus = string.IsNullOrWhiteSpace(checkTime.TenantResponseStatus) ? "pending" : checkTime.TenantResponseStatus,
+            TenantRespondedBy = checkTime.TenantRespondedBy,
+            TenantRespondedAt = checkTime.TenantRespondedAt,
+            TenantDisputeReason = checkTime.TenantDisputeReason,
+            TenantDisputeNotes = checkTime.TenantDisputeNotes,
+            DisputeResolutionStatus = checkTime.DisputeResolutionStatus,
+            DisputeResolvedBy = checkTime.DisputeResolvedBy,
+            DisputeResolvedAt = checkTime.DisputeResolvedAt,
+            DisputeResolutionNotes = checkTime.DisputeResolutionNotes
         };
+    }
+
+    public async Task<BookingCheckTimeResponseDto> RespondToCheckTimeAsync(Guid bookingId, Guid tenantId, RespondBookingCheckTimeDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        if (booking.TenantId != tenantId)
+        {
+            throw new InvalidOperationException("You are not allowed to respond to this booking check-time.");
+        }
+
+        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+
+        if (!checkTime.ActualCheckIn.HasValue && !checkTime.ActualCheckOut.HasValue)
+        {
+            throw new InvalidOperationException("No recorded check-in/check-out found to respond to.");
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        var action = dto.Action.Trim().ToLowerInvariant();
+        if (action != "confirm" && action != "dispute")
+        {
+            throw new InvalidOperationException("Action must be 'confirm' or 'dispute'.");
+        }
+
+        var currentStatus = checkTime.TenantResponseStatus?.Trim().ToLowerInvariant();
+        if (string.Equals(currentStatus, action, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        }
+
+        checkTime.TenantRespondedBy = tenantId;
+        checkTime.TenantRespondedAt = Common.Utils.VietnamTime.Now;
+
+        if (action == "confirm")
+        {
+            checkTime.TenantResponseStatus = "confirmed";
+            checkTime.TenantDisputeReason = null;
+            checkTime.TenantDisputeNotes = null;
+            checkTime.DisputeResolutionStatus = null;
+            checkTime.DisputeResolvedBy = null;
+            checkTime.DisputeResolvedAt = null;
+            checkTime.DisputeResolutionNotes = null;
+
+            _bookingCheckTimeRepository.Update(checkTime);
+            await _bookingCheckTimeRepository.SaveChangesAsync();
+
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.check_time_confirmed.ToString(),
+                "Check-time Confirmed",
+                "Tenant has confirmed the recorded check-in/check-out details.",
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                tenantId,
+                NotificationType.check_time_confirmed.ToString(),
+                "Check-time Confirmed",
+                "Your confirmation has been recorded successfully.",
+                booking.BookingId);
+
+            return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.DisputeReason))
+        {
+            throw new InvalidOperationException("Dispute reason is required.");
+        }
+
+        checkTime.TenantResponseStatus = "disputed";
+        checkTime.TenantDisputeReason = dto.DisputeReason.Trim();
+        checkTime.TenantDisputeNotes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+        checkTime.DisputeResolutionStatus = "open";
+        checkTime.DisputeResolvedBy = null;
+        checkTime.DisputeResolvedAt = null;
+        checkTime.DisputeResolutionNotes = null;
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        booking.Status = BookingStatus.disputed.ToString();
+        _bookingRepository.Update(booking);
+        await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_time_disputed.ToString(),
+            "Check-time Disputed",
+            $"Tenant disputed recorded check-time. Reason: {checkTime.TenantDisputeReason}",
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            tenantId,
+            NotificationType.check_time_disputed.ToString(),
+            "Dispute Submitted",
+            "Your dispute has been submitted and is waiting for staff/admin resolution.",
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+    }
+
+    public async Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+
+        var isDisputed = string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase);
+        var isOpen = string.Equals(checkTime.DisputeResolutionStatus, "open", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(checkTime.DisputeResolutionStatus);
+
+        if (!isDisputed || !isOpen)
+        {
+            throw new InvalidOperationException("No open tenant check-time dispute found for this booking.");
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        checkTime.DisputeResolvedBy = resolvedBy;
+        checkTime.DisputeResolvedAt = Common.Utils.VietnamTime.Now;
+        checkTime.DisputeResolutionNotes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+        checkTime.DisputeResolutionStatus = dto.ApproveTenantDispute
+            ? "resolved_in_favor_of_tenant"
+            : "resolved_in_favor_of_landlord";
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        if (string.Equals(booking.Status, BookingStatus.disputed.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            if (checkTime.ActualCheckOut.HasValue)
+            {
+                booking.Status = BookingStatus.completed.ToString();
+            }
+            else if (checkTime.ActualCheckIn.HasValue)
+            {
+                booking.Status = BookingStatus.paid.ToString();
+            }
+            else
+            {
+                booking.Status = BookingStatus.confirmed.ToString();
+            }
+
+            _bookingRepository.Update(booking);
+            await _bookingRepository.SaveChangesAsync();
+            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+        }
+
+        var resolutionMessage = dto.ApproveTenantDispute
+            ? "A check-time dispute was resolved in favor of tenant."
+            : "A check-time dispute was resolved in favor of landlord.";
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.check_time_dispute_resolved.ToString(),
+            "Check-time Dispute Resolved",
+            resolutionMessage,
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_time_dispute_resolved.ToString(),
+            "Check-time Dispute Resolved",
+            resolutionMessage,
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, resolvedBy);
     }
 
     /// <summary>
