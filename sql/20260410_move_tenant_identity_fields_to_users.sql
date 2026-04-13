@@ -1,11 +1,12 @@
 -- Move tenant profile identity fields to users table.
 -- Columns moved: sex, birthday, nationality, national_id_card_number
+SET SQL_SAFE_UPDATES = 0;
 
 ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS sex VARCHAR(20) NULL,
-    ADD COLUMN IF NOT EXISTS birthday DATE NULL,
-    ADD COLUMN IF NOT EXISTS nationality CHAR(2) NULL COMMENT 'ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting',
-    ADD COLUMN IF NOT EXISTS national_id_card_number VARCHAR(12) NULL;
+    ADD COLUMN sex VARCHAR(20) NULL,
+    ADD COLUMN birthday DATE NULL,
+    ADD COLUMN nationality CHAR(2) NULL COMMENT 'ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting',
+    ADD COLUMN national_id_card_number VARCHAR(12) NULL;
 
 -- Backfill users from tenants where values are currently stored.
 UPDATE users u
@@ -23,7 +24,9 @@ WHERE
 
 -- Remove moved columns from tenants.
 ALTER TABLE tenants
-    DROP COLUMN IF EXISTS sex,
-    DROP COLUMN IF EXISTS birthday,
-    DROP COLUMN IF EXISTS nationality,
-    DROP COLUMN IF EXISTS national_id_card_number;
+    DROP COLUMN sex,
+    DROP COLUMN birthday,
+    DROP COLUMN nationality,
+    DROP COLUMN national_id_card_number;
+
+SET SQL_SAFE_UPDATES = 1;

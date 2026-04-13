@@ -732,7 +732,7 @@ internal sealed class InMemoryBookingRepository : IBookingRepository
         return Task.FromResult(1);
     }
 
-    public Task<(IEnumerable<Booking> Items, int TotalCount)> GetByLandlordAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
+    public Task<(IEnumerable<Booking> Items, int TotalCount)> GetByLandlordAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null, IEnumerable<string>? allowedColumns = null)
     {
         return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
     }

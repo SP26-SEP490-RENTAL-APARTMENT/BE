@@ -19,4 +19,10 @@ public interface ISmartPricingHistoryService : IBaseService<SmartPricingHistory>
     /// Landlord accepts or overrides the suggested price.
     /// </summary>
     Task<SmartPricingHistory> AcceptPriceSuggestionAsync(Guid pricingId, decimal? overridePrice = null);
+
+    /// <summary>
+    /// Checks whether the apartment has at least one accepted smart pricing recommendation.
+    /// Used to show non-blocking submission warnings.
+    /// </summary>
+    Task<bool> HasAcceptedSuggestionAsync(Guid apartmentId);
 }

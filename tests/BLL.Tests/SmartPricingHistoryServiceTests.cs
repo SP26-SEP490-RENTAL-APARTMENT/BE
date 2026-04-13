@@ -39,10 +39,11 @@ public class SmartPricingHistoryServiceTests
 
         var pricingRepo = new InMemorySmartPricingHistoryRepository();
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var priceCalendarRepo = new InMemoryApartmentPriceCalendarRepository();
         var holidaysRepo = new InMemoryHolidaysEventRepository();
         var attractionsRepo = new InMemoryNearbyAttractionRepository();
 
-        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, holidaysRepo, attractionsRepo);
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, priceCalendarRepo, holidaysRepo, attractionsRepo);
 
         // Act
         var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
@@ -69,6 +70,7 @@ public class SmartPricingHistoryServiceTests
 
         var pricingRepo = new InMemorySmartPricingHistoryRepository();
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var priceCalendarRepo = new InMemoryApartmentPriceCalendarRepository();
 
         var holidaysRepo = new InMemoryHolidaysEventRepository(new List<HolidaysEvent>
         {
@@ -85,7 +87,7 @@ public class SmartPricingHistoryServiceTests
 
         var attractionsRepo = new InMemoryNearbyAttractionRepository();
 
-        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, holidaysRepo, attractionsRepo);
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, priceCalendarRepo, holidaysRepo, attractionsRepo);
 
         // Act
         var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
@@ -114,6 +116,7 @@ public class SmartPricingHistoryServiceTests
 
         var pricingRepo = new InMemorySmartPricingHistoryRepository();
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var priceCalendarRepo = new InMemoryApartmentPriceCalendarRepository();
         var holidaysRepo = new InMemoryHolidaysEventRepository();
 
         var attractions = Enumerable.Range(0, 20)
@@ -130,7 +133,7 @@ public class SmartPricingHistoryServiceTests
 
         var attractionsRepo = new InMemoryNearbyAttractionRepository(attractions);
 
-        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, holidaysRepo, attractionsRepo);
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, priceCalendarRepo, holidaysRepo, attractionsRepo);
 
         // Act
         var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);

@@ -41,24 +41,24 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IConfiguration _configuration;
     private readonly IMapper _mapper;
 
-        public BookingService(
-            IBookingRepository repository,
-            IBookingOfferRepository bookingOfferRepository,
-            IApartmentRepository apartmentRepository,
-            IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
-            IRepository<Package> packageRepository,
-            IRepository<DAL.Models.Notification> notificationRepository,
-            IRepository<BookingCheckTime> bookingCheckTimeRepository,
-            IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
-            IRepository<Tenant> tenantRepository,
-            IRepository<User> userRepository,
-            IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
-            IRepository<SupportTicket> supportTicketRepository,
-            IRepository<Payment> paymentRepository,
-            IIdentityVerificationService identityVerificationService,
-            ILandlordWalletService landlordWalletService,
-            IConfiguration configuration,
-            IMapper mapper,
+    public BookingService(
+        IBookingRepository repository,
+        IBookingOfferRepository bookingOfferRepository,
+        IApartmentRepository apartmentRepository,
+        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
+        IRepository<Package> packageRepository,
+        IRepository<DAL.Models.Notification> notificationRepository,
+        IRepository<BookingCheckTime> bookingCheckTimeRepository,
+        IRepository<TemporaryResidenceReport> temporaryResidenceReportRepository,
+        IRepository<Tenant> tenantRepository,
+        IRepository<User> userRepository,
+        IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
+        IRepository<SupportTicket> supportTicketRepository,
+        IRepository<Payment> paymentRepository,
+        IIdentityVerificationService identityVerificationService,
+        ILandlordWalletService landlordWalletService,
+        IConfiguration configuration,
+        IMapper mapper,
             IRepository<BookingOccupant>? bookingOccupantRepository = null) : base(repository)
     {
         _bookingRepository = repository;
@@ -257,6 +257,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             "BookingId",
             "TenantId",
+            "TenantName",
             "ApartmentId",
             "CheckInDate",
             "CheckOutDate",
@@ -311,7 +312,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             }
         }
 
-        var baseAmount = apartment.BasePricePerNight * nights;
+        var baseAmount = CalculateBaseAmountForRange(
+            checkInDate,
+            checkOutDate,
+            apartment.BasePricePerNight,
+            calendars.ToList());
 
         decimal packageAmount = 0m;
         if (dto.PackageId.HasValue)
@@ -499,6 +504,32 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
     }
 
+    private async Task<BookingCheckTime> GetOrCreateBookingCheckTimeAsync(Booking booking)
+    {
+        var checkTime = (await _bookingCheckTimeRepository.FindAsync(ct => ct.BookingId == booking.BookingId)).FirstOrDefault();
+        if (checkTime != null)
+        {
+            return checkTime;
+        }
+
+        var now = Common.Utils.VietnamTime.Now;
+        checkTime = new BookingCheckTime
+        {
+            CheckTimeId = Guid.NewGuid(),
+            BookingId = booking.BookingId,
+            ScheduledCheckIn = booking.CheckInDate.ToDateTime(new TimeOnly(14, 0)),
+            ScheduledCheckOut = booking.CheckOutDate.ToDateTime(new TimeOnly(12, 0)),
+            TempResidenceReported = false,
+            TenantResponseStatus = "pending",
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        await _bookingCheckTimeRepository.AddAsync(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+        return checkTime;
+    }
+
     public async Task<Booking> MarkDepositPaidAsync(Guid bookingId)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId);
@@ -577,7 +608,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             {
                 var creditedAmount = paymentMode == BookingPaymentMode.full
                     ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
-                    : GetUpfrontPaymentAmount(booking);
+                    : Math.Round(GetUpfrontPaymentAmount(booking) * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
 
                 await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, creditedAmount);
 
@@ -633,7 +664,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
             if (remainingAmount > 0)
             {
-                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, remainingAmount);
+                var landlordShareAmount = Math.Round(remainingAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, landlordShareAmount);
             }
 
             await CreateBookingNotificationAsync(
@@ -676,7 +708,18 @@ public class BookingService : BaseService<Booking>, IBookingService
         DateTime? fromDate = null,
         DateTime? toDate = null)
     {
-        return await _bookingRepository.GetByLandlordAsync(landlordId, page, pageSize, sortBy, sortOrder, search, fromDate, toDate);
+        var effectiveAllowedColumns = new[]
+        {
+            "BookingId",
+            "TenantId",
+            "TenantFullName",
+            "ApartmentId",
+            "CheckInDate",
+            "CheckOutDate",
+            "Status",
+            "CreatedAt"
+        };
+        return await _bookingRepository.GetByLandlordAsync(landlordId, page, pageSize, sortBy, sortOrder, search, fromDate, toDate, effectiveAllowedColumns);
     }
 
     public async Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto)
@@ -1054,16 +1097,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new KeyNotFoundException("Booking not found.");
 
-        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId) 
-            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment == null)
             throw new KeyNotFoundException("Apartment not found.");
 
         // Validate booking status (must be confirmed or paid)
-        if (!checkTime.ActualCheckIn.HasValue && 
-            !(string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) || 
+        if (!checkTime.ActualCheckIn.HasValue &&
+            !(string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) ||
               string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException("Booking must be in confirmed or paid status to record check-in.");
@@ -1105,7 +1147,16 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
         checkTime.RecordedBy = recordedBy;
         checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
-        
+        checkTime.TenantResponseStatus = "pending";
+        checkTime.TenantRespondedBy = null;
+        checkTime.TenantRespondedAt = null;
+        checkTime.TenantDisputeReason = null;
+        checkTime.TenantDisputeNotes = null;
+        checkTime.DisputeResolutionStatus = null;
+        checkTime.DisputeResolvedBy = null;
+        checkTime.DisputeResolvedAt = null;
+        checkTime.DisputeResolutionNotes = null;
+
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
             checkTime.Notes = dto.Notes;
@@ -1115,10 +1166,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         await _bookingCheckTimeRepository.SaveChangesAsync();
 
         // Notify landlord
-        var checkInMessage = isEarlyCheckIn 
-            ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}" 
+        var checkInMessage = isEarlyCheckIn
+            ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}"
             : $"Guest checked in at {dto.ActualCheckIn:yyyy-MM-dd HH:mm} (on schedule).";
-        
+
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.check_in_recorded.ToString(),
@@ -1135,8 +1186,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new KeyNotFoundException("Booking not found.");
 
-        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId) 
-            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment == null)
@@ -1188,7 +1238,16 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.IsLateCheckOut = isLateCheckOut;
         checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
         checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
-        
+        checkTime.TenantResponseStatus = "pending";
+        checkTime.TenantRespondedBy = null;
+        checkTime.TenantRespondedAt = null;
+        checkTime.TenantDisputeReason = null;
+        checkTime.TenantDisputeNotes = null;
+        checkTime.DisputeResolutionStatus = null;
+        checkTime.DisputeResolvedBy = null;
+        checkTime.DisputeResolvedAt = null;
+        checkTime.DisputeResolutionNotes = null;
+
         if (!string.IsNullOrWhiteSpace(dto.Notes))
         {
             checkTime.Notes = dto.Notes;
@@ -1204,10 +1263,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
         // Notify landlord
-        var checkOutMessage = isLateCheckOut 
-            ? $"Guest checked out late at {dto.ActualCheckOut:yyyy-MM-dd HH:mm}. Late check-out fee: ${lateCheckOutFee}" 
+        var checkOutMessage = isLateCheckOut
+            ? $"Guest checked out late at {dto.ActualCheckOut:yyyy-MM-dd HH:mm}. Late check-out fee: ${lateCheckOutFee}"
             : $"Guest checked out at {dto.ActualCheckOut:yyyy-MM-dd HH:mm} (on schedule).";
-        
+
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.check_out_recorded.ToString(),
@@ -1232,8 +1291,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking == null)
             throw new KeyNotFoundException("Booking not found.");
 
-        var checkTime = await _bookingCheckTimeRepository.GetByIdAsync(bookingId)
-            ?? throw new KeyNotFoundException("Booking check-time record not found.");
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
 
         // Calculate if still editable (within 24-hour window from RecordedAt)
         bool isEditable = false;
@@ -1260,8 +1318,190 @@ public class BookingService : BaseService<Booking>, IBookingService
             RecordedAt = checkTime.RecordedAt,
             Notes = checkTime.Notes,
             LastModifiedAt = checkTime.UpdatedAt ?? checkTime.RecordedAt,
-            IsEditable = isEditable
+            IsEditable = isEditable,
+            TenantResponseStatus = string.IsNullOrWhiteSpace(checkTime.TenantResponseStatus) ? "pending" : checkTime.TenantResponseStatus,
+            TenantRespondedBy = checkTime.TenantRespondedBy,
+            TenantRespondedAt = checkTime.TenantRespondedAt,
+            TenantDisputeReason = checkTime.TenantDisputeReason,
+            TenantDisputeNotes = checkTime.TenantDisputeNotes,
+            DisputeResolutionStatus = checkTime.DisputeResolutionStatus,
+            DisputeResolvedBy = checkTime.DisputeResolvedBy,
+            DisputeResolvedAt = checkTime.DisputeResolvedAt,
+            DisputeResolutionNotes = checkTime.DisputeResolutionNotes
         };
+    }
+
+    public async Task<BookingCheckTimeResponseDto> RespondToCheckTimeAsync(Guid bookingId, Guid tenantId, RespondBookingCheckTimeDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        if (booking.TenantId != tenantId)
+        {
+            throw new InvalidOperationException("You are not allowed to respond to this booking check-time.");
+        }
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+
+        if (!checkTime.ActualCheckIn.HasValue && !checkTime.ActualCheckOut.HasValue)
+        {
+            throw new InvalidOperationException("No recorded check-in/check-out found to respond to.");
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        var action = dto.Action.Trim().ToLowerInvariant();
+        if (action != "confirm" && action != "dispute")
+        {
+            throw new InvalidOperationException("Action must be 'confirm' or 'dispute'.");
+        }
+
+        var currentStatus = checkTime.TenantResponseStatus?.Trim().ToLowerInvariant();
+        if (string.Equals(currentStatus, action, StringComparison.OrdinalIgnoreCase))
+        {
+            return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        }
+
+        checkTime.TenantRespondedBy = tenantId;
+        checkTime.TenantRespondedAt = Common.Utils.VietnamTime.Now;
+
+        if (action == "confirm")
+        {
+            checkTime.TenantResponseStatus = "confirmed";
+            checkTime.TenantDisputeReason = null;
+            checkTime.TenantDisputeNotes = null;
+            checkTime.DisputeResolutionStatus = null;
+            checkTime.DisputeResolvedBy = null;
+            checkTime.DisputeResolvedAt = null;
+            checkTime.DisputeResolutionNotes = null;
+
+            _bookingCheckTimeRepository.Update(checkTime);
+            await _bookingCheckTimeRepository.SaveChangesAsync();
+
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.check_time_confirmed.ToString(),
+                "Check-time Confirmed",
+                "Tenant has confirmed the recorded check-in/check-out details.",
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                tenantId,
+                NotificationType.check_time_confirmed.ToString(),
+                "Check-time Confirmed",
+                "Your confirmation has been recorded successfully.",
+                booking.BookingId);
+
+            return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.DisputeReason))
+        {
+            throw new InvalidOperationException("Dispute reason is required.");
+        }
+
+        checkTime.TenantResponseStatus = "disputed";
+        checkTime.TenantDisputeReason = dto.DisputeReason.Trim();
+        checkTime.TenantDisputeNotes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+        checkTime.DisputeResolutionStatus = "open";
+        checkTime.DisputeResolvedBy = null;
+        checkTime.DisputeResolvedAt = null;
+        checkTime.DisputeResolutionNotes = null;
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        booking.Status = BookingStatus.disputed.ToString();
+        _bookingRepository.Update(booking);
+        await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_time_disputed.ToString(),
+            "Check-time Disputed",
+            $"Tenant disputed recorded check-time. Reason: {checkTime.TenantDisputeReason}",
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            tenantId,
+            NotificationType.check_time_disputed.ToString(),
+            "Dispute Submitted",
+            "Your dispute has been submitted and is waiting for staff/admin resolution.",
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+    }
+
+    public async Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+
+        var isDisputed = string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase);
+        var isOpen = string.Equals(checkTime.DisputeResolutionStatus, "open", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(checkTime.DisputeResolutionStatus);
+
+        if (!isDisputed || !isOpen)
+        {
+            throw new InvalidOperationException("No open tenant check-time dispute found for this booking.");
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        checkTime.DisputeResolvedBy = resolvedBy;
+        checkTime.DisputeResolvedAt = Common.Utils.VietnamTime.Now;
+        checkTime.DisputeResolutionNotes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+        checkTime.DisputeResolutionStatus = dto.ApproveTenantDispute
+            ? "resolved_in_favor_of_tenant"
+            : "resolved_in_favor_of_landlord";
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        if (string.Equals(booking.Status, BookingStatus.disputed.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            if (checkTime.ActualCheckOut.HasValue)
+            {
+                booking.Status = BookingStatus.completed.ToString();
+            }
+            else if (checkTime.ActualCheckIn.HasValue)
+            {
+                booking.Status = BookingStatus.paid.ToString();
+            }
+            else
+            {
+                booking.Status = BookingStatus.confirmed.ToString();
+            }
+
+            _bookingRepository.Update(booking);
+            await _bookingRepository.SaveChangesAsync();
+            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+        }
+
+        var resolutionMessage = dto.ApproveTenantDispute
+            ? "A check-time dispute was resolved in favor of tenant."
+            : "A check-time dispute was resolved in favor of landlord.";
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.check_time_dispute_resolved.ToString(),
+            "Check-time Dispute Resolved",
+            resolutionMessage,
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_time_dispute_resolved.ToString(),
+            "Check-time Dispute Resolved",
+            resolutionMessage,
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, resolvedBy);
     }
 
     /// <summary>
@@ -1322,7 +1562,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         // Build unavailable periods from bookings
         var unavailablePeriods = new List<DateRangeBlockingDto>();
-        bool isLandlordOwner = requesterId.HasValue && string.Equals(requesterRole, "landlord", StringComparison.OrdinalIgnoreCase) 
+        bool isLandlordOwner = requesterId.HasValue && string.Equals(requesterRole, "landlord", StringComparison.OrdinalIgnoreCase)
             && apartment.LandlordId == requesterId;
 
         foreach (var booking in bookings.OrderBy(b => b.CheckInDate))
@@ -1442,9 +1682,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (!unavailablePeriods.Any())
         {
             // Entire period is available
-            var price = priceCalendars.Any() 
-                ? priceCalendars.Average(p => p.DiscountPercentage.HasValue && p.IsDiscount == true 
-                    ? defaultPrice * (1 - p.DiscountPercentage.Value / 100) 
+            var price = priceCalendars.Any()
+                ? priceCalendars.Average(p => p.DiscountPercentage.HasValue && p.IsDiscount == true
+                    ? defaultPrice * (1 - p.DiscountPercentage.Value / 100)
                     : defaultPrice)
                 : (decimal?)null;
 
@@ -1524,15 +1764,86 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (!overlappingCalendars.Any())
             return null;
 
-        // If multiple overlapping calendars, use average or first
-        // For now, using the first matching calendar's discount
-        var firstCalendar = overlappingCalendars.First();
-        if (firstCalendar.IsDiscount == true && firstCalendar.DiscountPercentage.HasValue)
+        var manualOverride = overlappingCalendars
+            .Where(c =>
+                c.PriceType != null &&
+                c.PriceType.Equals("manual_override", StringComparison.OrdinalIgnoreCase) &&
+                c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (manualOverride != null)
+        {
+            return manualOverride.DiscountPercentage;
+        }
+
+        var firstCalendar = overlappingCalendars
+            .Where(c => c.IsDiscount == true && c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (firstCalendar != null)
         {
             return defaultPrice * (1 - firstCalendar.DiscountPercentage.Value / 100);
         }
 
-        return null;
+        return defaultPrice;
+    }
+
+    private decimal CalculateBaseAmountForRange(
+        DateOnly checkInDate,
+        DateOnly checkOutDate,
+        decimal defaultPrice,
+        List<DAL.Models.ApartmentPriceCalendar> calendars)
+    {
+        decimal total = 0m;
+        var cursor = checkInDate;
+
+        while (cursor < checkOutDate)
+        {
+            total += ResolveNightlyPrice(cursor, defaultPrice, calendars);
+            cursor = cursor.AddDays(1);
+        }
+
+        return total;
+    }
+
+    private decimal ResolveNightlyPrice(
+        DateOnly date,
+        decimal defaultPrice,
+        List<DAL.Models.ApartmentPriceCalendar> calendars)
+    {
+        var matching = calendars.Where(c => c.StartDate <= date && c.EndDate > date).ToList();
+
+        if (!matching.Any())
+        {
+            return defaultPrice;
+        }
+
+        var manualOverride = matching
+            .Where(c =>
+                c.PriceType != null &&
+                c.PriceType.Equals("manual_override", StringComparison.OrdinalIgnoreCase) &&
+                c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (manualOverride != null)
+        {
+            return manualOverride.DiscountPercentage!.Value;
+        }
+
+        var discountCalendar = matching
+            .Where(c => c.IsDiscount == true && c.DiscountPercentage.HasValue)
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (discountCalendar != null)
+        {
+            return defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m);
+        }
+
+        return defaultPrice;
     }
 
     public async Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(

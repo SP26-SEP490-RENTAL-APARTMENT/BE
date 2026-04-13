@@ -47,6 +47,17 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null);
 
 	/// <summary>
+	/// Allows tenant to confirm or dispute recorded check-in/check-out values.
+	/// Dispute action sets booking status to disputed.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> RespondToCheckTimeAsync(Guid bookingId, Guid tenantId, RespondBookingCheckTimeDto dto);
+
+	/// <summary>
+	/// Allows staff/admin to resolve a tenant check-time dispute.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto);
+
+	/// <summary>
 	/// Retrieves the availability calendar for an apartment showing available and unavailable date ranges.
 	/// Returns a 90-day calendar by default (customizable via startDate/endDate parameters).
 	/// Anonymous users see availability only; landlord/owner roles see booking IDs and statuses for blocked periods.

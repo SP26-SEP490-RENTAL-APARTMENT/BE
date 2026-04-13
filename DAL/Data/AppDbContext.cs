@@ -559,6 +559,16 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp")
                 .HasColumnName("created_at");
+            entity.Property(e => e.DisputeResolutionNotes)
+                .HasColumnType("text")
+                .HasColumnName("dispute_resolution_notes");
+            entity.Property(e => e.DisputeResolutionStatus)
+                .HasMaxLength(80)
+                .HasColumnName("dispute_resolution_status");
+            entity.Property(e => e.DisputeResolvedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("dispute_resolved_at");
+            entity.Property(e => e.DisputeResolvedBy).HasColumnName("dispute_resolved_by");
             entity.Property(e => e.EarlyCheckInFee)
                 .HasPrecision(12, 2)
                 .HasDefaultValueSql("'0.00'")
@@ -592,6 +602,19 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ScheduledCheckOut)
                 .HasColumnType("datetime")
                 .HasColumnName("scheduled_check_out");
+            entity.Property(e => e.TenantDisputeNotes)
+                .HasColumnType("text")
+                .HasColumnName("tenant_dispute_notes");
+            entity.Property(e => e.TenantDisputeReason)
+                .HasMaxLength(300)
+                .HasColumnName("tenant_dispute_reason");
+            entity.Property(e => e.TenantRespondedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("tenant_responded_at");
+            entity.Property(e => e.TenantRespondedBy).HasColumnName("tenant_responded_by");
+            entity.Property(e => e.TenantResponseStatus)
+                .HasMaxLength(50)
+                .HasColumnName("tenant_response_status");
             entity.Property(e => e.TempResidenceReported)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("temp_residence_reported");

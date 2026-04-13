@@ -17,17 +17,20 @@ public sealed class ApartmentsController : ControllerBase
     private readonly IApartmentService _apartmentService;
     private readonly ILandlordService _landlordService;
     private readonly IBookingService _bookingService;
+    private readonly ISmartPricingHistoryService _smartPricingHistoryService;
     private readonly IMapper _mapper;
 
     public ApartmentsController(
         IApartmentService apartmentService,
         ILandlordService landlordService,
         IBookingService bookingService,
+        ISmartPricingHistoryService smartPricingHistoryService,
         IMapper mapper)
     {
         _apartmentService = apartmentService;
         _landlordService = landlordService;
         _bookingService = bookingService;
+        _smartPricingHistoryService = smartPricingHistoryService;
         _mapper = mapper;
     }
 
@@ -78,7 +81,17 @@ public sealed class ApartmentsController : ControllerBase
         effectiveFilters["status"] = "pending_review";
 
         var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
-        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        var mappedItems = items.Select(apartment =>
+        {
+            var dto = _mapper.Map<ApartmentResponseDto>(apartment);
+            dto.InspectionStatus = apartment.PropertyInspections
+                .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
+                .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
+                .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                .Select(i => i.Status)
+                .FirstOrDefault();
+            return dto;
+        });
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
@@ -101,7 +114,17 @@ public sealed class ApartmentsController : ControllerBase
         effectiveFilters["landlordId"] = landlordId.ToString();
 
         var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
-        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        var mappedItems = items.Select(apartment =>
+        {
+            var dto = _mapper.Map<ApartmentResponseDto>(apartment);
+            dto.InspectionStatus = apartment.PropertyInspections
+                .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
+                .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
+                .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                .Select(i => i.Status)
+                .FirstOrDefault();
+            return dto;
+        });
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
@@ -359,7 +382,12 @@ public sealed class ApartmentsController : ControllerBase
 
             var updated = await _apartmentService.SubmitForReviewAsync(id, landlord.LandlordId, dto);
             var response = _mapper.Map<ApartmentResponseDto>(updated);
-            return Ok(new ApiResponse<ApartmentResponseDto>(response, "Apartment submitted for review successfully."));
+            var hasAcceptedRecommendation = await _smartPricingHistoryService.HasAcceptedSuggestionAsync(id);
+            var message = hasAcceptedRecommendation
+                ? "Apartment submitted for review successfully."
+                : "Apartment submitted for review successfully. Warning: no smart pricing recommendation has been accepted yet.";
+
+            return Ok(new ApiResponse<ApartmentResponseDto>(response, message));
         }
         catch (InvalidOperationException ex)
         {

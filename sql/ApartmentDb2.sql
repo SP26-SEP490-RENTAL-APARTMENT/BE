@@ -355,6 +355,8 @@ CREATE TABLE `users` (
   `full_name` varchar(100),
   `phone` varchar(20),
   `identity_verified` tinyint(1) DEFAULT '0',
+  `token` varchar(500),
+  `token_expired` datetime,
   `created_at` timestamp DEFAULT (CURRENT_TIMESTAMP)
 );
 

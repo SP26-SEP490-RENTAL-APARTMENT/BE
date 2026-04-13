@@ -13,6 +13,7 @@ namespace DAL.Repository.Interfaces
             string? sortOrder = null,
             string? search = null,
             DateTime? fromDate = null,
-            DateTime? toDate = null);
+            DateTime? toDate = null,
+            IEnumerable<string>? allowedColumns = null);
     }
 }

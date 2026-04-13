@@ -97,4 +97,60 @@ public class BookingCheckTimeResponseDto
     /// Indicates if the recorded times are still editable (within 24 hours of RecordedAt).
     /// </summary>
     public bool IsEditable { get; set; }
+
+    /// <summary>
+    /// Tenant response status for the recorded check-time values: pending, confirmed, disputed.
+    /// </summary>
+    public string TenantResponseStatus { get; set; } = "pending";
+
+    public Guid? TenantRespondedBy { get; set; }
+    public DateTime? TenantRespondedAt { get; set; }
+
+    public string? TenantDisputeReason { get; set; }
+    public string? TenantDisputeNotes { get; set; }
+
+    /// <summary>
+    /// Dispute resolution state controlled by staff/admin: open, resolved_in_favor_of_tenant, resolved_in_favor_of_landlord.
+    /// </summary>
+    public string? DisputeResolutionStatus { get; set; }
+
+    public Guid? DisputeResolvedBy { get; set; }
+    public DateTime? DisputeResolvedAt { get; set; }
+    public string? DisputeResolutionNotes { get; set; }
+}
+
+/// <summary>
+/// Tenant response payload for recorded check-time values.
+/// </summary>
+public class RespondBookingCheckTimeDto : IValidatableObject
+{
+    [Required]
+    [RegularExpression("^(confirm|dispute)$", ErrorMessage = "Action must be 'confirm' or 'dispute'.")]
+    public string Action { get; set; } = string.Empty;
+
+    [MaxLength(300)]
+    public string? DisputeReason { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.Equals(Action, "dispute", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(DisputeReason))
+        {
+            yield return new ValidationResult("DisputeReason is required when action is 'dispute'.", new[] { nameof(DisputeReason) });
+        }
+    }
+}
+
+/// <summary>
+/// Staff/admin resolution payload for tenant check-time disputes.
+/// </summary>
+public class ResolveBookingCheckTimeDisputeDto
+{
+    [Required]
+    public bool ApproveTenantDispute { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
 }

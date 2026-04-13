@@ -41,5 +41,23 @@ public partial class BookingCheckTime
 
     public DateTime? UpdatedAt { get; set; }
 
+    public string? TenantResponseStatus { get; set; }
+
+    public Guid? TenantRespondedBy { get; set; }
+
+    public DateTime? TenantRespondedAt { get; set; }
+
+    public string? TenantDisputeReason { get; set; }
+
+    public string? TenantDisputeNotes { get; set; }
+
+    public string? DisputeResolutionStatus { get; set; }
+
+    public Guid? DisputeResolvedBy { get; set; }
+
+    public DateTime? DisputeResolvedAt { get; set; }
+
+    public string? DisputeResolutionNotes { get; set; }
+
     public virtual Booking Booking { get; set; } = null!;
 }
