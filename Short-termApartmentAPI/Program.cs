@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MoMoApi;
 using Short_termApartmentAPI.Hubs;
+using Short_termApartmentAPI.Middlewares;
 using Short_termApartmentAPI.Services;
 using System.Text;
 using System.Text.Json;
@@ -191,6 +192,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseCors("CorsPolicy");
+app.UseMiddleware<ApiExceptionMiddleware>();
 
 if (app.Environment.IsProduction())
 {

@@ -4,11 +4,13 @@ namespace Short_termApartmentAPI.Middlewares
 {
     public class ApiExceptionMiddleware(
         RequestDelegate next,
-        ILogger<ApiExceptionMiddleware> logger
+        ILogger<ApiExceptionMiddleware> logger,
+        IHostEnvironment environment
     )
     {
         private readonly RequestDelegate _next = next;
         private readonly ILogger<ApiExceptionMiddleware> _logger = logger;
+        private readonly IHostEnvironment _environment = environment;
 
         public async Task Invoke(HttpContext context)
         {
@@ -18,14 +20,36 @@ namespace Short_termApartmentAPI.Middlewares
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, ex.Message);
+                var traceId = context.TraceIdentifier;
+                _logger.LogError(ex, "Unhandled exception. TraceId: {TraceId}", traceId);
                 context.Response.ContentType = "application/json";
                 context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                var response = new ApiResponse<string>(ex.Message);
+                var errorData = new ErrorDetailsDto
+                {
+                    TraceId = traceId,
+                    ExceptionType = ex.GetType().Name,
+                    Path = context.Request.Path,
+                    TimestampUtc = DateTime.UtcNow,
+                    StackTrace = _environment.IsDevelopment() ? ex.StackTrace : null
+                };
+
+                var response = new ApiResponse<ErrorDetailsDto>(errorData, "An unexpected error occurred.")
+                {
+                    Success = false
+                };
                 var json = JsonSerializer.Serialize(response);
                 await context.Response.WriteAsync(json);
             }
         }
+    }
+
+    public sealed class ErrorDetailsDto
+    {
+        public string? TraceId { get; set; }
+        public string? ExceptionType { get; set; }
+        public string? Path { get; set; }
+        public DateTime TimestampUtc { get; set; }
+        public string? StackTrace { get; set; }
     }
 
     public class ApiResponse<T>
@@ -48,5 +72,6 @@ namespace Short_termApartmentAPI.Middlewares
             Success = false;
             Message = message;
         }
+
     }
 }

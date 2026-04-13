@@ -154,6 +154,9 @@ public class BookingResponseDto
 {
     public Guid BookingId { get; set; }
     public Guid TenantId { get; set; }
+    public string? TenantFullName { get; set; }
+    public DateTime? ActualCheckIn { get; set; }
+    public DateTime? ActualCheckOut { get; set; }
     public Guid ApartmentId { get; set; }
     public DateOnly CheckInDate { get; set; }
     public DateOnly CheckOutDate { get; set; }
