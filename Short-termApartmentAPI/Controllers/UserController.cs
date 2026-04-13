@@ -4,6 +4,7 @@ using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -82,6 +83,64 @@ namespace Short_termApartmentAPI.Controllers
         {
             await _userService.DeleteAsync(id);
             return NoContent();
+        }
+
+        /// <summary>
+        /// Get current user's own profile information
+        /// </summary>
+        [HttpGet("me")]
+        [Authorize]
+        public async Task<IActionResult> GetMyProfile()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Invalid user token." });
+            }
+
+            var user = await _userService.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return NotFound(new { message = "User not found." });
+            }
+
+            return Ok(new { data = _mapper.Map<UserDto>(user) });
+        }
+
+        /// <summary>
+        /// Update current user's own profile information
+        /// </summary>
+        [HttpPut("me")]
+        [Authorize]
+        public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateUserDto userDto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Invalid user token." });
+            }
+
+            var user = await _userService.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return NotFound(new { message = "User not found." });
+            }
+
+            // Only allow updating specific fields
+            user.FullName = userDto.FullName;
+            user.Phone = userDto.Phone;
+            user.Sex = userDto.Sex;
+            user.Birthday = userDto.Birthday;
+            user.Nationality = userDto.Nationality;
+            user.NationalIdCardNumber = userDto.NationalIdCardNumber;
+
+            await _userService.UpdateAsync(user);
+            return Ok(new { message = "Profile updated successfully", data = _mapper.Map<UserDto>(user) });
         }
     }
 }

@@ -10,6 +10,10 @@ namespace Common.DTOs
         public string Role { get; set; } = null!; 
         public string? FullName { get; set; }
         public string? Phone { get; set; }
+        public string? Sex { get; set; }
+        public DateOnly? Birthday { get; set; }
+        public string? Nationality { get; set; }
+        public string? NationalIdCardNumber { get; set; }
         public bool? IdentityVerified { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
@@ -31,6 +35,15 @@ namespace Common.DTOs
         
         public string? Phone { get; set; }
         
+        public string? Sex { get; set; }
+        
+        public DateOnly? Birthday { get; set; }
+        
+        [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
+        public string? Nationality { get; set; }
+        
+        public string? NationalIdCardNumber { get; set; }
+        
         public bool? IdentityVerified { get; set; }
     }
 
@@ -47,6 +60,15 @@ namespace Common.DTOs
         public string? FullName { get; set; }
         
         public string? Phone { get; set; }
+        
+        public string? Sex { get; set; }
+        
+        public DateOnly? Birthday { get; set; }
+        
+        [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
+        public string? Nationality { get; set; }
+        
+        public string? NationalIdCardNumber { get; set; }
         
         public bool? IdentityVerified { get; set; }
     }

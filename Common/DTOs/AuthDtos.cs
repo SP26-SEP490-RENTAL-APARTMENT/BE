@@ -23,6 +23,7 @@ namespace Common.DTOs
         public Guid Id { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
+        public string? Nationality { get; set; }
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public bool IsActive { get; set; }
@@ -71,6 +72,9 @@ namespace Common.DTOs
         public required string Role { get; set; }
 
         public string? Phone { get; set; }
+        
+        [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
+        public string? Nationality { get; set; }
     }
 
     public class AddUserRoleRequestDto
