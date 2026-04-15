@@ -5,6 +5,15 @@ namespace Common.DTOs;
 
 public class ReportDefinitionDto
 {
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public bool IsActive { get; set; }
+}
+
+public class ReportDefinitionResponseDto
+{
     public Guid ReportId { get; set; }
     public string Name { get; set; } = null!;
     public string? Description { get; set; }
@@ -26,8 +35,7 @@ public class ReportRunRequestDto
 public class ReportComparisonRequestDto
 {
     public string Mode { get; set; } = "custom";
-    public ReportRunRequestDto CurrentPeriod { get; set; } = new();
-    public ReportRunRequestDto? PreviousPeriod { get; set; }
+    public ReportRunRequestDto RunRequest { get; set; } = new();
 }
 
 public class ReportExportRequestDto
@@ -58,7 +66,7 @@ public class ReportMetricRequestDto
     public string Aggregation { get; set; } = "count";
     public string? Alias { get; set; }
 }
-
+    
 public class ReportFilterRequestDto
 {
     public string Target { get; set; } = "dimension";

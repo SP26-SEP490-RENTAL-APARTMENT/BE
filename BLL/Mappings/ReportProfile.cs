@@ -9,5 +9,6 @@ public class ReportProfile : Profile
     public ReportProfile()
     {
         CreateMap<ReportDefinition, ReportDefinitionDto>();
+        CreateMap<ReportDefinition, ReportDefinitionResponseDto>();
     }
 }

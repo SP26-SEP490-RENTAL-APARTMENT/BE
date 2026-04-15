@@ -1,17 +1,13 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using AutoMapper;
+using BLL.Services.Implements;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
-using BLL.Services.Implements;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Middlewares;
 using System.Security.Claims;
-using System.Threading;
 
 namespace Short_termApartmentAPI.Controllers;
 
@@ -54,7 +50,7 @@ public sealed class ReportsController : ControllerBase
             filters: null,
             allowedColumns: new[] { "Name", "Category", "Type" });
 
-        var dtos = _mapper.Map<IEnumerable<ReportDefinitionDto>>(items);
+        var dtos = _mapper.Map<IEnumerable<ReportDefinitionResponseDto>>(items);
         return Ok(new { Items = dtos, TotalCount = totalCount });
     }
 
@@ -88,7 +84,7 @@ public sealed class ReportsController : ControllerBase
         await _reportDefinitionRepository.AddAsync(entity);
         await _reportDefinitionRepository.SaveChangesAsync();
 
-        var createdDto = _mapper.Map<ReportDefinitionDto>(entity);
+        var createdDto = _mapper.Map<ReportDefinitionResponseDto>(entity);
         return CreatedAtAction(nameof(GetCatalog), new { page = 1, pageSize = 1 }, createdDto);
     }
 
@@ -170,7 +166,7 @@ public sealed class ReportsController : ControllerBase
                 var compareRequest = request.ComparisonRequest ?? new ReportComparisonRequestDto
                 {
                     Mode = "custom",
-                    CurrentPeriod = request.RunRequest ?? new ReportRunRequestDto()
+                    RunRequest = request.RunRequest ?? new ReportRunRequestDto()
                 };
 
                 comparisonResult = await _reportExecutionService.CompareReportAsync(id, compareRequest, userId);

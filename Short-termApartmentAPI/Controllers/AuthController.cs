@@ -3,10 +3,6 @@ using Common.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using System.Threading.Tasks;
-using System;
-using System.Linq;
-using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {

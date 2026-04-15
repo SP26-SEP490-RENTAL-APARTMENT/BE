@@ -57,7 +57,7 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             var nearbyAttraction = _mapper.Map<NearbyAttraction>(requestDto);
-            
+
             var created = await _nearbyAttractionService.CreateAsync(nearbyAttraction);
             return CreatedAtAction(nameof(GetById), new { id = created.AttractionId }, _mapper.Map<NearbyAttractionResponseDto>(created));
         }
@@ -69,7 +69,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            
+
             var nearbyAttraction = await _nearbyAttractionService.GetByIdAsync(id);
             if (nearbyAttraction == null)
             {

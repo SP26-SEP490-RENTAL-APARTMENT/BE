@@ -88,13 +88,13 @@ public class ReportExecutionService : IReportExecutionService
     public async Task<ReportComparisonResultDto> CompareReportAsync(Guid reportId, ReportComparisonRequestDto request, Guid requestedByUserId)
     {
         request ??= new ReportComparisonRequestDto();
-        request.CurrentPeriod ??= new ReportRunRequestDto();
+        request.RunRequest ??= new ReportRunRequestDto();
 
         var definition = await _reportDefinitionRepository.GetByIdAsync(reportId)
             ?? throw new ArgumentException("Report definition not found.");
 
-        var currentRequest = request.CurrentPeriod;
-        var previousRequest = request.PreviousPeriod ?? BuildPreviousRequest(currentRequest, request.Mode);
+        var currentRequest = request.RunRequest;
+        var previousRequest = BuildPreviousRequest(currentRequest, request.Mode);
 
         var currentResult = await BuildReportAsync(definition, reportId, currentRequest, requestedByUserId, persistGenerated: true);
         var previousResult = await BuildReportAsync(definition, reportId, previousRequest, requestedByUserId, persistGenerated: false);

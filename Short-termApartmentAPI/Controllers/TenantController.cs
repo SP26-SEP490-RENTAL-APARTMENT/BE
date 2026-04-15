@@ -157,7 +157,7 @@ public sealed class TenantController : ControllerBase
         {
             var (items, totalCount) = await _wishlistService.GetTenantWishlistAsync(
                 userId, page, pageSize, sortBy, sortOrder, search, priceMin, priceMax, collectionId, filters);
-            
+
             var response = new WishlistResponseDto
             {
                 items = items.ToList(),
@@ -165,7 +165,7 @@ public sealed class TenantController : ControllerBase
                 page = page,
                 pageSize = pageSize
             };
-            
+
             return Ok(new ApiResponse<WishlistResponseDto>(response));
         }
         catch (Exception ex)

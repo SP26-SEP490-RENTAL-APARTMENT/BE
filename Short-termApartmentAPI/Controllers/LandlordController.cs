@@ -1,12 +1,11 @@
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using AutoMapper;
 using BLL.Services.Interfaces;
-using Short_termApartmentAPI.Middlewares;
 using Common.DTOs;
-using Common.Enums;
 using DAL.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Short_termApartmentAPI.Middlewares;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers;
 

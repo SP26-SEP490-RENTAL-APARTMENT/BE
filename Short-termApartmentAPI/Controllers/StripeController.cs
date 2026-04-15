@@ -3,8 +3,6 @@ using Common.Enums;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using Short_termApartmentAPI.Middlewares;
 using Stripe;
 
 namespace Short_termApartmentAPI.Controllers;

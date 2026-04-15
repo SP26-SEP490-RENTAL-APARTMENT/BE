@@ -1,6 +1,5 @@
 using BLL.Services.Interfaces;
 using Common.DTOs;
-using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Middlewares;

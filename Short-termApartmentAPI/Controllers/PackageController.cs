@@ -1,13 +1,11 @@
 using AutoMapper;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Claims;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Middlewares;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -136,7 +134,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            
+
             var package = await _packageService.GetByIdAsync(id);
             if (package == null)
             {

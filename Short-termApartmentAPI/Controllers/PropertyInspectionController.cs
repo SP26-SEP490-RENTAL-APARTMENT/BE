@@ -258,7 +258,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return NotFound();
             }
-            
+
 
             var inspector = await _userService.GetByIdAsync(propertyInspectionDto.InspectorId);
             if (inspector == null)

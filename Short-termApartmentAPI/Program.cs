@@ -12,7 +12,6 @@ using Short_termApartmentAPI.Hubs;
 using Short_termApartmentAPI.Middlewares;
 using Short_termApartmentAPI.Services;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -152,20 +151,20 @@ if (string.IsNullOrWhiteSpace(momoDisbursementIpnUrl))
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    
+
     // Clean up any conflicting migrations from history
     try
     {
         var connection = dbContext.Database.GetDbConnection();
         await connection.OpenAsync();
-        
+
         using (var command = connection.CreateCommand())
         {
             // Remove any pending migrations that conflict with existing tables
             command.CommandText = "DELETE FROM __EFMigrationsHistory WHERE MigrationId LIKE '20260409%';";
             await command.ExecuteNonQueryAsync();
         }
-        
+
         // Add missing User columns if they don't exist
         using (var command = connection.CreateCommand())
         {
@@ -176,7 +175,7 @@ using (var scope = app.Services.CreateScope())
             await command.ExecuteNonQueryAsync();
             app.Logger.LogInformation("Ensured token columns exist on users table");
         }
-        
+
         await connection.CloseAsync();
         app.Logger.LogInformation("Cleaned up conflicting migrations from history and added missing columns");
     }
@@ -184,7 +183,7 @@ using (var scope = app.Services.CreateScope())
     {
         app.Logger.LogWarning(ex, "Could not clean migrations history or add columns (tables may not exist yet)");
     }
-    
+
     await DbInitializer.SeedAsync(dbContext);
 }
 

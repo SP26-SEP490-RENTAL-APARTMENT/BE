@@ -1,12 +1,10 @@
 using AutoMapper;
-using System.Security.Claims;
 using BLL.Services.Interfaces;
 using Common.DTOs;
-using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Middlewares;
-using Microsoft.AspNetCore.Http.HttpResults;
+using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers;
 
@@ -423,8 +421,8 @@ public sealed class ApartmentsController : ControllerBase
 
             var updated = await _apartmentService.ApproveListingAsync(id, adminId, dto);
             var response = _mapper.Map<ApartmentResponseDto>(updated);
-            string message = dto.Approved 
-                ? "Apartment approved and posted successfully." 
+            string message = dto.Approved
+                ? "Apartment approved and posted successfully."
                 : "Apartment rejected.";
             return Ok(new ApiResponse<ApartmentResponseDto>(response, message));
         }
@@ -456,7 +454,7 @@ public sealed class ApartmentsController : ControllerBase
             // Extract user info if authenticated
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var rolesClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            
+
             Guid? requesterId = null;
             string? requesterRole = null;
 

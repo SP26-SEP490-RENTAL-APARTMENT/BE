@@ -148,7 +148,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            
+
             var review = await _reviewService.GetByIdAsync(id);
             if (review == null)
             {

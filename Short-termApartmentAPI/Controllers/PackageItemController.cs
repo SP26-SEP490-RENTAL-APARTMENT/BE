@@ -67,7 +67,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            
+
             var packageItem = await _packageItemService.GetByIdAsync(id);
             if (packageItem == null)
             {
