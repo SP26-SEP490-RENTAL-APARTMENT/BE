@@ -435,3 +435,10 @@ public class UpdateBookingOccupantDto
     [MaxLength(255)]
     public string? Email { get; set; }
 }
+
+public class FillBookingOccupantsDto
+{
+    [Required]
+    [MinLength(1)]
+    public List<AddBookingOccupantDto> Occupants { get; set; } = new();
+}

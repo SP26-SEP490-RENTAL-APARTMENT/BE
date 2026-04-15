@@ -15,6 +15,7 @@ public interface IBookingService : IBaseService<Booking>
 	Task<ResidenceReportOccupantDto> AddOccupantAsync(Guid bookingId, Guid tenantUserId, AddBookingOccupantDto dto);
 	Task<ResidenceReportOccupantDto> UpdateOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder, UpdateBookingOccupantDto dto);
 	Task RemoveOccupantAsync(Guid bookingId, Guid tenantUserId, int occupantOrder);
+	Task<IReadOnlyList<ResidenceReportOccupantDto>> FillOccupantsManuallyAsync(Guid bookingId, Guid tenantUserId, FillBookingOccupantsDto dto);
 	Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(
 		Guid landlordId,
 		int page,

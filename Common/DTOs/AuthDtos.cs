@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Common.Utils;
 
 namespace Common.DTOs
 {
@@ -27,7 +28,7 @@ namespace Common.DTOs
         public string AccessToken { get; set; } = string.Empty;
         public string RefreshToken { get; set; } = string.Empty;
         public bool IsActive { get; set; }
-        public string Role { get; set; }
+        public string Role { get; set; } = string.Empty;
         public List<string> Roles { get; set; } = new();
     }
 
@@ -67,11 +68,15 @@ namespace Common.DTOs
         [Required]
         public required string FullName { get; set; }
 
+        [RegularExpression(@"^\+?[0-9]{8,15}$", ErrorMessage = "Phone must contain 8 to 15 digits and may start with +.")]
+        public string? Phone { get; set; }
+
+        [MinimumAge(18, ErrorMessage = "User must be at least 18 years old.")]
+        public DateOnly? Birthday { get; set; }
+
         [Required]
         [RegularExpression("^(tenant|landlord)$", ErrorMessage = "Role must be 'tenant' or 'landlord'")]
         public required string Role { get; set; }
-
-        public string? Phone { get; set; }
         
         [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
         public string? Nationality { get; set; }

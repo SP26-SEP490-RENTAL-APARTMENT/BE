@@ -14,6 +14,12 @@ public interface IReviewService : IBaseService<Review>
 	Task ValidateTenantReviewEligibilityAsync(Guid bookingId, Guid reviewerUserId, Guid? apartmentId = null);
 
 	/// <summary>
+	/// Gets apartment and landlord identifiers associated with a booking for review creation.
+	/// </summary>
+	/// <param name="bookingId">The booking identifier.</param>
+	Task<(Guid ApartmentId, Guid LandlordId)> GetReviewTargetsByBookingIdAsync(Guid bookingId);
+
+	/// <summary>
 	/// Calculates the average rating and total number of reviews for a given apartment.
 	/// Only reviews with a non-null rating are considered.
 	/// </summary>
@@ -26,4 +32,10 @@ public interface IReviewService : IBaseService<Review>
 	/// </summary>
 	/// <param name="apartmentId">The apartment identifier.</param>
 	Task<IEnumerable<Review>> GetByApartmentIdAsync(Guid apartmentId);
+
+	/// <summary>
+	/// Gets all reviews created by a specific reviewer.
+	/// </summary>
+	/// <param name="reviewerId">The reviewer user identifier.</param>
+	Task<IEnumerable<Review>> GetByReviewerIdAsync(Guid reviewerId);
 }

@@ -989,6 +989,108 @@ public class BookingService : BaseService<Booking>, IBookingService
         await _bookingOccupantRepository.SaveChangesAsync();
     }
 
+    public async Task<IReadOnlyList<ResidenceReportOccupantDto>> FillOccupantsManuallyAsync(Guid bookingId, Guid tenantUserId, FillBookingOccupantsDto dto)
+    {
+        if (_bookingOccupantRepository == null)
+        {
+            throw new InvalidOperationException("Booking occupant persistence is not configured.");
+        }
+
+        if (dto.Occupants == null || dto.Occupants.Count == 0)
+        {
+            throw new InvalidOperationException("At least one occupant is required.");
+        }
+
+        var booking = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        if (apartment.MaxOccupants.HasValue && dto.Occupants.Count > apartment.MaxOccupants.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} occupant(s).");
+        }
+
+        var duplicateOrder = dto.Occupants
+            .GroupBy(o => o.OccupantOrder)
+            .FirstOrDefault(g => g.Count() > 1);
+        if (duplicateOrder != null)
+        {
+            throw new InvalidOperationException("Occupant order must be unique for this booking.");
+        }
+
+        var normalized = dto.Occupants
+            .OrderBy(o => o.OccupantOrder)
+            .Select(o => new AddBookingOccupantDto
+            {
+                OccupantOrder = o.OccupantOrder,
+                IsPrimary = o.IsPrimary,
+                FullName = o.FullName,
+                PassportId = o.PassportId,
+                NationalIdCardNumber = o.NationalIdCardNumber,
+                Nationality = o.Nationality,
+                Sex = o.Sex,
+                Phone = o.Phone,
+                Email = o.Email
+            })
+            .ToList();
+
+        if (!normalized.Any(o => o.IsPrimary))
+        {
+            normalized[0].IsPrimary = true;
+        }
+
+        var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
+        foreach (var item in existing)
+        {
+            _bookingOccupantRepository.Remove(item);
+        }
+
+        var now = Common.Utils.VietnamTime.Now;
+        var entities = new List<BookingOccupant>();
+        var primaryAssigned = false;
+
+        foreach (var occupant in normalized)
+        {
+            var entity = new BookingOccupant
+            {
+                OccupantId = Guid.NewGuid(),
+                BookingId = bookingId,
+                OccupantOrder = occupant.OccupantOrder,
+                IsPrimary = occupant.IsPrimary && !primaryAssigned,
+                FullName = occupant.FullName,
+                PassportId = occupant.PassportId,
+                NationalIdCardNumber = occupant.NationalIdCardNumber,
+                Nationality = occupant.Nationality,
+                Sex = occupant.Sex,
+                Phone = occupant.Phone,
+                Email = occupant.Email,
+                CreatedAt = now
+            };
+
+            if (entity.IsPrimary)
+            {
+                primaryAssigned = true;
+            }
+
+            entities.Add(entity);
+            await _bookingOccupantRepository.AddAsync(entity);
+        }
+
+        if (!primaryAssigned && entities.Count > 0)
+        {
+            entities[0].IsPrimary = true;
+            _bookingOccupantRepository.Update(entities[0]);
+        }
+
+        await _bookingOccupantRepository.SaveChangesAsync();
+
+        return entities
+            .OrderBy(o => o.OccupantOrder)
+            .Select(MapBookingOccupant)
+            .ToList();
+    }
+
     private async Task<Booking> EnsureBookingOwnedByTenantAsync(Guid bookingId, Guid tenantUserId)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
@@ -1314,6 +1416,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             EarlyCheckInFee = checkTime.EarlyCheckInFee,
             IsLateCheckOut = checkTime.IsLateCheckOut,
             LateCheckOutFee = checkTime.LateCheckOutFee,
+            TotalFee = (checkTime.EarlyCheckInFee ?? 0m) + (checkTime.LateCheckOutFee ?? 0m),
             RecordedBy = checkTime.RecordedBy,
             RecordedAt = checkTime.RecordedAt,
             Notes = checkTime.Notes,

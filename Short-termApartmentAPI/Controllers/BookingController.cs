@@ -494,6 +494,36 @@ namespace Short_termApartmentAPI.Controllers
 			}
 		}
 
+		[HttpPut("{id:guid}/occupants/manual")]
+		[Authorize(Roles = "landlord")]
+		public async Task<IActionResult> FillOccupantsManually(Guid id, [FromBody] FillBookingOccupantsDto dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			try
+			{
+				var occupants = await _bookingService.FillOccupantsManuallyAsync(id, tenantUserId, dto);
+				return Ok(new ApiResponse<IReadOnlyList<ResidenceReportOccupantDto>>(occupants, "Occupants were updated successfully."));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+			catch (ArgumentException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+		}
+
 		[HttpPost("{id:guid}/check-out")]
 		[Authorize(Roles = "landlord,staff")]
 		public async Task<IActionResult> RecordCheckOut(Guid id, [FromBody] RecordCheckOutDto dto)

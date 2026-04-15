@@ -758,6 +758,33 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<ResidenceReportOccupantDto>> FillOccupantsManuallyAsync(Guid bookingId, Guid tenantUserId, FillBookingOccupantsDto dto)
+    {
+        var occupants = dto.Occupants
+            .OrderBy(x => x.OccupantOrder)
+            .Select(x => new ResidenceReportOccupantDto
+            {
+                Order = x.OccupantOrder,
+                IsPrimary = x.IsPrimary,
+                FullName = x.FullName,
+                PassportId = x.PassportId,
+                NationalIdCardNumber = x.NationalIdCardNumber,
+                Nationality = x.Nationality,
+                Sex = x.Sex,
+                Phone = x.Phone,
+                Email = x.Email
+            })
+            .ToList();
+
+        if (!occupants.Any(x => x.IsPrimary) && occupants.Count > 0)
+        {
+            occupants[0].IsPrimary = true;
+        }
+
+        OccupantsByBooking[bookingId] = occupants;
+        return Task.FromResult<IReadOnlyList<ResidenceReportOccupantDto>>(occupants);
+    }
+
     private List<ResidenceReportOccupantDto> GetOccupantsInternal(Guid bookingId)
     {
         return OccupantsByBooking.TryGetValue(bookingId, out var occupants)

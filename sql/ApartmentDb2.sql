@@ -334,7 +334,7 @@ CREATE TABLE `tenants` (
 CREATE TABLE `user_identity_documents` (
   `document_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
   `user_id` char(36) NOT NULL,
-  `document_type` ENUM ('passport', 'national_id_card', 'drivers_license', 'other_government_id', 'selfie_with_id') NOT NULL,
+  `document_type` ENUM ('passport', 'national_id_card', 'other_government_id') NOT NULL,
   `side` ENUM ('front', 'back', 'bio_page', 'other') DEFAULT 'front',
   `file_url` varchar(500) NOT NULL,
   `file_key` varchar(255),

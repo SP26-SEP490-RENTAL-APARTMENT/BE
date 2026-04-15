@@ -71,6 +71,20 @@ namespace Short_termApartmentAPI.Controllers
             return Ok(mappedItems);
         }
 
+        [HttpGet("my")]
+        public async Task<IActionResult> GetMyReviews()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Invalid user token." });
+            }
+
+            var items = await _reviewService.GetByReviewerIdAsync(userId);
+            var mappedItems = _mapper.Map<IEnumerable<ReviewResponseDto>>(items);
+            return Ok(mappedItems);
+        }
+
         [HttpPost]
         [Authorize(Roles = "tenant")]
         public async Task<IActionResult> Create([FromBody] CreateReviewRequestDto requestDto)
@@ -88,7 +102,7 @@ namespace Short_termApartmentAPI.Controllers
 
             try
             {
-                await _reviewService.ValidateTenantReviewEligibilityAsync(requestDto.BookingId, userId, requestDto.ApartmentId);
+                await _reviewService.ValidateTenantReviewEligibilityAsync(requestDto.BookingId, userId);
             }
             catch (ArgumentException ex)
             {
@@ -101,6 +115,21 @@ namespace Short_termApartmentAPI.Controllers
 
             var review = _mapper.Map<Review>(requestDto);
             review.ReviewerId = userId; // Attach the authenticated user making the request
+
+            try
+            {
+                var (apartmentId, landlordId) = await _reviewService.GetReviewTargetsByBookingIdAsync(requestDto.BookingId);
+                review.ApartmentId = apartmentId;
+                review.ReviewedId = landlordId;
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
 
             var created = await _reviewService.CreateAsync(review);
             return CreatedAtAction(nameof(GetById), new { id = created.ReviewId }, _mapper.Map<ReviewResponseDto>(created));

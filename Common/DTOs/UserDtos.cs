@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using Common.Utils;
 
 namespace Common.DTOs
 {
@@ -33,10 +34,12 @@ namespace Common.DTOs
         
         public string? FullName { get; set; }
         
+        [RegularExpression(@"^\+?[0-9]{8,15}$", ErrorMessage = "Phone must contain 8 to 15 digits and may start with +.")]
         public string? Phone { get; set; }
         
         public string? Sex { get; set; }
         
+        [MinimumAge(18, ErrorMessage = "User must be at least 18 years old.")]
         public DateOnly? Birthday { get; set; }
         
         [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
@@ -59,10 +62,12 @@ namespace Common.DTOs
         
         public string? FullName { get; set; }
         
+        [RegularExpression(@"^\+?[0-9]{8,15}$", ErrorMessage = "Phone must contain 8 to 15 digits and may start with +.")]
         public string? Phone { get; set; }
         
         public string? Sex { get; set; }
         
+        [MinimumAge(18, ErrorMessage = "User must be at least 18 years old.")]
         public DateOnly? Birthday { get; set; }
         
         [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
@@ -71,5 +76,27 @@ namespace Common.DTOs
         public string? NationalIdCardNumber { get; set; }
         
         public bool? IdentityVerified { get; set; }
+    }
+
+    public class UpdateMyProfileDto
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = null!;
+
+        public string? FullName { get; set; }
+        
+        [RegularExpression(@"^\+?[0-9]{8,15}$", ErrorMessage = "Phone must contain 8 to 15 digits and may start with +.")]
+        public string? Phone { get; set; }
+        
+        public string? Sex { get; set; }
+        
+        [MinimumAge(18, ErrorMessage = "User must be at least 18 years old.")]
+        public DateOnly? Birthday { get; set; }
+        
+        [RegularExpression(@"^[A-Z]{2}$", ErrorMessage = "Nationality must be ISO 3166-1 alpha-2 code")]
+        public string? Nationality { get; set; }
+        
+        public string? NationalIdCardNumber { get; set; }
     }
 }

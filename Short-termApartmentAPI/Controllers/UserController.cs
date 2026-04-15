@@ -10,7 +10,7 @@ namespace Short_termApartmentAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "admin")]
+    [Authorize]
     public class UserController : ControllerBase
     {
         private readonly IUserService _userService;
@@ -22,7 +22,9 @@ namespace Short_termApartmentAPI.Controllers
             _mapper = mapper;
         }
 
+
         [HttpGet("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> GetById(Guid id)
         {
             var result = await _userService.GetByIdAsync(id);
@@ -34,6 +36,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -48,6 +51,8 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "admin")]
+
         public async Task<IActionResult> Create([FromBody] CreateUserDto userDto)
         {
             if (!ModelState.IsValid)
@@ -62,6 +67,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateUserDto userDto)
         {
             if (!ModelState.IsValid)
@@ -79,11 +85,14 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _userService.DeleteAsync(id);
             return NoContent();
         }
+
+
 
         /// <summary>
         /// Get current user's own profile information
@@ -112,7 +121,7 @@ namespace Short_termApartmentAPI.Controllers
         /// </summary>
         [HttpPut("me")]
         [Authorize]
-        public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateUserDto userDto)
+        public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateMyProfileDto userDto)
         {
             if (!ModelState.IsValid)
             {

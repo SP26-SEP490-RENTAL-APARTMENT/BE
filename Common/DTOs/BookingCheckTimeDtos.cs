@@ -76,6 +76,11 @@ public class BookingCheckTimeResponseDto
     public bool? IsLateCheckOut { get; set; }
     public decimal? LateCheckOutFee { get; set; }
 
+    /// <summary>
+    /// Total additional fee from early check-in and late check-out.
+    /// </summary>
+    public decimal TotalFee { get; set; }
+
     public Guid? RecordedBy { get; set; }
     public DateTime? RecordedAt { get; set; }
 
