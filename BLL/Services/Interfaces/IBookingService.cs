@@ -59,6 +59,11 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto);
 
 	/// <summary>
+	/// Manually settles a booking check-time fee after payment or waiver.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> SettleCheckTimeFeeAsync(Guid bookingId, Guid settledBy, SettleBookingCheckTimeFeeDto dto);
+
+	/// <summary>
 	/// Retrieves the availability calendar for an apartment showing available and unavailable date ranges.
 	/// Returns a 90-day calendar by default (customizable via startDate/endDate parameters).
 	/// Anonymous users see availability only; landlord/owner roles see booking IDs and statuses for blocked periods.

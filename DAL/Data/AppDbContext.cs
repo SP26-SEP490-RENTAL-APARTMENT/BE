@@ -573,6 +573,19 @@ public partial class AppDbContext : DbContext
                 .HasPrecision(12, 2)
                 .HasDefaultValueSql("'0.00'")
                 .HasColumnName("early_check_in_fee");
+            entity.Property(e => e.FeeDueAt)
+                .HasColumnType("datetime")
+                .HasColumnName("fee_due_at");
+            entity.Property(e => e.FeeSettlementNotes)
+                .HasColumnType("text")
+                .HasColumnName("fee_settlement_notes");
+            entity.Property(e => e.FeeSettlementStatus)
+                .HasMaxLength(30)
+                .HasDefaultValue("none")
+                .HasColumnName("fee_settlement_status");
+            entity.Property(e => e.FeeSettledAt)
+                .HasColumnType("datetime")
+                .HasColumnName("fee_settled_at");
             entity.Property(e => e.IsEarlyCheckIn)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("is_early_check_in");

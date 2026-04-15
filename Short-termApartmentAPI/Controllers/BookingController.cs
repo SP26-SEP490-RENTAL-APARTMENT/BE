@@ -635,6 +635,36 @@ namespace Short_termApartmentAPI.Controllers
 			}
 		}
 
+		[HttpPost("{id:guid}/check-time/settlement")]
+		[Authorize(Roles = "staff,admin")]
+		public async Task<IActionResult> SettleCheckTimeFee(Guid id, [FromBody] SettleBookingCheckTimeFeeDto dto)
+		{
+			var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+			if (!Guid.TryParse(userIdClaim, out var settledBy))
+			{
+				return Unauthorized(new ApiResponse<string>("Invalid user token."));
+			}
+
+			if (!ModelState.IsValid)
+			{
+				return BadRequest(ModelState);
+			}
+
+			try
+			{
+				var checkTimeResponse = await _bookingService.SettleCheckTimeFeeAsync(id, settledBy, dto);
+				return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-time fee settlement updated successfully."));
+			}
+			catch (KeyNotFoundException ex)
+			{
+				return NotFound(new ApiResponse<string>(ex.Message));
+			}
+			catch (InvalidOperationException ex)
+			{
+				return BadRequest(new ApiResponse<string>(ex.Message));
+			}
+		}
+
 		[HttpGet("{id:guid}/occupied-alternatives")]
 		[Authorize(Roles = "tenant,staff,admin")]
 		public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int maxResults = 5)

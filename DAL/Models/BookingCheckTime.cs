@@ -25,6 +25,14 @@ public partial class BookingCheckTime
 
     public decimal? EarlyCheckInFee { get; set; }
 
+    public string? FeeSettlementStatus { get; set; }
+
+    public DateTime? FeeDueAt { get; set; }
+
+    public DateTime? FeeSettledAt { get; set; }
+
+    public string? FeeSettlementNotes { get; set; }
+
     public bool? TempResidenceReported { get; set; }
 
     public DateTime? ReportedAt { get; set; }

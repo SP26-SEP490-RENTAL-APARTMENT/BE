@@ -513,6 +513,24 @@ namespace DAL.Migrations
                         .HasColumnName("early_check_in_fee")
                         .HasDefaultValueSql("'0.00'");
 
+                    b.Property<DateTime?>("FeeDueAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("fee_due_at");
+
+                    b.Property<string>("FeeSettlementNotes")
+                        .HasColumnType("longtext")
+                        .HasColumnName("fee_settlement_notes");
+
+                    b.Property<string>("FeeSettlementStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("fee_settlement_status")
+                        .HasDefaultValue("none");
+
+                    b.Property<DateTime?>("FeeSettledAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("fee_settled_at");
+
                     b.Property<bool?>("IsEarlyCheckIn")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("tinyint(1)")

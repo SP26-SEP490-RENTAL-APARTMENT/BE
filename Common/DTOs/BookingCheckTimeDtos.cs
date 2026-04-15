@@ -81,6 +81,20 @@ public class BookingCheckTimeResponseDto
     /// </summary>
     public decimal TotalFee { get; set; }
 
+    /// <summary>
+    /// Settlement state for the accumulated check-time fee: none, due, disputed, paid, waived.
+    /// </summary>
+    public string FeeSettlementStatus { get; set; } = "none";
+
+    public DateTime? FeeDueAt { get; set; }
+    public DateTime? FeeSettledAt { get; set; }
+    public string? FeeSettlementNotes { get; set; }
+
+    /// <summary>
+    /// Indicates whether the fee is past due and should block future bookings for this tenant.
+    /// </summary>
+    public bool ManualSettlementRequired { get; set; }
+
     public Guid? RecordedBy { get; set; }
     public DateTime? RecordedAt { get; set; }
 
@@ -158,4 +172,25 @@ public class ResolveBookingCheckTimeDisputeDto
 
     [MaxLength(1000)]
     public string? Notes { get; set; }
+}
+
+/// <summary>
+/// Manual settlement payload for a booking check-time fee.
+/// </summary>
+public class SettleBookingCheckTimeFeeDto : IValidatableObject
+{
+    [Required]
+    [RegularExpression("^(paid|waived)$", ErrorMessage = "SettlementAction must be 'paid' or 'waived'.")]
+    public string SettlementAction { get; set; } = "paid";
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(SettlementAction))
+        {
+            yield return new ValidationResult("SettlementAction is required.", new[] { nameof(SettlementAction) });
+        }
+    }
 }

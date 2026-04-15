@@ -18,6 +18,11 @@ public class BookingService : BaseService<Booking>, IBookingService
     private const decimal SuggestedDepositRate = 0.30m;
     private const decimal FullPaymentLandlordShareRate = 0.70m;
     private const int MaxBookingDays = 30;
+    private const string FeeSettlementStatusNone = "none";
+    private const string FeeSettlementStatusDue = "due";
+    private const string FeeSettlementStatusDisputed = "disputed";
+    private const string FeeSettlementStatusPaid = "paid";
+    private const string FeeSettlementStatusWaived = "waived";
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DepositConfirmationLocks = new();
     private const int DefaultOfferExpiryHours = 2;
     private const decimal DefaultPriceTolerancePercent = 0.20m;
@@ -351,6 +356,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     public async Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId)
     {
         await _identityVerificationService.EnsureUserVerifiedForBookingAsync(tenantId);
+        await EnsureTenantHasNoOutstandingCheckTimeFeesAsync(tenantId);
 
         var (checkInDate, checkOutDate, checkInDateTime, checkOutDateTime, nights) = ResolveBookingWindow(
             requestDto.CheckInDate,
@@ -415,6 +421,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             BookingId = booking.BookingId,
             ScheduledCheckIn = checkInDateTime,
             ScheduledCheckOut = checkOutDateTime,
+            FeeSettlementStatus = FeeSettlementStatusNone,
             TempResidenceReported = false,
             CreatedAt = Common.Utils.VietnamTime.Now,
             UpdatedAt = Common.Utils.VietnamTime.Now
@@ -1247,6 +1254,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.ActualCheckIn = dto.ActualCheckIn;
         checkTime.IsEarlyCheckIn = isEarlyCheckIn;
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
+        ApplyFeeSettlementState(checkTime, earlyCheckInFee, Common.Utils.VietnamTime.Now);
         checkTime.RecordedBy = recordedBy;
         checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
         checkTime.TenantResponseStatus = "pending";
@@ -1339,6 +1347,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.ActualCheckOut = dto.ActualCheckOut;
         checkTime.IsLateCheckOut = isLateCheckOut;
         checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
+        ApplyFeeSettlementState(checkTime, GetCheckTimeFeeTotal(checkTime), Common.Utils.VietnamTime.Now);
         checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
         checkTime.TenantResponseStatus = "pending";
         checkTime.TenantRespondedBy = null;
@@ -1417,6 +1426,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             IsLateCheckOut = checkTime.IsLateCheckOut,
             LateCheckOutFee = checkTime.LateCheckOutFee,
             TotalFee = (checkTime.EarlyCheckInFee ?? 0m) + (checkTime.LateCheckOutFee ?? 0m),
+            FeeSettlementStatus = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime),
+            FeeDueAt = checkTime.FeeDueAt,
+            FeeSettledAt = checkTime.FeeSettledAt,
+            FeeSettlementNotes = checkTime.FeeSettlementNotes,
+            ManualSettlementRequired = IsFeeSettlementRequired(checkTime, Common.Utils.VietnamTime.Now),
             RecordedBy = checkTime.RecordedBy,
             RecordedAt = checkTime.RecordedAt,
             Notes = checkTime.Notes,
@@ -1511,6 +1525,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.DisputeResolvedBy = null;
         checkTime.DisputeResolvedAt = null;
         checkTime.DisputeResolutionNotes = null;
+        checkTime.FeeSettlementStatus = FeeSettlementStatusDisputed;
 
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
@@ -1562,6 +1577,18 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.DisputeResolutionStatus = dto.ApproveTenantDispute
             ? "resolved_in_favor_of_tenant"
             : "resolved_in_favor_of_landlord";
+        if (dto.ApproveTenantDispute)
+        {
+            checkTime.FeeSettlementStatus = FeeSettlementStatusWaived;
+            checkTime.FeeSettledAt = Common.Utils.VietnamTime.Now;
+            checkTime.FeeDueAt = null;
+        }
+        else if (GetCheckTimeFeeTotal(checkTime) > 0m)
+        {
+            checkTime.FeeSettlementStatus = FeeSettlementStatusDue;
+            checkTime.FeeDueAt ??= Common.Utils.VietnamTime.Now.AddDays(GetFeeSettlementGraceDays());
+            checkTime.FeeSettledAt = null;
+        }
 
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
@@ -1605,6 +1632,152 @@ public class BookingService : BaseService<Booking>, IBookingService
             booking.BookingId);
 
         return await GetCheckTimeDetailsAsync(bookingId, resolvedBy);
+    }
+
+    public async Task<BookingCheckTimeResponseDto> SettleCheckTimeFeeAsync(Guid bookingId, Guid settledBy, SettleBookingCheckTimeFeeDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        var totalFee = GetCheckTimeFeeTotal(checkTime);
+        if (totalFee <= 0m)
+        {
+            throw new InvalidOperationException("No check-time fee is available for settlement.");
+        }
+
+        var settlementAction = dto.SettlementAction.Trim().ToLowerInvariant();
+        if (settlementAction != FeeSettlementStatusPaid && settlementAction != FeeSettlementStatusWaived)
+        {
+            throw new InvalidOperationException("SettlementAction must be 'paid' or 'waived'.");
+        }
+
+        checkTime.FeeSettlementStatus = settlementAction;
+        checkTime.FeeSettledAt = Common.Utils.VietnamTime.Now;
+        checkTime.FeeDueAt = null;
+        checkTime.FeeSettlementNotes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
+        checkTime.TenantResponseStatus = settlementAction == FeeSettlementStatusPaid ? "confirmed" : checkTime.TenantResponseStatus;
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment != null)
+        {
+            var title = settlementAction == FeeSettlementStatusPaid ? "Check-time Fee Settled" : "Check-time Fee Waived";
+            var message = settlementAction == FeeSettlementStatusPaid
+                ? $"A check-time fee of {totalFee:0.00} was marked as paid for booking {booking.BookingId}."
+                : $"A check-time fee of {totalFee:0.00} was waived for booking {booking.BookingId}.";
+
+            await CreateBookingNotificationAsync(
+                booking.TenantId,
+                NotificationType.system_announcement.ToString(),
+                title,
+                message,
+                booking.BookingId);
+
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.system_announcement.ToString(),
+                title,
+                message,
+                booking.BookingId);
+        }
+
+        return await GetCheckTimeDetailsAsync(bookingId, settledBy);
+    }
+
+    private async Task EnsureTenantHasNoOutstandingCheckTimeFeesAsync(Guid tenantId)
+    {
+        var bookings = await _bookingRepository.FindAsync(b => b.TenantId == tenantId);
+        var bookingIds = bookings.Select(b => b.BookingId).ToList();
+        if (!bookingIds.Any())
+        {
+            return;
+        }
+
+        var now = Common.Utils.VietnamTime.Now;
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct => bookingIds.Contains(ct.BookingId));
+        var outstandingFees = checkTimes
+            .Where(ct => IsFeeSettlementRequired(ct, now))
+            .ToList();
+
+        if (!outstandingFees.Any())
+        {
+            return;
+        }
+
+        var totalOutstanding = outstandingFees.Sum(GetCheckTimeFeeTotal);
+        throw new InvalidOperationException($"You have unpaid check-time fees totaling {totalOutstanding:0.00}. Please settle them before creating a new booking.");
+    }
+
+    private static decimal GetCheckTimeFeeTotal(BookingCheckTime checkTime)
+    {
+        return (checkTime.EarlyCheckInFee ?? 0m) + (checkTime.LateCheckOutFee ?? 0m);
+    }
+
+    private void ApplyFeeSettlementState(BookingCheckTime checkTime, decimal feeAmount, DateTime now)
+    {
+        var currentStatus = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+        if (string.Equals(currentStatus, FeeSettlementStatusDisputed, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (feeAmount <= 0m)
+        {
+            checkTime.FeeSettlementStatus = FeeSettlementStatusNone;
+            checkTime.FeeDueAt = null;
+            checkTime.FeeSettledAt = null;
+            checkTime.FeeSettlementNotes = null;
+            return;
+        }
+
+        checkTime.FeeSettlementStatus = FeeSettlementStatusDue;
+        checkTime.FeeDueAt ??= now.AddDays(GetFeeSettlementGraceDays());
+        checkTime.FeeSettledAt = null;
+    }
+
+    private static string NormalizeFeeSettlementStatus(string? feeSettlementStatus, BookingCheckTime checkTime)
+    {
+        if (!string.IsNullOrWhiteSpace(feeSettlementStatus))
+        {
+            return feeSettlementStatus.Trim().ToLowerInvariant();
+        }
+
+        return GetCheckTimeFeeTotal(checkTime) > 0m ? FeeSettlementStatusDue : FeeSettlementStatusNone;
+    }
+
+    private static bool IsFeeSettlementRequired(BookingCheckTime checkTime, DateTime now)
+    {
+        var status = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+        if (status == FeeSettlementStatusPaid || status == FeeSettlementStatusWaived || status == FeeSettlementStatusNone)
+        {
+            return false;
+        }
+
+        if (status == FeeSettlementStatusDisputed)
+        {
+            return false;
+        }
+
+        if (GetCheckTimeFeeTotal(checkTime) <= 0m)
+        {
+            return false;
+        }
+
+        if (!checkTime.FeeDueAt.HasValue)
+        {
+            return true;
+        }
+
+        return checkTime.FeeDueAt.Value <= now;
+    }
+
+    private int GetFeeSettlementGraceDays()
+    {
+        var configuredDays = _configuration.GetValue<int>("BookingCheckTimeSettings:FeeSettlementGraceDays", 3);
+        return configuredDays <= 0 ? 3 : configuredDays;
     }
 
     /// <summary>
