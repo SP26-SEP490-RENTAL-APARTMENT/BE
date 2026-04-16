@@ -119,7 +119,7 @@ namespace BLL.Services.Implements
                 TenantId = source.TenantId,
                 TenantFullName = occupant.FullName,
                 TenantPassportId = occupant.PassportId ?? string.Empty,
-                TenantDateOfBirth = source.TenantDateOfBirth,
+                TenantDateOfBirth = occupant.DateOfBirth ?? source.TenantDateOfBirth,
                 TenantNationalIdCardNumber = occupant.NationalIdCardNumber,
                 TenantNationality = occupant.Nationality ?? source.TenantNationality,
                 TenantPhone = occupant.Phone,
@@ -210,8 +210,11 @@ namespace BLL.Services.Implements
                 throw new ArgumentNullException(nameof(document));
             }
 
+            var normalizedPartA = NormalizeNationalIdToTwelveDigits(twelveDigitNumber1);
+            var normalizedPartB = NormalizeNationalIdToTwelveDigits(twelveDigitNumber2);
+
             // Validate 12-digit inputs because each digit maps to one table cell.
-            if (!IsTwelveDigitNumber(twelveDigitNumber1) || !IsTwelveDigitNumber(twelveDigitNumber2))
+            if (normalizedPartA == null || normalizedPartB == null)
             {
                 throw new ArgumentException("Input must be exactly 12 digits.");
             }
@@ -221,13 +224,14 @@ namespace BLL.Services.Implements
             var tableB = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartB")
                 ?? throw new InvalidOperationException("Table_PartB not found.");
 
-            PopulateTableRowWithString(tableA, twelveDigitNumber1);
-            PopulateTableRowWithString(tableB, twelveDigitNumber2);
+            PopulateTableRowWithString(tableA, normalizedPartA);
+            PopulateTableRowWithString(tableB, normalizedPartB);
         }
 
         private static Dictionary<string, string> BuildPlaceholderValues(TemporaryResidenceReportDetailsDto details)
         {
             var reportDate = details.ReportDate ?? DateOnly.FromDateTime(DateTime.Now);
+            var tenantDobValue = FormatDate(details.TenantDateOfBirth);
 
             return new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -237,8 +241,10 @@ namespace BLL.Services.Implements
                 [PlaceholderTags.LandlordNationalID] = details.LandlordNationalIdCardNumber ?? string.Empty,
                 [PlaceholderTags.LandlordPhone] = details.LandlordPhone ?? string.Empty,
                 [PlaceholderTags.TenantFullName] = details.TenantFullName ?? "N/A",
-                [PlaceholderTags.TenantDateOfBirth] = FormatDate(details.TenantDateOfBirth),
-                [PlaceholderTags.TenantDobLegacy] = FormatDate(details.TenantDateOfBirth),
+                [PlaceholderTags.TenantDateOfBirth] = tenantDobValue,
+                [PlaceholderTags.TenantDobLegacy] = tenantDobValue,
+                ["TenantDateOfBirth"] = tenantDobValue,
+                ["TenantDOB"] = tenantDobValue,
                 [PlaceholderTags.TenantNationalID] = details.TenantNationalIdCardNumber ?? string.Empty,
                 [PlaceholderTags.TenantSex] = details.TenantSex ?? string.Empty,
                 [PlaceholderTags.TenantNationality] = details.TenantNationality ?? string.Empty,
@@ -261,27 +267,21 @@ namespace BLL.Services.Implements
                 return;
             }
 
-            var tenantNationalId = details.TenantNationalIdCardNumber;
-            var landlordNationalId = details.LandlordNationalIdCardNumber;
-            if (tenantNationalId == null || landlordNationalId == null)
-            {
-                return;
-            }
-
-            if (!IsTwelveDigitNumber(tenantNationalId) || !IsTwelveDigitNumber(landlordNationalId))
-            {
-                return;
-            }
+            var tenantNationalId = NormalizeNationalIdToTwelveDigits(details.TenantNationalIdCardNumber);
+            var landlordNationalId = NormalizeNationalIdToTwelveDigits(details.LandlordNationalIdCardNumber);
 
             var tableA = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartA");
             var tableB = GetTableByContentControlTag(document.MainDocumentPart, "Table_PartB");
-            if (tableA == null || tableB == null)
+
+            if (tableA != null && tenantNationalId != null)
             {
-                return;
+                PopulateTableRowWithString(tableA, tenantNationalId);
             }
 
-            PopulateTableRowWithString(tableA, tenantNationalId);
-            PopulateTableRowWithString(tableB, landlordNationalId);
+            if (tableB != null && landlordNationalId != null)
+            {
+                PopulateTableRowWithString(tableB, landlordNationalId);
+            }
         }
 
         private static void PopulateForeignOccupantRows(WordprocessingDocument document, IReadOnlyList<ResidenceReportOccupantDto> occupants)
@@ -346,12 +346,21 @@ namespace BLL.Services.Implements
                     s.SdtProperties != null &&
                     string.Equals(s.SdtProperties.GetFirstChild<Tag>()?.Val?.Value, tag, StringComparison.Ordinal));
 
-            return sdt?.Descendants<Table>().FirstOrDefault();
+            if (sdt != null)
+            {
+                return sdt.Ancestors<Table>().FirstOrDefault()
+                    ?? sdt.Descendants<Table>().FirstOrDefault();
+            }
+
+            var tagElement = mainPart.Document.Descendants<Tag>()
+                .FirstOrDefault(t => string.Equals(t.Val?.Value, tag, StringComparison.Ordinal));
+
+            return tagElement?.Ancestors<Table>().FirstOrDefault();
         }
 
         private static void PopulateTableRowWithString(Table table, string data)
         {
-            var firstRow = table.Elements<TableRow>().FirstOrDefault();
+            var firstRow = table.Descendants<TableRow>().FirstOrDefault();
             if (firstRow == null)
             {
                 return;
@@ -376,6 +385,17 @@ namespace BLL.Services.Implements
         private static bool IsTwelveDigitNumber(string? value)
         {
             return !string.IsNullOrWhiteSpace(value) && value.Length == 12 && value.All(char.IsDigit);
+        }
+
+        private static string? NormalizeNationalIdToTwelveDigits(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var digitsOnly = new string(value.Where(char.IsDigit).ToArray());
+            return IsTwelveDigitNumber(digitsOnly) ? digitsOnly : null;
         }
 
         private static void ReplacePlaceholders(OpenXmlCompositeElement root, IReadOnlyDictionary<string, string> placeholderValues)

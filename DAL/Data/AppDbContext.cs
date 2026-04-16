@@ -446,6 +446,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.PassportId)
                 .HasMaxLength(50)
                 .HasColumnName("passport_id");
+            entity.Property(e => e.DateOfBirth)
+                .HasColumnType("date")
+                .HasColumnName("date_of_birth");
             entity.Property(e => e.NationalIdCardNumber)
                 .HasMaxLength(20)
                 .HasColumnName("national_id_card_number");

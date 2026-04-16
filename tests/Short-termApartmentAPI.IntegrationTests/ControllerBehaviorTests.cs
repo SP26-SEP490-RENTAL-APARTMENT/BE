@@ -405,6 +405,7 @@ public class ControllerBehaviorTests
         {
             FullName = "New Occupant",
             PassportId = "P-NEW",
+            DateOfBirth = new DateOnly(1997, 5, 10),
             NationalIdCardNumber = "123456789012",
             Nationality = "VN",
             Sex = "female",
@@ -417,6 +418,7 @@ public class ControllerBehaviorTests
     var data = response.Data!;
         Assert.Equal(1, data.Order);
         Assert.Equal("New Occupant", data.FullName);
+        Assert.Equal(new DateOnly(1997, 5, 10), data.DateOfBirth);
         Assert.Single(bookingService.OccupantsByBooking[bookingId]);
     }
 
@@ -448,6 +450,7 @@ public class ControllerBehaviorTests
         {
             FullName = "Updated Name",
             PassportId = "NEW",
+            DateOfBirth = new DateOnly(1992, 1, 2),
             IsPrimary = true,
             ProofPhoto = proofPhoto
         });
@@ -459,6 +462,7 @@ public class ControllerBehaviorTests
         Assert.Equal("Updated Name", data.FullName);
         Assert.True(data.IsPrimary);
         Assert.Equal("NEW", data.PassportId);
+        Assert.Equal(new DateOnly(1992, 1, 2), data.DateOfBirth);
         Assert.Equal("https://example.test/uploads/replacement.jpg", data.ProofPhotoUrl);
     }
 
@@ -736,6 +740,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
             IsPrimary = occupants.Count == 0,
             FullName = dto.FullName,
             PassportId = dto.PassportId,
+            DateOfBirth = dto.DateOfBirth,
             NationalIdCardNumber = dto.NationalIdCardNumber,
             Nationality = dto.Nationality,
             Sex = dto.Sex,
@@ -757,6 +762,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
         occupant.IsPrimary = dto.IsPrimary ?? occupant.IsPrimary;
         occupant.FullName = dto.FullName ?? occupant.FullName;
         occupant.PassportId = dto.PassportId ?? occupant.PassportId;
+        occupant.DateOfBirth = dto.DateOfBirth ?? occupant.DateOfBirth;
         occupant.NationalIdCardNumber = dto.NationalIdCardNumber ?? occupant.NationalIdCardNumber;
         occupant.Nationality = dto.Nationality ?? occupant.Nationality;
         occupant.Sex = dto.Sex ?? occupant.Sex;
@@ -788,6 +794,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
                 IsPrimary = x.IsPrimary,
                 FullName = x.FullName,
                 PassportId = x.PassportId,
+                DateOfBirth = x.DateOfBirth,
                 NationalIdCardNumber = x.NationalIdCardNumber,
                 Nationality = x.Nationality,
                 Sex = x.Sex,

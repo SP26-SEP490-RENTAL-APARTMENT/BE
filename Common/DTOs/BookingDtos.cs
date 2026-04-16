@@ -373,6 +373,8 @@ public class ResidenceReportOccupantDto
 
     public string? PassportId { get; set; }
 
+    public DateOnly? DateOfBirth { get; set; }
+
     public string? NationalIdCardNumber { get; set; }
 
     public string? Nationality { get; set; }
@@ -393,6 +395,8 @@ public class AddBookingOccupantDto
 
     [MaxLength(50)]
     public string? PassportId { get; set; }
+
+    public DateOnly? DateOfBirth { get; set; }
 
     [MaxLength(20)]
     public string? NationalIdCardNumber { get; set; }
@@ -420,6 +424,8 @@ public class AddBookingOccupantFormDto
 
     [MaxLength(50)]
     public string? PassportId { get; set; }
+
+    public DateOnly? DateOfBirth { get; set; }
 
     [MaxLength(20)]
     public string? NationalIdCardNumber { get; set; }
@@ -453,6 +459,8 @@ public class FillBookingOccupantItemDto
     [MaxLength(50)]
     public string? PassportId { get; set; }
 
+    public DateOnly? DateOfBirth { get; set; }
+
     [MaxLength(20)]
     public string? NationalIdCardNumber { get; set; }
 
@@ -482,6 +490,8 @@ public class UpdateBookingOccupantDto
     [MaxLength(50)]
     public string? PassportId { get; set; }
 
+    public DateOnly? DateOfBirth { get; set; }
+
     [MaxLength(20)]
     public string? NationalIdCardNumber { get; set; }
 
@@ -510,6 +520,8 @@ public class UpdateBookingOccupantFormDto
 
     [MaxLength(50)]
     public string? PassportId { get; set; }
+
+    public DateOnly? DateOfBirth { get; set; }
 
     [MaxLength(20)]
     public string? NationalIdCardNumber { get; set; }
