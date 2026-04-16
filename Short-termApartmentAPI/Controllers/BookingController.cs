@@ -388,7 +388,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet("{id:guid}/occupants")]
-        [Authorize(Roles = "tenant")]
+        [Authorize(Roles = "tenant,landlord")]
         public async Task<IActionResult> GetOccupants(Guid id)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -413,11 +413,11 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("{id:guid}/occupants")]
-        [Authorize(Roles = "tenant")]
+        [Authorize(Roles = "tenant,landlord")]
         public async Task<IActionResult> AddOccupant(Guid id, [FromForm] AddBookingOccupantFormDto dto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+            if (!Guid.TryParse(userIdClaim, out var requesterUserId))
             {
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
@@ -435,10 +435,11 @@ namespace Short_termApartmentAPI.Controllers
             try
             {
                 var proofPhotoUrl = await _imageService.UploadImageAsync(dto.ProofPhoto);
-                var occupant = await _bookingService.AddOccupantAsync(id, tenantUserId, new AddBookingOccupantDto
+                var occupant = await _bookingService.AddOccupantAsync(id, requesterUserId, new AddBookingOccupantDto
                 {
                     FullName = dto.FullName,
                     PassportId = dto.PassportId,
+                    DateOfBirth = dto.DateOfBirth,
                     NationalIdCardNumber = dto.NationalIdCardNumber,
                     Nationality = dto.Nationality,
                     Sex = dto.Sex,
@@ -459,11 +460,11 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPut("{id:guid}/occupants/{occupantOrder:int}")]
-        [Authorize(Roles = "tenant")]
+        [Authorize(Roles = "tenant,landlord")]
         public async Task<IActionResult> UpdateOccupant(Guid id, int occupantOrder, [FromForm] UpdateBookingOccupantFormDto dto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+            if (!Guid.TryParse(userIdClaim, out var requesterUserId))
             {
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
@@ -481,11 +482,12 @@ namespace Short_termApartmentAPI.Controllers
                     proofPhotoUrl = await _imageService.UploadImageAsync(dto.ProofPhoto);
                 }
 
-                var occupant = await _bookingService.UpdateOccupantAsync(id, tenantUserId, occupantOrder, new UpdateBookingOccupantDto
+                var occupant = await _bookingService.UpdateOccupantAsync(id, requesterUserId, occupantOrder, new UpdateBookingOccupantDto
                 {
                     IsPrimary = dto.IsPrimary,
                     FullName = dto.FullName,
                     PassportId = dto.PassportId,
+                    DateOfBirth = dto.DateOfBirth,
                     NationalIdCardNumber = dto.NationalIdCardNumber,
                     Nationality = dto.Nationality,
                     Sex = dto.Sex,
@@ -506,18 +508,18 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}/occupants/{occupantOrder:int}")]
-        [Authorize(Roles = "tenant")]
+        [Authorize(Roles = "tenant,landlord")]
         public async Task<IActionResult> RemoveOccupant(Guid id, int occupantOrder)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(userIdClaim, out var tenantUserId))
+            if (!Guid.TryParse(userIdClaim, out var requesterUserId))
             {
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
 
             try
             {
-                await _bookingService.RemoveOccupantAsync(id, tenantUserId, occupantOrder);
+                await _bookingService.RemoveOccupantAsync(id, requesterUserId, occupantOrder);
                 return Ok(new ApiResponse<string>("Occupant removed successfully."));
             }
             catch (InvalidOperationException ex)

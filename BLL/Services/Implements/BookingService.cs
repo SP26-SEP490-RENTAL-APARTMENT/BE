@@ -802,7 +802,10 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new ArgumentException("Booking not found.");
         }
 
-        if (!string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase))
+        var isConfirmed = string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase);
+        var isPaid = string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase);
+
+        if (!(isConfirmed || isPaid))
         {
             throw new InvalidOperationException("Booking must be in confirmed status to generate the residence report PDF.");
         }
@@ -863,7 +866,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     public async Task<IReadOnlyList<ResidenceReportOccupantDto>> GetOccupantsAsync(Guid bookingId, Guid tenantUserId)
     {
-        var booking = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        var booking = await EnsureBookingOwnedByTenantOrLandlordAsync(bookingId, tenantUserId);
         var report = (await _temporaryResidenceReportRepository.FindAsync(r => r.BookingId == bookingId)).FirstOrDefault();
         var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
         return await BuildReportOccupantsAsync(booking, report, tenantUser);
@@ -876,7 +879,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Booking occupant persistence is not configured.");
         }
 
-        var booking = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        var booking = await EnsureBookingOwnedByTenantOrLandlordAsync(bookingId, tenantUserId);
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
 
@@ -898,6 +901,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             IsPrimary = !existing.Any(),
             FullName = dto.FullName,
             PassportId = dto.PassportId,
+            DateOfBirth = dto.DateOfBirth,
             NationalIdCardNumber = dto.NationalIdCardNumber,
             Nationality = dto.Nationality,
             Sex = dto.Sex,
@@ -920,7 +924,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Booking occupant persistence is not configured.");
         }
 
-        _ = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        _ = await EnsureBookingOwnedByTenantOrLandlordAsync(bookingId, tenantUserId);
 
         var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
         var occupant = existing.FirstOrDefault(o => o.OccupantOrder == occupantOrder)
@@ -949,6 +953,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         occupant.FullName = dto.FullName ?? occupant.FullName;
         occupant.PassportId = dto.PassportId ?? occupant.PassportId;
+        occupant.DateOfBirth = dto.DateOfBirth ?? occupant.DateOfBirth;
         occupant.NationalIdCardNumber = dto.NationalIdCardNumber ?? occupant.NationalIdCardNumber;
         occupant.Nationality = dto.Nationality ?? occupant.Nationality;
         occupant.Sex = dto.Sex ?? occupant.Sex;
@@ -969,7 +974,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Booking occupant persistence is not configured.");
         }
 
-        _ = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        _ = await EnsureBookingOwnedByTenantOrLandlordAsync(bookingId, tenantUserId);
 
         var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
         var occupant = existing.FirstOrDefault(o => o.OccupantOrder == occupantOrder)
@@ -1010,7 +1015,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("At least one occupant is required.");
         }
 
-        var booking = await EnsureBookingOwnedByTenantAsync(bookingId, tenantUserId);
+        var booking = await EnsureBookingOwnedByLandlordAsync(bookingId, tenantUserId);
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
@@ -1036,12 +1041,13 @@ public class BookingService : BaseService<Booking>, IBookingService
                 IsPrimary = o.IsPrimary,
                 FullName = o.FullName,
                 PassportId = o.PassportId,
+                DateOfBirth = o.DateOfBirth,
                 NationalIdCardNumber = o.NationalIdCardNumber,
                 Nationality = o.Nationality,
                 Sex = o.Sex,
                 Phone = o.Phone,
                 Email = o.Email,
-                ProofPhotoUrl = o.ProofPhotoUrl
+                ProofPhotoUrl = null
             })
             .ToList();
 
@@ -1070,12 +1076,13 @@ public class BookingService : BaseService<Booking>, IBookingService
                 IsPrimary = occupant.IsPrimary && !primaryAssigned,
                 FullName = occupant.FullName,
                 PassportId = occupant.PassportId,
+                DateOfBirth = occupant.DateOfBirth,
                 NationalIdCardNumber = occupant.NationalIdCardNumber,
                 Nationality = occupant.Nationality,
                 Sex = occupant.Sex,
                 Phone = occupant.Phone,
                 Email = occupant.Email,
-                ProofPhotoUrl = occupant.ProofPhotoUrl,
+                ProofPhotoUrl = null,
                 CreatedAt = now
             };
 
@@ -1115,6 +1122,42 @@ public class BookingService : BaseService<Booking>, IBookingService
         return booking;
     }
 
+    private async Task<Booking> EnsureBookingOwnedByTenantOrLandlordAsync(Guid bookingId, Guid requesterUserId)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        if (booking.TenantId == requesterUserId)
+        {
+            return booking;
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        if (apartment.LandlordId == requesterUserId)
+        {
+            return booking;
+        }
+
+        throw new InvalidOperationException("You are not allowed to manage occupants for this booking.");
+    }
+
+    private async Task<Booking> EnsureBookingOwnedByLandlordAsync(Guid bookingId, Guid landlordUserId)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        if (apartment.LandlordId != landlordUserId)
+        {
+            throw new InvalidOperationException("You are not allowed to manage occupants for this booking.");
+        }
+
+        return booking;
+    }
     private async Task<List<ResidenceReportOccupantDto>> BuildReportOccupantsAsync(Booking booking, TemporaryResidenceReport? report, User? tenantUser)
     {
         if (_bookingOccupantRepository != null)
@@ -1135,6 +1178,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             IsPrimary = true,
             FullName = tenantUser?.FullName,
             PassportId = report?.TenantPassportId,
+            DateOfBirth = tenantUser?.Birthday,
             NationalIdCardNumber = tenantUser?.NationalIdCardNumber,
             Nationality = report?.TenantNationality,
             Sex = tenantUser?.Sex,
@@ -1151,6 +1195,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                 IsPrimary = index == 1,
                 FullName = primary.FullName,
                 PassportId = primary.PassportId,
+                DateOfBirth = primary.DateOfBirth,
                 NationalIdCardNumber = primary.NationalIdCardNumber,
                 Nationality = primary.Nationality,
                 Sex = primary.Sex,
@@ -1169,6 +1214,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             IsPrimary = occupant.IsPrimary,
             FullName = occupant.FullName,
             PassportId = occupant.PassportId,
+            DateOfBirth = occupant.DateOfBirth,
             NationalIdCardNumber = occupant.NationalIdCardNumber,
             Nationality = occupant.Nationality,
             Sex = occupant.Sex,
