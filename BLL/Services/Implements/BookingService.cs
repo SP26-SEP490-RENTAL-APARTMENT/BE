@@ -838,6 +838,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             TenantId = booking.TenantId,
             TenantFullName = primaryOccupant.FullName,
             TenantPassportId = primaryOccupant.PassportId ?? report.TenantPassportId,
+            TenantDateOfBirth = tenantUser?.Birthday,
             TenantNationalIdCardNumber = primaryOccupant.NationalIdCardNumber,
             TenantNationality = primaryOccupant.Nationality ?? report.TenantNationality,
             TenantPhone = primaryOccupant.Phone,
@@ -885,26 +886,16 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} occupant(s).");
         }
 
-        if (existing.Any(o => o.OccupantOrder == dto.OccupantOrder))
-        {
-            throw new InvalidOperationException("Occupant order already exists for this booking.");
-        }
-
-        if (dto.IsPrimary)
-        {
-            foreach (var item in existing.Where(e => e.IsPrimary))
-            {
-                item.IsPrimary = false;
-                _bookingOccupantRepository.Update(item);
-            }
-        }
+        var nextOrder = existing.Count == 0
+            ? 1
+            : existing.Max(o => o.OccupantOrder) + 1;
 
         var entity = new BookingOccupant
         {
             OccupantId = Guid.NewGuid(),
             BookingId = bookingId,
-            OccupantOrder = dto.OccupantOrder,
-            IsPrimary = dto.IsPrimary || !existing.Any(),
+            OccupantOrder = nextOrder,
+            IsPrimary = !existing.Any(),
             FullName = dto.FullName,
             PassportId = dto.PassportId,
             NationalIdCardNumber = dto.NationalIdCardNumber,
@@ -912,6 +903,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             Sex = dto.Sex,
             Phone = dto.Phone,
             Email = dto.Email,
+            ProofPhotoUrl = dto.ProofPhotoUrl,
             CreatedAt = Common.Utils.VietnamTime.Now
         };
 
@@ -962,6 +954,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         occupant.Sex = dto.Sex ?? occupant.Sex;
         occupant.Phone = dto.Phone ?? occupant.Phone;
         occupant.Email = dto.Email ?? occupant.Email;
+        occupant.ProofPhotoUrl = dto.ProofPhotoUrl ?? occupant.ProofPhotoUrl;
 
         _bookingOccupantRepository.Update(occupant);
         await _bookingOccupantRepository.SaveChangesAsync();
@@ -1037,7 +1030,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var normalized = dto.Occupants
             .OrderBy(o => o.OccupantOrder)
-            .Select(o => new AddBookingOccupantDto
+            .Select(o => new FillBookingOccupantItemDto
             {
                 OccupantOrder = o.OccupantOrder,
                 IsPrimary = o.IsPrimary,
@@ -1047,7 +1040,8 @@ public class BookingService : BaseService<Booking>, IBookingService
                 Nationality = o.Nationality,
                 Sex = o.Sex,
                 Phone = o.Phone,
-                Email = o.Email
+                Email = o.Email,
+                ProofPhotoUrl = o.ProofPhotoUrl
             })
             .ToList();
 
@@ -1081,6 +1075,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                 Sex = occupant.Sex,
                 Phone = occupant.Phone,
                 Email = occupant.Email,
+                ProofPhotoUrl = occupant.ProofPhotoUrl,
                 CreatedAt = now
             };
 
@@ -1144,7 +1139,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             Nationality = report?.TenantNationality,
             Sex = tenantUser?.Sex,
             Phone = tenantUser?.Phone,
-            Email = tenantUser?.Email
+            Email = tenantUser?.Email,
+            ProofPhotoUrl = null
         };
 
         var fallbackCount = Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0));
@@ -1159,7 +1155,8 @@ public class BookingService : BaseService<Booking>, IBookingService
                 Nationality = primary.Nationality,
                 Sex = primary.Sex,
                 Phone = primary.Phone,
-                Email = primary.Email
+                Email = primary.Email,
+                ProofPhotoUrl = primary.ProofPhotoUrl
             })
             .ToList();
     }
@@ -1176,7 +1173,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             Nationality = occupant.Nationality,
             Sex = occupant.Sex,
             Phone = occupant.Phone,
-            Email = occupant.Email
+            Email = occupant.Email,
+            ProofPhotoUrl = occupant.ProofPhotoUrl
         };
     }
 

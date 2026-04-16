@@ -62,6 +62,13 @@ namespace BLL.Services.Implements
 
                         column.Item().Text(text =>
                         {
+                            text.Span(isVietnamese ? "Ngày sinh / Date of birth: " : "Date of birth: ").SemiBold();
+                            var dateOfBirth = details.TenantDateOfBirth?.ToDateTime(TimeOnly.MinValue).ToString("dd/MM/yyyy", CultureInfo.GetCultureInfo("vi-VN"));
+                            text.Span(dateOfBirth ?? "N/A");
+                        });
+
+                        column.Item().Text(text =>
+                        {
                             text.Span(isVietnamese ? "Quốc tịch / Nationality: " : "Nationality: ").SemiBold();
                             text.Span(details.TenantNationality);
                         });

@@ -23,6 +23,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IStripeService _stripeService;
         private readonly IMomoService _momoService;
         private readonly IMomoTransactionService _momoTransactionService;
+        private readonly IImageService _imageService;
         private readonly MomoOptions _momoOptions;
         private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
         private readonly IResidenceReportDocxGenerator _residenceReportDocxGenerator;
@@ -35,6 +36,7 @@ namespace Short_termApartmentAPI.Controllers
             IStripeService stripeService,
             IMomoService momoService,
             IMomoTransactionService momoTransactionService,
+            IImageService imageService,
             IOptions<MomoOptions> momoOptions,
             IResidenceReportPdfGenerator residenceReportPdfGenerator,
             IResidenceReportDocxGenerator residenceReportDocxGenerator,
@@ -46,6 +48,7 @@ namespace Short_termApartmentAPI.Controllers
             _stripeService = stripeService;
             _momoService = momoService;
             _momoTransactionService = momoTransactionService;
+            _imageService = imageService;
             _momoOptions = momoOptions.Value;
             _residenceReportPdfGenerator = residenceReportPdfGenerator;
             _residenceReportDocxGenerator = residenceReportDocxGenerator;
@@ -411,7 +414,7 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpPost("{id:guid}/occupants")]
         [Authorize(Roles = "tenant")]
-        public async Task<IActionResult> AddOccupant(Guid id, [FromBody] AddBookingOccupantDto dto)
+        public async Task<IActionResult> AddOccupant(Guid id, [FromForm] AddBookingOccupantFormDto dto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var tenantUserId))
@@ -424,9 +427,25 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (dto.ProofPhoto == null || dto.ProofPhoto.Length == 0)
+            {
+                return BadRequest(new ApiResponse<string>("Proof photo is required."));
+            }
+
             try
             {
-                var occupant = await _bookingService.AddOccupantAsync(id, tenantUserId, dto);
+                var proofPhotoUrl = await _imageService.UploadImageAsync(dto.ProofPhoto);
+                var occupant = await _bookingService.AddOccupantAsync(id, tenantUserId, new AddBookingOccupantDto
+                {
+                    FullName = dto.FullName,
+                    PassportId = dto.PassportId,
+                    NationalIdCardNumber = dto.NationalIdCardNumber,
+                    Nationality = dto.Nationality,
+                    Sex = dto.Sex,
+                    Phone = dto.Phone,
+                    Email = dto.Email,
+                    ProofPhotoUrl = proofPhotoUrl
+                });
                 return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant added successfully."));
             }
             catch (InvalidOperationException ex)
@@ -441,7 +460,7 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpPut("{id:guid}/occupants/{occupantOrder:int}")]
         [Authorize(Roles = "tenant")]
-        public async Task<IActionResult> UpdateOccupant(Guid id, int occupantOrder, [FromBody] UpdateBookingOccupantDto dto)
+        public async Task<IActionResult> UpdateOccupant(Guid id, int occupantOrder, [FromForm] UpdateBookingOccupantFormDto dto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var tenantUserId))
@@ -456,7 +475,24 @@ namespace Short_termApartmentAPI.Controllers
 
             try
             {
-                var occupant = await _bookingService.UpdateOccupantAsync(id, tenantUserId, occupantOrder, dto);
+                string? proofPhotoUrl = null;
+                if (dto.ProofPhoto != null && dto.ProofPhoto.Length > 0)
+                {
+                    proofPhotoUrl = await _imageService.UploadImageAsync(dto.ProofPhoto);
+                }
+
+                var occupant = await _bookingService.UpdateOccupantAsync(id, tenantUserId, occupantOrder, new UpdateBookingOccupantDto
+                {
+                    IsPrimary = dto.IsPrimary,
+                    FullName = dto.FullName,
+                    PassportId = dto.PassportId,
+                    NationalIdCardNumber = dto.NationalIdCardNumber,
+                    Nationality = dto.Nationality,
+                    Sex = dto.Sex,
+                    Phone = dto.Phone,
+                    Email = dto.Email,
+                    ProofPhotoUrl = proofPhotoUrl
+                });
                 return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant updated successfully."));
             }
             catch (InvalidOperationException ex)

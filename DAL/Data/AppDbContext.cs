@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using DAL.Models;
 using Microsoft.EntityFrameworkCore;
 using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
@@ -8,6 +10,11 @@ namespace DAL.Data;
 
 public partial class AppDbContext : DbContext
 {
+    private const string SoftDeleteFlagColumn = "is_deleted";
+    private const string SoftDeleteTimestampColumn = "deleted_at";
+    private static readonly MethodInfo SetSoftDeleteFilterMethod = typeof(AppDbContext)
+        .GetMethod(nameof(SetSoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Static)!;
+
     public AppDbContext()
     {
     }
@@ -455,6 +462,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Email)
                 .HasMaxLength(255)
                 .HasColumnName("email");
+            entity.Property(e => e.ProofPhotoUrl)
+                .HasMaxLength(1000)
+                .HasColumnName("proof_photo_url");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp")
@@ -1758,7 +1768,83 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey<LandlordWallet>(d => d.LandlordId)
                 .HasConstraintName("landlord_wallets_ibfk_1");
         });
+
+        ApplySoftDeleteModelConfiguration(modelBuilder);
         OnModelCreatingPartial(modelBuilder);
+    }
+
+    public override int SaveChanges()
+    {
+        ApplySoftDeleteInterception();
+        return base.SaveChanges();
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ApplySoftDeleteInterception();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplySoftDeleteInterception();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        ApplySoftDeleteInterception();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void ApplySoftDeleteInterception()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var entry in ChangeTracker.Entries().Where(e => e.State == EntityState.Deleted))
+        {
+            if (entry.Metadata.FindProperty(SoftDeleteFlagColumn) == null)
+            {
+                continue;
+            }
+
+            entry.State = EntityState.Modified;
+            entry.CurrentValues[SoftDeleteFlagColumn] = true;
+
+            if (entry.Metadata.FindProperty(SoftDeleteTimestampColumn) != null)
+            {
+                entry.CurrentValues[SoftDeleteTimestampColumn] = now;
+            }
+        }
+    }
+
+    private void ApplySoftDeleteModelConfiguration(ModelBuilder modelBuilder)
+    {
+        var entityTypes = modelBuilder.Model.GetEntityTypes()
+            .Where(t => !t.IsOwned() && t.ClrType != null && t.ClrType != typeof(Dictionary<string, object>))
+            .ToList();
+
+        foreach (var entityType in entityTypes)
+        {
+            modelBuilder.Entity(entityType.ClrType)
+                .Property<bool>(SoftDeleteFlagColumn)
+                .HasColumnName(SoftDeleteFlagColumn)
+                .HasDefaultValue(false);
+
+            modelBuilder.Entity(entityType.ClrType)
+                .Property<DateTime?>(SoftDeleteTimestampColumn)
+                .HasColumnName(SoftDeleteTimestampColumn)
+                .HasColumnType("datetime");
+
+            var setFilterMethod = SetSoftDeleteFilterMethod.MakeGenericMethod(entityType.ClrType);
+            setFilterMethod.Invoke(null, new object[] { modelBuilder });
+        }
+    }
+
+    private static void SetSoftDeleteFilter<TEntity>(ModelBuilder modelBuilder)
+        where TEntity : class
+    {
+        modelBuilder.Entity<TEntity>()
+            .HasQueryFilter(entity => !EF.Property<bool>(entity, SoftDeleteFlagColumn));
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);

@@ -394,21 +394,28 @@ public class ControllerBehaviorTests
         var controller = CreateBookingController(bookingService: bookingService);
         SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
 
-        var result = await controller.AddOccupant(bookingId, new AddBookingOccupantDto
+        var photoStream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-content"));
+        var proofPhoto = new FormFile(photoStream, 0, photoStream.Length, "ProofPhoto", "proof.jpg")
         {
-            OccupantOrder = 2,
+            Headers = new HeaderDictionary(),
+            ContentType = "image/jpeg"
+        };
+
+        var result = await controller.AddOccupant(bookingId, new AddBookingOccupantFormDto
+        {
             FullName = "New Occupant",
             PassportId = "P-NEW",
             NationalIdCardNumber = "123456789012",
             Nationality = "VN",
-            Sex = "female"
+            Sex = "female",
+            ProofPhoto = proofPhoto
         });
 
         var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
         var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<ResidenceReportOccupantDto>
             ?? throw new InvalidOperationException("Expected occupant response.");
     var data = response.Data!;
-        Assert.Equal(2, data.Order);
+        Assert.Equal(1, data.Order);
         Assert.Equal("New Occupant", data.FullName);
         Assert.Single(bookingService.OccupantsByBooking[bookingId]);
     }
@@ -430,11 +437,19 @@ public class ControllerBehaviorTests
         var controller = CreateBookingController(bookingService: bookingService);
         SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
 
-        var result = await controller.UpdateOccupant(bookingId, 1, new UpdateBookingOccupantDto
+        var photoStream = new MemoryStream(Encoding.UTF8.GetBytes("replacement-image-content"));
+        var proofPhoto = new FormFile(photoStream, 0, photoStream.Length, "ProofPhoto", "replacement.jpg")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/jpeg"
+        };
+
+        var result = await controller.UpdateOccupant(bookingId, 1, new UpdateBookingOccupantFormDto
         {
             FullName = "Updated Name",
             PassportId = "NEW",
-            IsPrimary = true
+            IsPrimary = true,
+            ProofPhoto = proofPhoto
         });
 
         var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
@@ -444,6 +459,7 @@ public class ControllerBehaviorTests
         Assert.Equal("Updated Name", data.FullName);
         Assert.True(data.IsPrimary);
         Assert.Equal("NEW", data.PassportId);
+        Assert.Equal("https://example.test/uploads/replacement.jpg", data.ProofPhotoUrl);
     }
 
     [Fact]
@@ -522,6 +538,7 @@ public class ControllerBehaviorTests
         IStripeService? stripeService = null,
         IMomoService? momoService = null,
         IMomoTransactionService? momoTransactionService = null,
+        IImageService? imageService = null,
         IResidenceReportPdfGenerator? residenceReportPdfGenerator = null,
         IResidenceReportDocxGenerator? residenceReportDocxGenerator = null)
     {
@@ -532,6 +549,7 @@ public class ControllerBehaviorTests
             stripeService ?? new StripeServiceStub(),
             momoService ?? new MomoServiceStub(),
             momoTransactionService ?? new MomoTransactionServiceStub(),
+            imageService ?? new ImageServiceStub(),
             Options.Create(new MomoOptions
             {
                 PartnerCode = "PARTNER",
@@ -711,20 +729,21 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<ResidenceReportOccupantDto> AddOccupantAsync(Guid bookingId, Guid tenantUserId, AddBookingOccupantDto dto)
     {
         var occupants = GetOccupantsInternal(bookingId).ToList();
+        var nextOrder = occupants.Count == 0 ? 1 : occupants.Max(x => x.Order) + 1;
         var occupant = new ResidenceReportOccupantDto
         {
-            Order = dto.OccupantOrder,
-            IsPrimary = dto.IsPrimary,
+            Order = nextOrder,
+            IsPrimary = occupants.Count == 0,
             FullName = dto.FullName,
             PassportId = dto.PassportId,
             NationalIdCardNumber = dto.NationalIdCardNumber,
             Nationality = dto.Nationality,
             Sex = dto.Sex,
             Phone = dto.Phone,
-            Email = dto.Email
+            Email = dto.Email,
+            ProofPhotoUrl = dto.ProofPhotoUrl
         };
 
-        occupants.RemoveAll(x => x.Order == occupant.Order);
         occupants.Add(occupant);
         OccupantsByBooking[bookingId] = occupants.OrderBy(x => x.Order).ToList();
         return Task.FromResult(occupant);
@@ -743,6 +762,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
         occupant.Sex = dto.Sex ?? occupant.Sex;
         occupant.Phone = dto.Phone ?? occupant.Phone;
         occupant.Email = dto.Email ?? occupant.Email;
+        occupant.ProofPhotoUrl = dto.ProofPhotoUrl ?? occupant.ProofPhotoUrl;
 
         occupants.RemoveAll(x => x.Order == occupantOrder);
         occupants.Add(occupant);
@@ -772,7 +792,8 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
                 Nationality = x.Nationality,
                 Sex = x.Sex,
                 Phone = x.Phone,
-                Email = x.Email
+                Email = x.Email,
+                ProofPhotoUrl = x.ProofPhotoUrl
             })
             .ToList();
 
@@ -799,6 +820,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<BookingCheckTimeResponseDto> RespondToCheckTimeAsync(Guid bookingId, Guid tenantId, RespondBookingCheckTimeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> SettleCheckTimeFeeAsync(Guid bookingId, Guid settledBy, SettleBookingCheckTimeFeeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
+    public Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<AvailabilityCalendarResponseDto> GetAvailabilityCalendarAsync(Guid apartmentId, DateTime? startDate = null, DateTime? endDate = null, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new AvailabilityCalendarResponseDto());
     public Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(Guid apartmentId, Guid landlordId, SetApartmentAvailabilityRequestDto dto) => Task.FromResult(new SetApartmentAvailabilityResponseDto());
     public Task<RemoveApartmentAvailabilityResponseDto> RemoveApartmentAvailabilityAsync(Guid apartmentId, Guid landlordId, RemoveApartmentAvailabilityRequestDto dto) => Task.FromResult(new RemoveApartmentAvailabilityResponseDto());
@@ -842,6 +864,15 @@ internal sealed class MomoTransactionServiceStub : BaseServiceStub<MomoTransacti
     {
         Updated.Add(entity);
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class ImageServiceStub : IImageService
+{
+    public Task<string> UploadImageAsync(IFormFile file)
+    {
+        var fileName = string.IsNullOrWhiteSpace(file?.FileName) ? "proof.jpg" : file.FileName;
+        return Task.FromResult($"https://example.test/uploads/{fileName}");
     }
 }
 

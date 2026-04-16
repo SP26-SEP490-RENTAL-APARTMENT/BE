@@ -26,6 +26,8 @@ public partial class BookingOccupant
 
     public string? Email { get; set; }
 
+    public string? ProofPhotoUrl { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual Booking Booking { get; set; } = null!;

@@ -9,6 +9,7 @@ namespace BLL.DependencyInjection
         {
             services.AddAutoMapper(cfg => cfg.AddProfile<ApartmentProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<SubscriptionPlanProfile>());
+            services.AddAutoMapper(cfg => cfg.AddProfile<LandlordSubscriptionProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<BookingProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<SupportTicketProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<UserProfile>());

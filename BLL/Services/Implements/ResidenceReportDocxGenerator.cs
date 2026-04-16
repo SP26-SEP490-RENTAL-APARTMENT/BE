@@ -27,6 +27,8 @@ namespace BLL.Services.Implements
             public const string LandlordNationalID = "{{LandlordNationalID}}";
             public const string LandlordPhone = "{{LandlordPhone}}";
             public const string TenantFullName = "{{TenantFullName}}";
+            public const string TenantDateOfBirth = "{{TenantDateOfBirth}}";
+            public const string TenantDobLegacy = "{{TenantDOB}}";
             public const string TenantNationalID = "{{TenantNationalID}}";
             public const string TenantSex = "{{TenantSex}}";
             public const string TenantNationality = "{{TenantNationality}}";
@@ -117,6 +119,7 @@ namespace BLL.Services.Implements
                 TenantId = source.TenantId,
                 TenantFullName = occupant.FullName,
                 TenantPassportId = occupant.PassportId ?? string.Empty,
+                TenantDateOfBirth = source.TenantDateOfBirth,
                 TenantNationalIdCardNumber = occupant.NationalIdCardNumber,
                 TenantNationality = occupant.Nationality ?? source.TenantNationality,
                 TenantPhone = occupant.Phone,
@@ -234,6 +237,8 @@ namespace BLL.Services.Implements
                 [PlaceholderTags.LandlordNationalID] = details.LandlordNationalIdCardNumber ?? string.Empty,
                 [PlaceholderTags.LandlordPhone] = details.LandlordPhone ?? string.Empty,
                 [PlaceholderTags.TenantFullName] = details.TenantFullName ?? "N/A",
+                [PlaceholderTags.TenantDateOfBirth] = FormatDate(details.TenantDateOfBirth),
+                [PlaceholderTags.TenantDobLegacy] = FormatDate(details.TenantDateOfBirth),
                 [PlaceholderTags.TenantNationalID] = details.TenantNationalIdCardNumber ?? string.Empty,
                 [PlaceholderTags.TenantSex] = details.TenantSex ?? string.Empty,
                 [PlaceholderTags.TenantNationality] = details.TenantNationality ?? string.Empty,

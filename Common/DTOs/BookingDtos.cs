@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Common.Enums;
+using Microsoft.AspNetCore.Http;
 
 namespace Common.DTOs;
 
@@ -321,6 +322,8 @@ public class TemporaryResidenceReportDetailsDto
 
     public string TenantPassportId { get; set; } = null!;
 
+    public DateOnly? TenantDateOfBirth { get; set; }
+
     public string? TenantNationalIdCardNumber { get; set; }
 
     public string TenantNationality { get; set; } = null!;
@@ -379,9 +382,65 @@ public class ResidenceReportOccupantDto
     public string? Phone { get; set; }
 
     public string? Email { get; set; }
+
+    public string? ProofPhotoUrl { get; set; }
 }
 
 public class AddBookingOccupantDto
+{
+    [MaxLength(150)]
+    public string? FullName { get; set; }
+
+    [MaxLength(50)]
+    public string? PassportId { get; set; }
+
+    [MaxLength(20)]
+    public string? NationalIdCardNumber { get; set; }
+
+    [MaxLength(2)]
+    public string? Nationality { get; set; }
+
+    [MaxLength(20)]
+    public string? Sex { get; set; }
+
+    [MaxLength(20)]
+    public string? Phone { get; set; }
+
+    [MaxLength(255)]
+    public string? Email { get; set; }
+
+    [MaxLength(1000)]
+    public string? ProofPhotoUrl { get; set; }
+}
+
+public class AddBookingOccupantFormDto
+{
+    [MaxLength(150)]
+    public string? FullName { get; set; }
+
+    [MaxLength(50)]
+    public string? PassportId { get; set; }
+
+    [MaxLength(20)]
+    public string? NationalIdCardNumber { get; set; }
+
+    [MaxLength(2)]
+    public string? Nationality { get; set; }
+
+    [MaxLength(20)]
+    public string? Sex { get; set; }
+
+    [MaxLength(20)]
+    public string? Phone { get; set; }
+
+    [MaxLength(255)]
+    public string? Email { get; set; }
+
+    [Required]
+    public IFormFile ProofPhoto { get; set; } = null!;
+}
+
+public class FillBookingOccupantItemDto
 {
     [Required]
     public int OccupantOrder { get; set; }
@@ -408,6 +467,9 @@ public class AddBookingOccupantDto
 
     [MaxLength(255)]
     public string? Email { get; set; }
+
+    [MaxLength(1000)]
+    public string? ProofPhotoUrl { get; set; }
 }
 
 public class UpdateBookingOccupantDto
@@ -434,11 +496,42 @@ public class UpdateBookingOccupantDto
 
     [MaxLength(255)]
     public string? Email { get; set; }
+
+    [MaxLength(1000)]
+    public string? ProofPhotoUrl { get; set; }
+}
+
+public class UpdateBookingOccupantFormDto
+{
+    public bool? IsPrimary { get; set; }
+
+    [MaxLength(150)]
+    public string? FullName { get; set; }
+
+    [MaxLength(50)]
+    public string? PassportId { get; set; }
+
+    [MaxLength(20)]
+    public string? NationalIdCardNumber { get; set; }
+
+    [MaxLength(2)]
+    public string? Nationality { get; set; }
+
+    [MaxLength(20)]
+    public string? Sex { get; set; }
+
+    [MaxLength(20)]
+    public string? Phone { get; set; }
+
+    [MaxLength(255)]
+    public string? Email { get; set; }
+
+    public IFormFile? ProofPhoto { get; set; }
 }
 
 public class FillBookingOccupantsDto
 {
     [Required]
     [MinLength(1)]
-    public List<AddBookingOccupantDto> Occupants { get; set; } = new();
+    public List<FillBookingOccupantItemDto> Occupants { get; set; } = new();
 }

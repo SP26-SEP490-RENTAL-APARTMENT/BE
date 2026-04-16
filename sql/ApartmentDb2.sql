@@ -93,6 +93,8 @@ CREATE TABLE `bookings` (
   `package_id` char(36),
   `package_price` decimal(12,2) DEFAULT '0.00',
   `deposit_amount` decimal(12,2) NOT NULL,
+  `payment_mode` ENUM('partial','full') NOT NULL DEFAULT 'partial',
+  `upfront_payment_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,		
   `deposit_paid` tinyint(1) DEFAULT '0',
   `balance_due_date` date NOT NULL,
   `status` ENUM ('pending', 'negotiating', 'confirmed', 'paid', 'completed', 'cancelled', 'disputed') DEFAULT 'pending',
@@ -206,10 +208,10 @@ CREATE TABLE `payments` (
   `payment_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
   `related_entity_id` char(36),
   `amount` decimal(12,2) NOT NULL,
-  `payment_type` ENUM ('deposit', 'balance', 'addon', 'refund') NOT NULL,
-  `payment_purpose` ENUM ('booking_deposit', 'booking_balance', 'booking_addon_or_package', 'subscription_monthly', 'subscription_annual', 'subscription_trial', 'subscription_renewal', 'refund_booking', 'refund_subscription', 'other') NOT NULL DEFAULT 'booking_deposit',
+  `payment_type` ENUM('deposit','balance','addon','refund','upfront') NOT NULL,
+  `payment_purpose` ENUM('booking_deposit','booking_balance','booking_full_payment','booking_addon_or_package','subscription_monthly','subscription_annual','subscription_trial','subscription_renewal','refund_booking','refund_subscription','other') NOT NULL DEFAULT 'booking_deposit',
   `related_entity_type` ENUM ('booking', 'host_subscription', 'other'),
-   `landlord_id` CHAR(36) NULL,
+  `landlord_id` CHAR(36) NULL,
   `landlord_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `platform_fee` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `settlement_status` VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -321,14 +323,8 @@ CREATE TABLE `temporary_residence_reports` (
 CREATE TABLE `tenants` (
   `tenant_id` char(36) PRIMARY KEY NOT NULL,
   `passport_id` varchar(50),
-  `sex` varchar(20),
-  `birthday` date,
-  `nationality` char(2) COMMENT 'ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting',
-  `national_id_card_number` varchar(12),
   `identity_verification_status` ENUM ('not_started', 'pending', 'verified', 'rejected') DEFAULT 'not_started',
-  `last_verified_at` timestamp,
-  CONSTRAINT `chk_tenants_national_id_card_number`
-    CHECK (`national_id_card_number` IS NULL OR `national_id_card_number` REGEXP '^0[0-9]{11}$')
+  `last_verified_at` timestamp
 );
 
 CREATE TABLE `user_identity_documents` (
@@ -357,7 +353,14 @@ CREATE TABLE `users` (
   `identity_verified` tinyint(1) DEFAULT '0',
   `token` varchar(500),
   `token_expired` datetime,
-  `created_at` timestamp DEFAULT (CURRENT_TIMESTAMP)
+  `created_at` timestamp DEFAULT (CURRENT_TIMESTAMP),
+  `sex` VARCHAR(20) NULL,
+  `birthday` DATE NULL,
+  `nationality` CHAR(2) NULL COMMENT 'ISO 3166-1 alpha-2 code (e.g. VN, US, KR). Used for temp residence reporting',
+  `national_id_card_number` VARCHAR(12) NULL,
+  
+  CONSTRAINT `chk_national_id_card_number` 
+	CHECK (`national_id_card_number` IS NULL OR `national_id_card_number` REGEXP '^0[0-9]{11}$')
 );
 
 CREATE TABLE booking_check_times (
@@ -378,6 +381,10 @@ CREATE TABLE booking_check_times (
     late_check_out_fee  DECIMAL(12,2) DEFAULT 0,    -- extra charge if applicable
     is_early_check_in   TINYINT(1) DEFAULT 0,
     early_check_in_fee  DECIMAL(12,2) DEFAULT 0,
+	fee_settlement_status VARCHAR(30) NOT NULL DEFAULT 'none',
+    fee_due_at DATETIME NULL,
+    fee_settled_at DATETIME NULL,
+    fee_settlement_notes TEXT NULL,
     
     -- Compliance tracking (Vietnam temp residence)
     temp_residence_reported TINYINT(1) DEFAULT 0,
@@ -392,6 +399,16 @@ CREATE TABLE booking_check_times (
     
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    tenant_response_status VARCHAR(50) NULL,
+    tenant_responded_by CHAR(36) NULL,
+    tenant_responded_at DATETIME NULL,
+    tenant_dispute_reason VARCHAR(300) NULL,
+    tenant_dispute_notes TEXT NULL,
+    dispute_resolution_status VARCHAR(80) NULL,
+    dispute_resolved_by CHAR(36) NULL,
+    dispute_resolved_at DATETIME NULL,
+    dispute_resolution_notes TEXT NULL,
     
     UNIQUE KEY uk_booking (booking_id),
     INDEX idx_booking (booking_id),
@@ -412,10 +429,10 @@ CREATE TABLE `momo_transactions` (
   `amount` BIGINT NOT NULL,
   `type` VARCHAR(50) NOT NULL,
   `request_body` LONGTEXT NOT NULL,
-  `response_body` LONGTEXT NOT NULL,
+  `response_body` LONGTEXT NOT NULL DEFAULT (''),
   `status` VARCHAR(50) NOT NULL,
   `result_code` INT NULL,
-  `message` VARCHAR(1024) NOT NULL,
+  `message` VARCHAR(1024) NOT NULL DEFAULT '',
   `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   `payment_id` char(36),
@@ -493,10 +510,27 @@ CREATE TABLE `landlord_wallets` (
   CONSTRAINT `landlord_wallets_ibfk_1`
     FOREIGN KEY (`landlord_id`) REFERENCES `landlords` (`landlord_id`)
 );
+
+CREATE TABLE IF NOT EXISTS wishlist_collections (
+    collection_id CHAR(36) PRIMARY KEY,
+    tenant_id CHAR(36) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description VARCHAR(500) NULL,
+    is_default TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT wishlist_collections_ibfk_1 FOREIGN KEY (tenant_id)
+        REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    CONSTRAINT uk_wishlist_collections_tenant_name UNIQUE (tenant_id, name),
+    INDEX idx_wishlist_collections_tenant_id (tenant_id),
+    INDEX idx_collection_id (collection_id)
+);
+
 CREATE TABLE `tenant_wishlists` (
   `wishlist_id` CHAR(36) NOT NULL,
   `tenant_id` CHAR(36) NOT NULL,
   `apartment_id` CHAR(36) NOT NULL,
+  `collection_id` CHAR(36) NOT NULL,
   `is_favorite` TINYINT(1) NOT NULL DEFAULT 0,
   `notes` VARCHAR(500) NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -504,9 +538,14 @@ CREATE TABLE `tenant_wishlists` (
   PRIMARY KEY (`wishlist_id`),
   UNIQUE KEY `uk_tenant_apartment` (`tenant_id`, `apartment_id`),
   
+  CONSTRAINT `uk_collection_apartment` UNIQUE (`collection_id`, `apartment_id`),
+  
   CONSTRAINT `tenant_wishlists_ibfk_1` 
-  FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`tenant_id`) ON DELETE CASCADE ON UPDATE RESTRICT,
-  CONSTRAINT `tenant_wishlists_ibfk_2` FOREIGN KEY (`apartment_id`) REFERENCES `apartments` (`apartment_id`) ON DELETE CASCADE ON UPDATE RESTRICT
+		FOREIGN KEY (`tenant_id`) REFERENCES `tenants` (`tenant_id`) ON DELETE CASCADE ON UPDATE RESTRICT,
+  CONSTRAINT `tenant_wishlists_ibfk_2` FOREIGN KEY (`apartment_id`) 
+		REFERENCES `apartments` (`apartment_id`) ON DELETE CASCADE ON UPDATE RESTRICT,
+  CONSTRAINT `tenant_wishlists_ibfk_3` FOREIGN KEY (`collection_id`)
+        REFERENCES `wishlist_collections`(`collection_id`) ON DELETE CASCADE
 );
 
 CREATE TABLE `booking_offers` (
@@ -559,6 +598,27 @@ CREATE TABLE IF NOT EXISTS landlord_payouts (
     `failed_at` TIMESTAMP NULL,
     CONSTRAINT `pk_landlord_payouts` PRIMARY KEY (`payout_id`),
     CONSTRAINT `fk_landlord_payouts_landlord` FOREIGN KEY (`landlord_id`) REFERENCES `landlords` (`landlord_id`) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS booking_occupants (
+    occupant_id CHAR(36) NOT NULL,
+    booking_id CHAR(36) NOT NULL,
+    occupant_order INT NOT NULL,
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    full_name VARCHAR(150) NULL,
+    passport_id VARCHAR(50) NULL,
+    national_id_card_number VARCHAR(20) NULL,
+    nationality CHAR(2) NULL,
+    sex VARCHAR(20) NULL,
+    phone VARCHAR(20) NULL,
+    email VARCHAR(255) NULL,
+    proof_photo_url VARCHAR(1000) NULL,
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (occupant_id),
+    KEY idx_booking (booking_id),
+    UNIQUE KEY uk_booking_order (booking_id, occupant_order),
+    KEY idx_booking_primary (booking_id, is_primary),
+    CONSTRAINT booking_occupants_ibfk_1 FOREIGN KEY (booking_id) REFERENCES bookings (booking_id) ON DELETE CASCADE
 );
 
 CREATE INDEX `idx_landlord_payouts_landlord` ON `landlord_payouts` (`landlord_id`);
