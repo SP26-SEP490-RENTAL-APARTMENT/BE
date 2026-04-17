@@ -32,5 +32,32 @@ namespace BLL.Services.Implements
 
             return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
         }
+
+        public async Task<(IEnumerable<SubscriptionPlan> Items, int TotalCount)> GetAllForLandlordAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null)
+        {
+            var effectiveAllowedColumns = new[]
+            {
+                "PlanId",
+                "Name",
+                "Description",
+                "PriceMonthly",
+                "PriceAnnual",
+                "IsActive",
+                "CreatedAt"
+            };
+
+            var result = await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+
+            result.Items = result.Items.Where(p => p.IsActive == true);
+            
+            return result;
+        }
     }
 }

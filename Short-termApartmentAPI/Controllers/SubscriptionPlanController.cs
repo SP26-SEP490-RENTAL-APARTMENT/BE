@@ -9,7 +9,7 @@ namespace Short_termApartmentAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "admin")]
+    [Authorize]
     public class SubscriptionPlanController : ControllerBase
     {
         private readonly ISubscriptionPlanService _subscriptionPlanService;
@@ -22,6 +22,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> GetById(Guid id)
         {
             var result = await _subscriptionPlanService.GetByIdAsync(id);
@@ -33,6 +34,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
@@ -46,7 +48,24 @@ namespace Short_termApartmentAPI.Controllers
             return Ok(new { Items = itemDtos, TotalCount = totalCount });
         }
 
+        
+        [HttpGet("landlord")]
+        [Authorize(Roles = "admin,landlord")]
+        public async Task<IActionResult> GetAllForLandlord(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null,
+            [FromQuery] string? search = null,
+            [FromQuery] Dictionary<string, string>? filters = null)
+        {
+            var (items, totalCount) = await _subscriptionPlanService.GetAllForLandlordAsync(page, pageSize, sortBy, sortOrder, search, filters);
+            var itemDtos = _mapper.Map<IEnumerable<SubscriptionPlanDto>>(items);
+            return Ok(new { Items = itemDtos, TotalCount = totalCount });
+        }
+
         [HttpPost]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Create([FromBody] CreateSubscriptionPlanDto planDto)
         {
             if (!ModelState.IsValid)
@@ -60,6 +79,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateSubscriptionPlanDto planDto)
         {
             if (!ModelState.IsValid)
@@ -77,6 +97,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize(Roles = "admin")]
         public async Task<IActionResult> Delete(Guid id)
         {
             await _subscriptionPlanService.DeleteAsync(id);
