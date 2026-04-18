@@ -82,6 +82,51 @@ public class ControllerBehaviorTests
     }
 
     [Fact]
+    public async Task LandlordController_GetWallet_ReturnsUnauthorized_WhenTokenIsInvalid()
+    {
+        var controller = CreateLandlordController();
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, "not-a-guid"));
+
+        var result = await controller.GetWallet();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task LandlordController_GetWallet_ReturnsBalances()
+    {
+        var landlordId = Guid.NewGuid();
+        var walletService = new LandlordWalletServiceStub
+        {
+            Wallet = new LandlordWallet
+            {
+                LandlordId = landlordId,
+                PendingBalance = 50000m,
+                AvailableBalance = 120000m,
+                UpdatedAt = DateTime.UtcNow
+            }
+        };
+
+        var controller = CreateLandlordController(
+            landlordService: new LandlordServiceStub
+            {
+                LandlordByUserId = new Landlord { LandlordId = landlordId, LandlordNavigation = new User { UserId = landlordId } }
+            },
+            landlordWalletService: walletService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, landlordId.ToString()));
+
+        var result = await controller.GetWallet();
+
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<LandlordWalletBalanceDto>
+            ?? throw new InvalidOperationException("Expected wallet response.");
+
+        Assert.Equal(50000m, response.Data!.PendingBalance);
+        Assert.Equal(120000m, response.Data.AvailableBalance);
+        Assert.Equal(170000m, response.Data.TotalBalance);
+    }
+
+    [Fact]
     public async Task MomoController_Ipn_ReturnsBadRequest_WhenSignatureIsInvalid()
     {
         var controller = CreateMomoController(momoService: new MomoServiceStub { ValidateDisbursementSignature = false });
@@ -499,6 +544,7 @@ public class ControllerBehaviorTests
         ILandlordSubscriptionService? landlordSubscriptionService = null,
         IPaymentService? paymentService = null,
         IBookingService? bookingService = null,
+        ILandlordWalletService? landlordWalletService = null,
         ILandlordPayoutService? landlordPayoutService = null)
     {
         return new LandlordController(
@@ -506,6 +552,7 @@ public class ControllerBehaviorTests
             landlordSubscriptionService ?? new LandlordSubscriptionServiceStub(),
             paymentService ?? new PaymentServiceStub(),
             bookingService ?? new BookingServiceStub(),
+            landlordWalletService ?? new LandlordWalletServiceStub(),
             landlordPayoutService ?? new LandlordPayoutServiceStub(),
             CreateMapper());
     }
@@ -520,6 +567,7 @@ public class ControllerBehaviorTests
         ILandlordPayoutService? landlordPayoutService = null)
     {
         return new MomoController(
+            NullLogger<MomoController>.Instance,
             momoService ?? new MomoServiceStub(),
             paymentService ?? new PaymentServiceStub(),
             bookingService ?? new BookingServiceStub(),
@@ -961,6 +1009,36 @@ internal sealed class LandlordPayoutServiceStub : ILandlordPayoutService
         SyncCalls++;
         return Task.FromResult(0);
     }
+}
+
+internal sealed class LandlordWalletServiceStub : ILandlordWalletService
+{
+    public LandlordWallet Wallet { get; set; } = new()
+    {
+        LandlordId = Guid.NewGuid(),
+        PendingBalance = 0m,
+        AvailableBalance = 0m,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    public Task<LandlordWallet> GetOrCreateAsync(Guid landlordId)
+    {
+        Wallet.LandlordId = landlordId;
+        return Task.FromResult(Wallet);
+    }
+
+    public Task CreditPendingAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
+
+    public Task DebitAvailableAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
+
+    public Task<LandlordPenaltyApplicationResultDto> ApplyOccupiedIncidentPenaltyAsync(Guid landlordId, decimal amount)
+        => Task.FromResult(new LandlordPenaltyApplicationResultDto());
+
+    public Task ReserveForPayoutAsync(Guid landlordId, long amount) => Task.CompletedTask;
+
+    public Task FinalizePayoutSuccessAsync(Guid landlordId, long amount) => Task.CompletedTask;
+
+    public Task RollbackPayoutAsync(Guid landlordId, long amount) => Task.CompletedTask;
 }
 
 internal sealed class WishlistServiceStub : BaseServiceStub<TenantWishlist>, IWishlistService

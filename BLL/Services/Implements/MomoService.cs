@@ -33,8 +33,9 @@ namespace BLL.Services.Implements
             var requestId = orderId;
             var amountString = request.Amount.ToString();
             var extraData = request.ExtraData ?? string.Empty;
+            var redirectUrl = string.IsNullOrWhiteSpace(request.RedirectUrl) ? _options.RedirectUrl : request.RedirectUrl;
 
-            Console.WriteLine($"[MoMo] CreateWalletPayment request prepared. orderId={orderId}, requestId={requestId}, ipnUrl={_options.IpnUrl}, endpoint={_options.Endpoint}");
+            Console.WriteLine($"[MoMo] CreateWalletPayment request prepared. orderId={orderId}, requestId={requestId}, ipnUrl={_options.IpnUrl}, redirectUrl={redirectUrl}, endpoint={_options.Endpoint}");
 
             var rawSignature =
                 $"accessKey={_options.AccessKey}" +
@@ -44,7 +45,7 @@ namespace BLL.Services.Implements
                 $"&orderId={orderId}" +
                 $"&orderInfo={request.OrderInfo}" +
                 $"&partnerCode={_options.PartnerCode}" +
-                $"&redirectUrl={_options.RedirectUrl}" +
+                $"&redirectUrl={redirectUrl}" +
                 $"&requestId={requestId}" +
                 "&requestType=captureWallet";
 
@@ -60,7 +61,7 @@ namespace BLL.Services.Implements
                 amount = amountString,
                 orderId,
                 orderInfo = request.OrderInfo,
-                redirectUrl = _options.RedirectUrl,
+                redirectUrl,
                 ipnUrl = _options.IpnUrl,
                 extraData,
                 requestType = "captureWallet",

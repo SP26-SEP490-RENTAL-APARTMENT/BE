@@ -95,6 +95,7 @@ public class ReportResultDto
     public Guid ReportId { get; set; }
     public string Name { get; set; } = null!;
     public IReadOnlyList<ReportResultRowDto> Rows { get; set; } = Array.Empty<ReportResultRowDto>();
+    public Dictionary<string, decimal> TotalMetrics { get; set; } = new();
 }
 
 public class ReportComparisonRowDto
@@ -116,4 +117,8 @@ public class ReportComparisonResultDto
     public DateTime? PreviousFrom { get; set; }
     public DateTime? PreviousTo { get; set; }
     public IReadOnlyList<ReportComparisonRowDto> Rows { get; set; } = Array.Empty<ReportComparisonRowDto>();
+    public Dictionary<string, decimal> TotalCurrentMetrics { get; set; } = new();
+    public Dictionary<string, decimal> TotalPreviousMetrics { get; set; } = new();
+    public Dictionary<string, decimal> TotalDeltaMetrics { get; set; } = new();
+    public Dictionary<string, decimal> TotalDeltaPercentMetrics { get; set; } = new();
 }

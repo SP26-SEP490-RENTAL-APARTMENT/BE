@@ -138,6 +138,41 @@ public class ReportExecutionService : IReportExecutionService
             });
         }
 
+        // Calculate total metrics across all rows
+        var totalCurrentMetrics = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var totalPreviousMetrics = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var totalDeltaMetrics = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var totalDeltaPercentMetrics = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        if (rows.Count > 0)
+        {
+            var firstRow = rows[0];
+            
+            // Sum all current metrics
+            foreach (var metricKey in firstRow.CurrentMetrics.Keys)
+            {
+                totalCurrentMetrics[metricKey] = rows.Sum(r => r.CurrentMetrics.TryGetValue(metricKey, out var v) ? v : 0m);
+            }
+            
+            // Sum all previous metrics
+            foreach (var metricKey in firstRow.PreviousMetrics.Keys)
+            {
+                totalPreviousMetrics[metricKey] = rows.Sum(r => r.PreviousMetrics.TryGetValue(metricKey, out var v) ? v : 0m);
+            }
+            
+            // Calculate total deltas
+            foreach (var metricKey in firstRow.DeltaMetrics.Keys)
+            {
+                var totalCurrent = totalCurrentMetrics.TryGetValue(metricKey, out var tc) ? tc : 0m;
+                var totalPrevious = totalPreviousMetrics.TryGetValue(metricKey, out var tp) ? tp : 0m;
+                var delta = totalCurrent - totalPrevious;
+                var deltaPercent = totalPrevious == 0m ? 0m : Math.Round((delta / totalPrevious) * 100m, 2, MidpointRounding.AwayFromZero);
+                
+                totalDeltaMetrics[metricKey] = delta;
+                totalDeltaPercentMetrics[metricKey] = deltaPercent;
+            }
+        }
+
         return new ReportComparisonResultDto
         {
             ReportId = reportId,
@@ -147,7 +182,11 @@ public class ReportExecutionService : IReportExecutionService
             CurrentTo = currentRequest.To,
             PreviousFrom = previousRequest.From,
             PreviousTo = previousRequest.To,
-            Rows = rows
+            Rows = rows,
+            TotalCurrentMetrics = totalCurrentMetrics,
+            TotalPreviousMetrics = totalPreviousMetrics,
+            TotalDeltaMetrics = totalDeltaMetrics,
+            TotalDeltaPercentMetrics = totalDeltaPercentMetrics
         };
     }
 
@@ -200,11 +239,23 @@ public class ReportExecutionService : IReportExecutionService
             .OrderBy(r => r.Dimensions.TryGetValue(primaryDimensionKey, out var value) ? value?.ToString() : string.Empty)
             .ToList();
 
+        // Calculate total metrics across all rows
+        var totalMetrics = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (grouped.Count > 0)
+        {
+            var firstRow = grouped[0];
+            foreach (var metricKey in firstRow.Metrics.Keys)
+            {
+                totalMetrics[metricKey] = grouped.Sum(r => r.Metrics.TryGetValue(metricKey, out var v) ? v : 0m);
+            }
+        }
+
         var result = new ReportResultDto
         {
             ReportId = reportId,
             Name = definition.Name,
-            Rows = grouped
+            Rows = grouped,
+            TotalMetrics = totalMetrics
         };
 
         if (persistGenerated)

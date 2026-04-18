@@ -50,6 +50,13 @@ namespace BLL.Services.Implements
 
             var roles = await GetResolvedRolesAsync(user);
             var tokenString = CreateAccessToken(user, roles);
+            Guid? subscriptionPlanId = null;
+
+            if (roles.Any(r => string.Equals(r, "landlord", StringComparison.OrdinalIgnoreCase)))
+            {
+                var landlord = (await _landlordRepository.FindAsync(l => l.LandlordId == user.UserId)).FirstOrDefault();
+                subscriptionPlanId = landlord?.CurrentPlanId;
+            }
 
             return new LoginResponseDto
             {
@@ -57,6 +64,7 @@ namespace BLL.Services.Implements
                 FullName = user.FullName ?? string.Empty,
                 Role = user.Role,
                 Email = user.Email,
+                SubscriptionPlanId = subscriptionPlanId,
                 AccessToken = tokenString,
                 RefreshToken = string.Empty, // Placeholder for actual refresh token logic
                 IsActive = true,

@@ -18,6 +18,7 @@ public sealed class LandlordController : ControllerBase
     private readonly ILandlordSubscriptionService _landlordSubscriptionService;
     private readonly IPaymentService _paymentService;
     private readonly IBookingService _bookingService;
+    private readonly ILandlordWalletService _landlordWalletService;
     private readonly ILandlordPayoutService _landlordPayoutService;
     private readonly IMapper _mapper;
 
@@ -26,6 +27,7 @@ public sealed class LandlordController : ControllerBase
         ILandlordSubscriptionService landlordSubscriptionService,
         IPaymentService paymentService,
         IBookingService bookingService,
+        ILandlordWalletService landlordWalletService,
         ILandlordPayoutService landlordPayoutService,
         IMapper mapper)
     {
@@ -33,6 +35,7 @@ public sealed class LandlordController : ControllerBase
         _landlordSubscriptionService = landlordSubscriptionService;
         _paymentService = paymentService;
         _bookingService = bookingService;
+        _landlordWalletService = landlordWalletService;
         _landlordPayoutService = landlordPayoutService;
         _mapper = mapper;
     }
@@ -294,6 +297,31 @@ public sealed class LandlordController : ControllerBase
 
         var profile = await _landlordService.GetPayoutProfileAsync(landlord.LandlordId);
         return Ok(new ApiResponse<LandlordPayoutProfileDto>(profile!));
+    }
+
+    [HttpGet("wallet")]
+    public async Task<IActionResult> GetWallet()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        var wallet = await _landlordWalletService.GetOrCreateAsync(landlord.LandlordId);
+        var dto = new LandlordWalletBalanceDto
+        {
+            PendingBalance = wallet.PendingBalance,
+            AvailableBalance = wallet.AvailableBalance,
+            TotalBalance = wallet.PendingBalance + wallet.AvailableBalance,
+            UpdatedAt = wallet.UpdatedAt
+        };
+
+        return Ok(new ApiResponse<LandlordWalletBalanceDto>(dto));
     }
 
     // [HttpPut("payout-profile")]

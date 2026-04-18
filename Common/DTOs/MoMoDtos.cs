@@ -13,6 +13,7 @@ namespace Common.DTOs
         public string? ExtraData { get; set; }
         public string? PaymentType { get; set; }
         public string? PaymentPurpose { get; set; }
+        public string? RedirectUrl { get; set; }
     }
 
     public class MomoCreatePaymentResponse

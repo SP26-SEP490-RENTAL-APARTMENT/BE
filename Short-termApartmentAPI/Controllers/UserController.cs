@@ -14,11 +14,13 @@ namespace Short_termApartmentAPI.Controllers
     public class UserController : ControllerBase
     {
         private readonly IUserService _userService;
+        private readonly ILandlordService _landlordService;
         private readonly IMapper _mapper;
 
-        public UserController(IUserService userService, IMapper mapper)
+        public UserController(IUserService userService, ILandlordService landlordService, IMapper mapper)
         {
             _userService = userService;
+            _landlordService = landlordService;
             _mapper = mapper;
         }
 
@@ -113,7 +115,10 @@ namespace Short_termApartmentAPI.Controllers
                 return NotFound(new { message = "User not found." });
             }
 
-            return Ok(new { data = _mapper.Map<UserDto>(user) });
+            var landlord = await _landlordService.GetByUserIdAsync(userId);
+            var subscriptionPlanId = landlord?.CurrentPlanId;
+
+            return Ok(new { data = _mapper.Map<UserDto>(user), subscriptionPlanId });
         }
 
         /// <summary>

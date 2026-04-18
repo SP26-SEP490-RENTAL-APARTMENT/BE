@@ -136,7 +136,8 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             OrderInfo = $"Subscription {landlordSubscription.SubscriptionId} for landlord {landlord.LandlordId}",
             ExtraData = landlordSubscription.SubscriptionId.ToString(),
             PaymentType = payment.PaymentType,
-            PaymentPurpose = payment.PaymentPurpose
+            PaymentPurpose = payment.PaymentPurpose,
+            RedirectUrl = "http://localhost:5173/landlord/my-subscriptions"
         };
 
         var momoResult = await _momoService.CreateWalletPaymentAsync(momoRequest, cancellationToken);
