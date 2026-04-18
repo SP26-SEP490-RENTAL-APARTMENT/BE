@@ -9,9 +9,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using MoMoApi;
+using Short_termApartmentAPI.Services;
 using Short_termApartmentAPI.Hubs;
 using Short_termApartmentAPI.Middlewares;
-using Short_termApartmentAPI.Services;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -32,6 +32,7 @@ builder
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSignalR();
 builder.Services.AddHostedService<AdminAnalyticsStreamingService>();
+builder.Services.AddScoped<IMomoWebhookService, MomoWebhookService>();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Rental_Apartment_API", Version = "v1" });

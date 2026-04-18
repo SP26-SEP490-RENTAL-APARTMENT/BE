@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MoMoApi;
 using Short_termApartmentAPI.Controllers;
+using Short_termApartmentAPI.Services;
 
 #pragma warning disable CS8602
 
@@ -567,20 +568,21 @@ public class ControllerBehaviorTests
         ILandlordPayoutService? landlordPayoutService = null)
     {
         return new MomoController(
-            NullLogger<MomoController>.Instance,
-            momoService ?? new MomoServiceStub(),
-            paymentService ?? new PaymentServiceStub(),
-            bookingService ?? new BookingServiceStub(),
-            momoTransactionService ?? new MomoTransactionServiceStub(),
-            landlordSubscriptionService ?? new LandlordSubscriptionServiceStub(),
-            landlordService ?? new LandlordServiceStub(),
-            landlordPayoutService ?? new LandlordPayoutServiceStub(),
-            Options.Create(new MomoOptions
-            {
-                PartnerCode = "PARTNER",
-                AccessKey = "ACCESS",
-                SecretKey = "SECRET"
-            }));
+            new MomoWebhookService(
+                NullLogger<MomoWebhookService>.Instance,
+                momoService ?? new MomoServiceStub(),
+                paymentService ?? new PaymentServiceStub(),
+                bookingService ?? new BookingServiceStub(),
+                momoTransactionService ?? new MomoTransactionServiceStub(),
+                landlordSubscriptionService ?? new LandlordSubscriptionServiceStub(),
+                landlordService ?? new LandlordServiceStub(),
+                landlordPayoutService ?? new LandlordPayoutServiceStub(),
+                Options.Create(new MomoOptions
+                {
+                    PartnerCode = "PARTNER",
+                    AccessKey = "ACCESS",
+                    SecretKey = "SECRET"
+                })));
     }
 
     private static BookingController CreateBookingController(
