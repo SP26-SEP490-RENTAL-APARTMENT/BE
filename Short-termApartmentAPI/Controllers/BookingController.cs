@@ -202,7 +202,7 @@ namespace Short_termApartmentAPI.Controllers
                     OrderInfo = isFullPayment ? $"Booking full payment {booking.BookingId}" : $"Booking deposit {booking.BookingId}",
                     ExtraData = booking.BookingId.ToString(),
                     PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString()
+                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
                 };
 
                 var momoResponse = await _momoService.CreateWalletPaymentAsync(momoRequest);

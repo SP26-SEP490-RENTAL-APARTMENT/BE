@@ -46,39 +46,32 @@ public static class MomoIpnValidator
                 };
             }
 
-            void AddPart(string propertyName)
+            static string GetValueOrEmpty(JsonElement rootElement, string propertyName)
             {
-                if (!root.TryGetProperty(propertyName, out var el))
-                    return;
+                if (!rootElement.TryGetProperty(propertyName, out var el))
+                    return string.Empty;
 
                 var value = GetElementAsString(el);
-                if (!string.IsNullOrEmpty(value))
-                {
-                    parts.Add($"{propertyName}={value}");
-                }
+                return value ?? string.Empty;
             }
 
             // Canonical IPN signature order (per MoMo):
             // accessKey, amount, extraData, message, orderId, orderInfo, orderType,
             // partnerCode, payType, requestId, responseTime, resultCode, transId
 
-            if (!string.IsNullOrEmpty(accessKey))
-            {
-                parts.Add($"accessKey={accessKey}");
-            }
-
-            AddPart("amount");
-            AddPart("extraData");
-            AddPart("message");
-            AddPart("orderId");
-            AddPart("orderInfo");
-            AddPart("orderType");
-            AddPart("partnerCode");
-            AddPart("payType");
-            AddPart("requestId");
-            AddPart("responseTime");
-            AddPart("resultCode");
-            AddPart("transId");
+            parts.Add($"accessKey={accessKey ?? string.Empty}");
+            parts.Add($"amount={GetValueOrEmpty(root, "amount")}");
+            parts.Add($"extraData={GetValueOrEmpty(root, "extraData")}");
+            parts.Add($"message={GetValueOrEmpty(root, "message")}");
+            parts.Add($"orderId={GetValueOrEmpty(root, "orderId")}");
+            parts.Add($"orderInfo={GetValueOrEmpty(root, "orderInfo")}");
+            parts.Add($"orderType={GetValueOrEmpty(root, "orderType")}");
+            parts.Add($"partnerCode={GetValueOrEmpty(root, "partnerCode")}");
+            parts.Add($"payType={GetValueOrEmpty(root, "payType")}");
+            parts.Add($"requestId={GetValueOrEmpty(root, "requestId")}");
+            parts.Add($"responseTime={GetValueOrEmpty(root, "responseTime")}");
+            parts.Add($"resultCode={GetValueOrEmpty(root, "resultCode")}");
+            parts.Add($"transId={GetValueOrEmpty(root, "transId")}");
 
             return string.Join("&", parts);
         }
@@ -133,31 +126,30 @@ public static class MomoIpnValidator
             };
         }
 
-        var parts = new List<string> { $"accessKey={accessKey}" };
-
-        void AddPart(string propertyName)
+        static string GetValueOrEmpty(JsonElement rootElement, string propertyName)
         {
-            if (!root.TryGetProperty(propertyName, out var el))
-                return;
+            if (!rootElement.TryGetProperty(propertyName, out var el))
+                return string.Empty;
 
             var value = GetElementAsString(el);
-            if (!string.IsNullOrEmpty(value))
-            {
-                parts.Add($"{propertyName}={value}");
-            }
+            return value ?? string.Empty;
         }
 
-        AddPart("amount");
-        AddPart("extraData");
-        AddPart("message");
-        AddPart("orderId");
-        AddPart("orderInfo");
-        AddPart("orderType");
-        AddPart("partnerCode");
-        AddPart("requestId");
-        AddPart("responseTime");
-        AddPart("resultCode");
-        AddPart("transId");
+        var parts = new List<string>
+        {
+            $"accessKey={accessKey ?? string.Empty}",
+            $"amount={GetValueOrEmpty(root, "amount")}",
+            $"extraData={GetValueOrEmpty(root, "extraData")}",
+            $"message={GetValueOrEmpty(root, "message")}",
+            $"orderId={GetValueOrEmpty(root, "orderId")}",
+            $"orderInfo={GetValueOrEmpty(root, "orderInfo")}",
+            $"orderType={GetValueOrEmpty(root, "orderType")}",
+            $"partnerCode={GetValueOrEmpty(root, "partnerCode")}",
+            $"requestId={GetValueOrEmpty(root, "requestId")}",
+            $"responseTime={GetValueOrEmpty(root, "responseTime")}",
+            $"resultCode={GetValueOrEmpty(root, "resultCode")}",
+            $"transId={GetValueOrEmpty(root, "transId")}",
+        };
 
         var raw = string.Join("&", parts);
 

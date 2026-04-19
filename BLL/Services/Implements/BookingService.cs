@@ -753,10 +753,22 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var tenant = await _tenantRepository.GetByIdAsync(booking.TenantId);
         var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
-        if (tenant == null || tenantUser == null || string.IsNullOrWhiteSpace(tenant.PassportId) || string.IsNullOrWhiteSpace(tenantUser.Nationality))
-            throw new InvalidOperationException("Tenant passport and nationality are required before residence reporting.");
+        if (tenant == null || tenantUser == null || string.IsNullOrWhiteSpace(tenantUser.Nationality))
+            throw new InvalidOperationException("Tenant nationality is required before residence reporting.");
+
+        var isVietnamese = string.Equals(tenantUser.Nationality.Trim(), "VN", StringComparison.OrdinalIgnoreCase);
+        if (isVietnamese && string.IsNullOrWhiteSpace(tenantUser.NationalIdCardNumber))
+            throw new InvalidOperationException("Tenant national ID card number is required for Vietnamese nationality.");
+
+        if (!isVietnamese && string.IsNullOrWhiteSpace(tenant.PassportId))
+            throw new InvalidOperationException("Tenant passport is required for non-Vietnamese nationality.");
+
+        var tenantIdentityDocumentNumber = isVietnamese
+            ? tenantUser.NationalIdCardNumber!
+            : tenant.PassportId!;
 
         var existingReport = (await _temporaryResidenceReportRepository.FindAsync(r => r.BookingId == bookingId)).FirstOrDefault();
+        
         if (existingReport != null)
             throw new InvalidOperationException("Residence report has already been submitted for this booking.");
 
@@ -765,7 +777,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ReportId = Guid.NewGuid(),
             BookingId = bookingId,
             LandlordId = landlordUserId,
-            TenantPassportId = tenant.PassportId!,
+            TenantPassportId = tenantIdentityDocumentNumber,
             TenantNationality = tenantUser.Nationality!,
             CheckInDate = booking.CheckInDate,
             ReportedToPolice = dto.ReportedToPolice,

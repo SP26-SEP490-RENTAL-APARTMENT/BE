@@ -25,6 +25,17 @@ namespace Short_termApartmentAPI.Controllers
             return await _momoWebhookService.HandleIpnAsync(HttpContext, body);
         }
 
+        [HttpPost("booking/reconcile")]
+        public async Task<IActionResult> ReconcileBookingPayment([FromBody] ReconcileBookingPaymentRequestDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            return await _momoWebhookService.ReconcileBookingPaymentAsync(dto);
+        }
+
         [HttpPost("subscription/reconcile")]
         public async Task<IActionResult> ReconcileSubscriptionPayment([FromBody] ReconcileLandlordSubscriptionPaymentRequestDto dto)
         {

@@ -130,33 +130,50 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
-        [HttpPost("request-password-reset")]
-        public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetRequestDto request)
+        // [HttpPost("request-password-reset")]
+        // public async Task<IActionResult> RequestPasswordReset([FromBody] PasswordResetRequestDto request)
+        // {
+        //     if (!ModelState.IsValid)
+        //     {
+        //         return BadRequest(ModelState);
+        //     }
+        //     var result = await _authService.RequestPasswordResetAsync(request);
+
+        //     // We return Ok even if the email doesn't exist to prevent email enumeration
+        //     return Ok(new ResponseDTO { Success = true, Message = "If the email is registered, a password reset link has been sent." });
+        // }
+
+        [HttpPost("request-verification")]
+        public async Task<IActionResult> RequestVerification([FromBody] RequestVerificationDto request)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
-            var result = await _authService.RequestPasswordResetAsync(request);
 
-            // We return Ok even if the email doesn't exist to prevent email enumeration
-            return Ok(new ResponseDTO { Success = true, Message = "If the email is registered, a password reset link has been sent." });
+            var result = await _authService.RequestVerificationAsync(request);
+            if (!result.Success)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, result);
+            }
+
+            return Ok(result);
         }
 
         [HttpPost("reset-password")]
-        public async Task<IActionResult> ResetPassword([FromQuery] string token, [FromBody] PasswordResetDto request)
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordWithVerificationDto request)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return BadRequest(new ResponseDTO { Success = false, Message = "Token is required." });
-            }
+            var result = await _authService.ResetPasswordAsync(request);
 
-            var result = await _authService.ResetPasswordAsync(token, request);
+            if (!result.Success && (result.Message?.Contains("Too many", StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, result);
+            }
 
             if (!result.Success)
             {
@@ -165,6 +182,29 @@ namespace Short_termApartmentAPI.Controllers
 
             return Ok(result);
         }
+
+        // [HttpPost("reset-password-by-token")]
+        // public async Task<IActionResult> ResetPasswordByToken([FromQuery] string token, [FromBody] ResetPasswordByTokenDto request)
+        // {
+        //     if (!ModelState.IsValid)
+        //     {
+        //         return BadRequest(ModelState);
+        //     }
+
+        //     if (string.IsNullOrWhiteSpace(token))
+        //     {
+        //         return BadRequest(new ResponseDTO { Success = false, Message = "Token is required." });
+        //     }
+
+        //     var result = await _authService.ResetPasswordByTokenAsync(token, request);
+
+        //     if (!result.Success)
+        //     {
+        //         return BadRequest(result);
+        //     }
+
+        //     return Ok(result);
+        // }
 
         [HttpPost("change-password")]
         public async Task<IActionResult> ChangePassword([FromBody] PasswordResetDto request)
