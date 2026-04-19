@@ -73,7 +73,7 @@ Controller: Short-termApartmentAPI/Controllers/IdentityVerificationController.cs
 - Expected: 200 and pending verification message
 
 2. Retrieve tenant documents.
-- Endpoint: GET /api/identity/documents
+- Endpoint: GET /api/identity/my-documents
 - Auth: tenant
 - Expected: 200 with uploaded document
 

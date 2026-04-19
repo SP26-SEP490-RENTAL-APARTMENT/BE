@@ -4,6 +4,7 @@ using Common.DTOs;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Short_termApartmentAPI.Middlewares;
 using System.Security.Claims;
 
 namespace Short_termApartmentAPI.Controllers
@@ -16,13 +17,20 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IPropertyInspectionService _propertyInspectionService;
         private readonly IApartmentService _apartmentService;
         private readonly IUserService _userService;
+        private readonly IIdentityVerificationService _identityVerificationService;
         private readonly IMapper _mapper;
 
-        public PropertyInspectionController(IPropertyInspectionService propertyInspectionService, IApartmentService apartmentService, IUserService userService, IMapper mapper)
+        public PropertyInspectionController(
+            IPropertyInspectionService propertyInspectionService,
+            IApartmentService apartmentService,
+            IUserService userService,
+            IIdentityVerificationService identityVerificationService,
+            IMapper mapper)
         {
             _propertyInspectionService = propertyInspectionService;
             _apartmentService = apartmentService;
             _userService = userService;
+            _identityVerificationService = identityVerificationService;
             _mapper = mapper;
         }
 
@@ -124,6 +132,19 @@ namespace Short_termApartmentAPI.Controllers
             if (apartment.Status != "pending_review")
             {
                 return BadRequest("Apartment must be in 'pending_review' status to schedule an inspection.");
+            }
+
+            try
+            {
+                await _identityVerificationService.EnsureUserVerifiedForInspectionAsync(apartment.LandlordId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
             }
 
             var propertyInspection = _mapper.Map<PropertyInspection>(propertyInspectionDto);

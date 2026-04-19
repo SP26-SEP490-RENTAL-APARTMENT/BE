@@ -36,6 +36,7 @@ namespace BLL.Services.Implements
 
         private readonly IRepository<User> _userRepository;
         private readonly IRepository<Tenant> _tenantRepository;
+        private readonly IRepository<Landlord> _landlordRepository;
         private readonly IRepository<UserIdentityDocument> _userIdentityDocumentRepository;
         private readonly INotificationService _notificationService;
         private readonly IIdentityDocumentUploadService _identityDocumentUploadService;
@@ -47,12 +48,14 @@ namespace BLL.Services.Implements
         public IdentityVerificationService(
             IRepository<User> userRepository,
             IRepository<Tenant> tenantRepository,
+            IRepository<Landlord> landlordRepository,
             IRepository<UserIdentityDocument> userIdentityDocumentRepository,
             INotificationService notificationService,
             IIdentityDocumentUploadService identityDocumentUploadService)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
+            _landlordRepository = landlordRepository;
             _userIdentityDocumentRepository = userIdentityDocumentRepository;
             _notificationService = notificationService;
             _identityDocumentUploadService = identityDocumentUploadService;
@@ -128,6 +131,18 @@ namespace BLL.Services.Implements
                 throw new ArgumentException("User not found.");
             }
 
+            Tenant? tenant = null;
+            Landlord? landlord = null;
+            
+            if (string.Equals(user.Role, "tenant", StringComparison.OrdinalIgnoreCase))
+            {
+                tenant = await _tenantRepository.GetByIdAsync(userId);
+            }
+            else if (string.Equals(user.Role, "landlord", StringComparison.OrdinalIgnoreCase))
+            {
+                landlord = await _landlordRepository.GetByIdAsync(userId);
+            }
+
             if (dto.Files == null || dto.Files.Count == 0)
             {
                 throw new ArgumentException("At least one identity document file is required.");
@@ -164,6 +179,19 @@ namespace BLL.Services.Implements
 
             await _userIdentityDocumentRepository.SaveChangesAsync();
 
+            if (tenant != null && !string.Equals(tenant.IdentityVerificationStatus, "verified", StringComparison.OrdinalIgnoreCase))
+            {
+                tenant.IdentityVerificationStatus = "pending";
+                _tenantRepository.Update(tenant);
+                await _tenantRepository.SaveChangesAsync();
+            }
+            else if (landlord != null && !string.Equals(landlord.IdentityVerificationStatus, "verified", StringComparison.OrdinalIgnoreCase))
+            {
+                landlord.IdentityVerificationStatus = "pending";
+                _landlordRepository.Update(landlord);
+                await _landlordRepository.SaveChangesAsync();
+            }
+
             return createdDocumentIds.ToArray();
         }
 
@@ -181,15 +209,43 @@ namespace BLL.Services.Implements
                 throw new ArgumentException("User not found.");
             }
 
+            Tenant? tenant = null;
+            Landlord? landlord = null;
+            
+            if (string.Equals(user.Role, "tenant", StringComparison.OrdinalIgnoreCase))
+            {
+                tenant = await _tenantRepository.GetByIdAsync(user.UserId);
+            }
+            else if (string.Equals(user.Role, "landlord", StringComparison.OrdinalIgnoreCase))
+            {
+                landlord = await _landlordRepository.GetByIdAsync(user.UserId);
+            }
+
             if (dto.Approved)
             {
                 document.VerificationStatus = "verified";
                 document.VerifiedAt = Common.Utils.VietnamTime.Now;
                 document.RejectionReason = null;
                 user.IdentityVerified = true;
+
+                if (tenant != null)
+                {
+                    tenant.IdentityVerificationStatus = "verified";
+                    tenant.LastVerifiedAt = Common.Utils.VietnamTime.Now;
+                }
+                else if (landlord != null)
+                {
+                    landlord.IdentityVerificationStatus = "verified";
+                    landlord.LastVerifiedAt = Common.Utils.VietnamTime.Now;
+                }
             }
             else
             {
+                if (string.IsNullOrWhiteSpace(dto.RejectionReason))
+                {
+                    throw new ArgumentException("Rejection reason is required when rejecting an identity document.");
+                }
+
                 document.VerificationStatus = "rejected";
                 document.VerifiedAt = null;
                 document.RejectionReason = dto.RejectionReason;
@@ -201,14 +257,112 @@ namespace BLL.Services.Implements
                     d.VerificationStatus == "verified");
 
                 user.IdentityVerified = otherVerifiedDocuments.Any();
+
+                if (tenant != null)
+                {
+                    tenant.IdentityVerificationStatus = user.IdentityVerified == true ? "verified" : "rejected";
+                    if (user.IdentityVerified != true)
+                    {
+                        tenant.LastVerifiedAt = null;
+                    }
+                }
+                else if (landlord != null)
+                {
+                    landlord.IdentityVerificationStatus = user.IdentityVerified == true ? "verified" : "rejected";
+                    if (user.IdentityVerified != true)
+                    {
+                        landlord.LastVerifiedAt = null;
+                    }
+                }
             }
 
             _userIdentityDocumentRepository.Update(document);
             _userRepository.Update(user);
+            if (tenant != null)
+            {
+                _tenantRepository.Update(tenant);
+            }
+            else if (landlord != null)
+            {
+                _landlordRepository.Update(landlord);
+            }
 
             await _userIdentityDocumentRepository.SaveChangesAsync();
             await _userRepository.SaveChangesAsync();
+            if (tenant != null)
+            {
+                await _tenantRepository.SaveChangesAsync();
+            }
+            else if (landlord != null)
+            {
+                await _landlordRepository.SaveChangesAsync();
+            }
             await CreateReviewNotificationAsync(document.UserId, document.DocumentId, dto.Approved, dto.RejectionReason);
+        }
+
+        public async Task EnsureUserVerifiedForInspectionAsync(Guid landlordId)
+        {
+            var user = await _userRepository.GetByIdAsync(landlordId);
+            if (user == null)
+            {
+                throw new ArgumentException("User not found.");
+            }
+
+            if (!string.Equals(user.Role, "landlord", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var landlord = await _landlordRepository.GetByIdAsync(landlordId);
+            if (landlord == null)
+            {
+                throw new InvalidOperationException("Landlord profile is required.");
+            }
+
+            if (string.IsNullOrWhiteSpace(user.Nationality))
+            {
+                throw new InvalidOperationException("Landlord nationality is required before property inspection.");
+            }
+
+            var isVietnamese = string.Equals(user.Nationality, "VN", StringComparison.OrdinalIgnoreCase);
+
+            var documents = await _userIdentityDocumentRepository.FindAsync(d =>
+                d.UserId == landlordId &&
+                d.VerificationStatus != null &&
+                d.VerificationStatus == "verified");
+
+            bool HasAllowedType(UserIdentityDocument doc, string[] allowedTypes)
+            {
+                return allowedTypes.Any(t => string.Equals(doc.DocumentType, t, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var allowedTypes = isVietnamese ? VietnameseAllowedDocumentTypes : ForeignAllowedDocumentTypes;
+
+            var hasRequiredDocument = documents.Any(d => HasAllowedType(d, allowedTypes));
+
+            if (!hasRequiredDocument)
+            {
+                var message = isVietnamese
+                    ? "Vietnamese landlords must verify identity with a national ID card or other government-issued ID (passport, driver's license, or similar) before property inspection."
+                    : "Foreign landlords must verify identity with a passport or other government-issued ID before property inspection.";
+                throw new InvalidOperationException(message);
+            }
+
+            if (user.IdentityVerified == true &&
+                string.Equals(landlord.IdentityVerificationStatus, "verified", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            user.IdentityVerified = true;
+            landlord.IdentityVerificationStatus = "verified";
+            landlord.LastVerifiedAt = Common.Utils.VietnamTime.Now;
+
+            _userRepository.Update(user);
+            _landlordRepository.Update(landlord);
+
+            await _userRepository.SaveChangesAsync();
+            await _landlordRepository.SaveChangesAsync();
         }
 
         private async Task CreateReviewNotificationAsync(
