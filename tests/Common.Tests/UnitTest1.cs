@@ -1,5 +1,6 @@
 ﻿using Common.Utils;
 using MoMoApi.Services;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -82,21 +83,7 @@ public class MomoIpnValidatorTests
             ["transId"] = 9876543210
         };
 
-        var raw = string.Join("&", new[]
-        {
-            $"accessKey={accessKey}",
-            "amount=125000",
-            "message=Successful.",
-            "orderId=ORD-100",
-            "orderInfo=Payment",
-            "orderType=momo_wallet",
-            "partnerCode=MOMO",
-            "payType=qr",
-            "requestId=REQ-100",
-            "responseTime=1710000000",
-            "resultCode=0",
-            "transId=9876543210"
-        });
+        var raw = BuildCanonicalIpnRaw(accessKey, payload);
 
         payload["signature"] = ComputeHmacSha256Hex(raw, secretKey);
         var body = JsonSerializer.Serialize(payload);
@@ -140,5 +127,38 @@ public class MomoIpnValidatorTests
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static string BuildCanonicalIpnRaw(string accessKey, IReadOnlyDictionary<string, object?> payload)
+    {
+        static string GetValueOrEmpty(IReadOnlyDictionary<string, object?> dictionary, string key)
+        {
+            if (!dictionary.TryGetValue(key, out var value) || value is null)
+                return string.Empty;
+
+            return value switch
+            {
+                string s => s,
+                bool b => b ? "true" : "false",
+                _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
+            };
+        }
+
+        return string.Join("&", new[]
+        {
+            $"accessKey={accessKey}",
+            $"amount={GetValueOrEmpty(payload, "amount")}",
+            $"extraData={GetValueOrEmpty(payload, "extraData")}",
+            $"message={GetValueOrEmpty(payload, "message")}",
+            $"orderId={GetValueOrEmpty(payload, "orderId")}",
+            $"orderInfo={GetValueOrEmpty(payload, "orderInfo")}",
+            $"orderType={GetValueOrEmpty(payload, "orderType")}",
+            $"partnerCode={GetValueOrEmpty(payload, "partnerCode")}",
+            $"payType={GetValueOrEmpty(payload, "payType")}",
+            $"requestId={GetValueOrEmpty(payload, "requestId")}",
+            $"responseTime={GetValueOrEmpty(payload, "responseTime")}",
+            $"resultCode={GetValueOrEmpty(payload, "resultCode")}",
+            $"transId={GetValueOrEmpty(payload, "transId")}",
+        });
     }
 }

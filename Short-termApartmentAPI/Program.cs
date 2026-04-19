@@ -31,6 +31,7 @@ builder
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSignalR();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHostedService<AdminAnalyticsStreamingService>();
 builder.Services.AddScoped<IMomoWebhookService, MomoWebhookService>();
 builder.Services.AddSwaggerGen(c =>

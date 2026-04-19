@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using AutoMapper;
@@ -308,7 +309,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.Ipn();
 
-        Assert.True(result is OkObjectResult);
+        Assert.IsType<NoContentResult>(result);
         Assert.Equal(1, bookingService.MarkDepositPaidCalls);
     }
 
@@ -371,7 +372,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.Ipn();
 
-        Assert.True(result is OkObjectResult);
+        Assert.IsType<NoContentResult>(result);
         Assert.Equal(1, bookingService.MarkDepositPaidCalls);
     }
 
@@ -661,39 +662,62 @@ public class ControllerBehaviorTests
 
     private static string BuildValidMomoIpnPayload(string accessKey, string secretKey, string requestId, string orderId, int resultCode)
     {
-        var raw = string.Join("&", new[]
+        var payload = new Dictionary<string, object?>
         {
-            $"accessKey={accessKey}",
-            "amount=1000",
-            "message=Successful.",
-            $"orderId={orderId}",
-            "orderInfo=Booking deposit",
-            "orderType=momo_wallet",
-            "partnerCode=PARTNER",
-            "payType=qr",
-            $"requestId={requestId}",
-            "responseTime=1710000000",
-            $"resultCode={resultCode}",
-            "transId=TRX-1"
-        });
+            ["amount"] = 1000,
+            ["extraData"] = string.Empty,
+            ["message"] = "Successful.",
+            ["orderId"] = orderId,
+            ["orderInfo"] = "Booking deposit",
+            ["orderType"] = "momo_wallet",
+            ["partnerCode"] = "PARTNER",
+            ["payType"] = "qr",
+            ["requestId"] = requestId,
+            ["responseTime"] = 1710000000,
+            ["resultCode"] = resultCode,
+            ["transId"] = "TRX-1"
+        };
+
+        var raw = BuildCanonicalIpnRaw(accessKey, payload);
 
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey));
         var signature = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
 
-        return JsonSerializer.Serialize(new
+        payload["signature"] = signature;
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static string BuildCanonicalIpnRaw(string accessKey, IReadOnlyDictionary<string, object?> payload)
+    {
+        static string GetValueOrEmpty(IReadOnlyDictionary<string, object?> dictionary, string key)
         {
-            amount = 1000,
-            message = "Successful.",
-            orderId,
-            orderInfo = "Booking deposit",
-            orderType = "momo_wallet",
-            partnerCode = "PARTNER",
-            payType = "qr",
-            requestId,
-            responseTime = 1710000000,
-            resultCode,
-            transId = "TRX-1",
-            signature
+            if (!dictionary.TryGetValue(key, out var value) || value is null)
+                return string.Empty;
+
+            return value switch
+            {
+                string s => s,
+                bool b => b ? "true" : "false",
+                _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
+            };
+        }
+
+        return string.Join("&", new[]
+        {
+            $"accessKey={accessKey}",
+            $"amount={GetValueOrEmpty(payload, "amount")}",
+            $"extraData={GetValueOrEmpty(payload, "extraData")}",
+            $"message={GetValueOrEmpty(payload, "message")}",
+            $"orderId={GetValueOrEmpty(payload, "orderId")}",
+            $"orderInfo={GetValueOrEmpty(payload, "orderInfo")}",
+            $"orderType={GetValueOrEmpty(payload, "orderType")}",
+            $"partnerCode={GetValueOrEmpty(payload, "partnerCode")}",
+            $"payType={GetValueOrEmpty(payload, "payType")}",
+            $"requestId={GetValueOrEmpty(payload, "requestId")}",
+            $"responseTime={GetValueOrEmpty(payload, "responseTime")}",
+            $"resultCode={GetValueOrEmpty(payload, "resultCode")}",
+            $"transId={GetValueOrEmpty(payload, "transId")}",
         });
     }
 }
