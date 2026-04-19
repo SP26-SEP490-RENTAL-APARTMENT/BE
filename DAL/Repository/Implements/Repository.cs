@@ -219,7 +219,50 @@ namespace DAL.Repository.Implements
 
         public virtual void Update(T entity)
         {
+            var entry = _context.Entry(entity);
+
+            if (entry.State != EntityState.Detached)
+            {
+                entry.State = EntityState.Modified;
+                return;
+            }
+
+            var entityType = _context.Model.FindEntityType(typeof(T));
+            var primaryKey = entityType?.FindPrimaryKey();
+
+            if (primaryKey != null)
+            {
+                var trackedEntity = _dbSet.Local.FirstOrDefault(local => HasSamePrimaryKey(local, entity, primaryKey.Properties));
+                if (trackedEntity != null)
+                {
+                    _context.Entry(trackedEntity).CurrentValues.SetValues(entity);
+                    return;
+                }
+            }
+
             _dbSet.Update(entity);
+        }
+
+        private static bool HasSamePrimaryKey(T localEntity, T detachedEntity, IReadOnlyList<Microsoft.EntityFrameworkCore.Metadata.IProperty> keyProperties)
+        {
+            foreach (var keyProperty in keyProperties)
+            {
+                var property = keyProperty.PropertyInfo;
+                if (property == null)
+                {
+                    return false;
+                }
+
+                var localValue = property.GetValue(localEntity);
+                var detachedValue = property.GetValue(detachedEntity);
+
+                if (!Equals(localValue, detachedValue))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         public virtual void Remove(T entity)
