@@ -188,6 +188,26 @@ public class BookingPaymentLinkDto
     public Guid? PaymentId { get; set; }
 }
 
+public class ReconcileBookingPaymentRequestDto
+{
+    [Required]
+    public string? OrderId { get; set; }
+
+    [Required]
+    public string? RequestId { get; set; }
+
+    [Required]
+    public string? ExtraData { get; set; }
+
+    public int ResultCode { get; set; }
+
+    [MaxLength(1024)]
+    public string? Message { get; set; }
+
+    [MaxLength(100)]
+    public string? TransId { get; set; }
+}
+
 public class CreateBookingResponseDto
 {
     public BookingResponseDto Booking { get; set; } = null!;

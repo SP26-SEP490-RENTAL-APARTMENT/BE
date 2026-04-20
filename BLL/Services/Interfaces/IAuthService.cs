@@ -14,8 +14,10 @@ namespace BLL.Services.Interfaces
         Task<AddUserRoleResponseDto?> AddRoleAsync(Guid userId, AddUserRoleRequestDto dto);
         Task<RefreshTokenResponseDto?> RefreshTokenAsync(RefreshTokenRequestDto dto);
         Task<bool> LogoutAsync(RefreshTokenRequestDto dto);
+        Task<ResponseDTO> RequestVerificationAsync(RequestVerificationDto dto);
+        Task<ResponseDTO> ResetPasswordAsync(ResetPasswordWithVerificationDto dto);
         Task<ResponseDTO> RequestPasswordResetAsync(PasswordResetRequestDto dto);
-        Task<ResponseDTO> ResetPasswordAsync(string token, PasswordResetDto dto);
+        Task<ResponseDTO> ResetPasswordByTokenAsync(string token, ResetPasswordByTokenDto dto);
         Task<ResponseDTO> ChangePasswordAsync(Guid userId, PasswordResetDto dto);
     }
 }

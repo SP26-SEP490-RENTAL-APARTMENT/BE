@@ -40,6 +40,13 @@ namespace Common.DTOs
         public required string Email { get; set; }
     }
 
+    public class RequestVerificationDto
+    {
+        [Required]
+        [MinLength(3)]
+        public required string EmailAddress { get; set; }
+    }
+
     public class PasswordResetDto
     {
         [Required]
@@ -52,6 +59,38 @@ namespace Common.DTOs
 
         [Required]
         [MinLength(6)]
+        [Compare("NewPassword", ErrorMessage = "Passwords do not match.")]
+        public required string ConfirmNewPassword { get; set; }
+    }
+
+    public class ResetPasswordByTokenDto
+    {
+        [Required]
+        [MinLength(6)]
+        public required string NewPassword { get; set; }
+
+        [Required]
+        [MinLength(6)]
+        [Compare("NewPassword", ErrorMessage = "Passwords do not match.")]
+        public required string ConfirmNewPassword { get; set; }
+    }
+
+    public class ResetPasswordWithVerificationDto
+    {
+        [Required]
+        [MinLength(3)]
+        public required string EmailAddress { get; set; }
+
+        [Required]
+        [MinLength(4)]
+        public required string VerificationCode { get; set; }
+
+        [Required]
+        [MinLength(8)]
+        public required string NewPassword { get; set; }
+
+        [Required]
+        [MinLength(8)]
         [Compare("NewPassword", ErrorMessage = "Passwords do not match.")]
         public required string ConfirmNewPassword { get; set; }
     }

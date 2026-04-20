@@ -10,6 +10,7 @@ namespace BLL.DependencyInjection
         public static IServiceCollection AddConfigurationRegistration(this IServiceCollection services, IConfiguration configuration)
         {
             services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
+            services.Configure<FrontendSettings>(configuration.GetSection("Frontend"));
             services.Configure<CloudinarySettings>(configuration.GetSection("CloudinarySettings"));
             services.Configure<MomoOptions>(configuration.GetSection("Momo"));
             services.Configure<StripeSettings>(configuration.GetSection("Stripe"));

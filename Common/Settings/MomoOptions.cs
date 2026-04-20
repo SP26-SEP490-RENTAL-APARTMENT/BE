@@ -16,4 +16,7 @@ public class MomoOptions
     public string StoreId { get; set; } = string.Empty;
     public string PublicKey { get; set; } = string.Empty;
     public long? OrderGroupId { get; set; }
+
+    public int PaymentStatusQueryAfterSeconds { get; set; } = 30;
+    public double PaymentStatusRetryDelayMinutes { get; set; } = 0.5;
 }

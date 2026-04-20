@@ -4,8 +4,10 @@ using Common.Settings;
 using Common.Utils;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using System.Collections.Concurrent;
 using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
@@ -22,20 +24,36 @@ namespace BLL.Services.Implements
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<Landlord> _landlordRepository;
         private readonly JwtSettings _jwtSettings;
+        private readonly FrontendSettings _frontendSettings;
         private readonly EmailService _emailService;
+        private readonly IHttpContextAccessor _httpContextAccessor;
+
+        private static readonly ConcurrentDictionary<string, List<DateTime>> VerificationRequestAttempts = new();
+        private static readonly ConcurrentDictionary<string, List<DateTime>> VerificationResetAttempts = new();
+        private const int VerificationCodeLength = 6;
+        private const int VerificationCodeExpiryMinutes = 10;
+        private const int RequestVerificationMaxAttempts = 3;
+        private const int RequestVerificationWindowMinutes = 15;
+        private const int ResetPasswordMaxAttempts = 5;
+        private const int ResetPasswordWindowMinutes = 15;
+        private const string GenericInvalidVerificationMessage = "The verification code provided is invalid. Please try again or request a new code.";
 
         public AuthService(
             IUserRepository userRepository, 
             IRepository<Tenant> tenantRepository, 
             IRepository<Landlord> landlordRepository,
-            IOptions<JwtSettings> jwtSettings, 
-            EmailService emailService)
+            IOptions<JwtSettings> jwtSettings,
+            IOptions<FrontendSettings> frontendSettings,
+            EmailService emailService,
+            IHttpContextAccessor httpContextAccessor)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _landlordRepository = landlordRepository;
             _jwtSettings = jwtSettings.Value;
+            _frontendSettings = frontendSettings.Value;
             _emailService = emailService;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto dto)
@@ -152,6 +170,60 @@ namespace BLL.Services.Implements
                           .TrimEnd('='); // Remove padding '=' characters for cleaner URLs
         }
 
+        private string GenerateVerificationCode()
+        {
+            var code = RandomNumberGenerator.GetInt32(0, 1000000);
+            return code.ToString($"D{VerificationCodeLength}");
+        }
+
+        private static bool IsEmailIdentifier(string identifier)
+        {
+            return identifier.Contains('@', StringComparison.Ordinal);
+        }
+
+        private static string NormalizeIdentifier(string identifier)
+        {
+            return identifier.Trim();
+        }
+
+        private string GetClientIpAddress()
+        {
+            return _httpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown-ip";
+        }
+
+        private static bool IsStrongPassword(string password)
+        {
+            if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            {
+                return false;
+            }
+
+            var hasUpper = password.Any(char.IsUpper);
+            var hasLower = password.Any(char.IsLower);
+            var hasDigit = password.Any(char.IsDigit);
+
+            return hasUpper && hasLower && hasDigit;
+        }
+
+        private static bool IsRateLimited(ConcurrentDictionary<string, List<DateTime>> bucket, string key, int maxAttempts, int windowMinutes)
+        {
+            var now = VietnamTime.Now;
+            var windowStart = now.AddMinutes(-windowMinutes);
+
+            var attempts = bucket.GetOrAdd(key, _ => new List<DateTime>());
+            lock (attempts)
+            {
+                attempts.RemoveAll(ts => ts < windowStart);
+                if (attempts.Count >= maxAttempts)
+                {
+                    return true;
+                }
+
+                attempts.Add(now);
+                return false;
+            }
+        }
+
         public Task<RefreshTokenResponseDto?> RefreshTokenAsync(RefreshTokenRequestDto dto)
         {
             throw new NotImplementedException();
@@ -255,6 +327,107 @@ namespace BLL.Services.Implements
                 || string.Equals(role, "landlord", StringComparison.OrdinalIgnoreCase);
         }
 
+        public async Task<ResponseDTO> RequestVerificationAsync(RequestVerificationDto dto)
+        {
+            var identifier = NormalizeIdentifier(dto.EmailAddress);
+            var ipAddress = GetClientIpAddress();
+            var throttleKey = $"request:{identifier.ToLowerInvariant()}:{ipAddress}";
+
+            if (IsRateLimited(VerificationRequestAttempts, throttleKey, RequestVerificationMaxAttempts, RequestVerificationWindowMinutes))
+            {
+                return new ResponseDTO
+                {
+                    Success = false,
+                    Message = "Too many verification requests. Please try again later."
+                };
+            }
+
+            var users = IsEmailIdentifier(identifier)
+                ? await _userRepository.FindAsync(u => u.Email == identifier)
+                : await _userRepository.FindAsync(u => u.Phone == identifier);
+
+            var user = users.FirstOrDefault();
+            if (user == null)
+            {
+                return new ResponseDTO
+                {
+                    Success = true,
+                    Message = "A code has been sent to your device if the account exists."
+                };
+            }
+
+            var verificationCode = GenerateVerificationCode();
+            user.Token = verificationCode;
+            user.TokenExpired = VietnamTime.Now.AddMinutes(VerificationCodeExpiryMinutes);
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            if (!string.IsNullOrWhiteSpace(user.Email))
+            {
+                var body = $"Your verification code is <b>{verificationCode}</b>. It expires in {VerificationCodeExpiryMinutes} minutes.";
+                await _emailService.SendEmailAsync(user.Email, "Password Reset Verification Code", body);
+            }
+            
+
+            return new ResponseDTO
+            {
+                Success = true,
+                Message = "A code has been sent to your device."
+            };
+        }
+
+        public async Task<ResponseDTO> ResetPasswordAsync(ResetPasswordWithVerificationDto dto)
+        {
+            var identifier = NormalizeIdentifier(dto.EmailAddress);
+            var ipAddress = GetClientIpAddress();
+            var throttleKey = $"reset:{identifier.ToLowerInvariant()}:{ipAddress}";
+
+            if (IsRateLimited(VerificationResetAttempts, throttleKey, ResetPasswordMaxAttempts, ResetPasswordWindowMinutes))
+            {
+                return new ResponseDTO
+                {
+                    Success = false,
+                    Message = "Too many reset attempts. Please try again later."
+                };
+            }
+
+            var users = IsEmailIdentifier(identifier)
+                ? await _userRepository.FindAsync(u => u.Email == identifier)
+                : await _userRepository.FindAsync(u => u.Phone == identifier);
+
+            var user = users.FirstOrDefault();
+            if (user == null)
+            {
+                return new ResponseDTO { Success = false, Message = GenericInvalidVerificationMessage };
+            }
+
+            if (string.IsNullOrWhiteSpace(user.Token)
+                || user.TokenExpired == null
+                || user.TokenExpired < VietnamTime.Now
+                || !string.Equals(user.Token, dto.VerificationCode?.Trim(), StringComparison.Ordinal))
+            {
+                return new ResponseDTO { Success = false, Message = GenericInvalidVerificationMessage };
+            }
+
+            if (dto.NewPassword != dto.ConfirmNewPassword || !IsStrongPassword(dto.NewPassword))
+            {
+                return new ResponseDTO
+                {
+                    Success = false,
+                    Message = "Password must be at least 8 characters and include uppercase, lowercase, and a number."
+                };
+            }
+
+            user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
+            user.Token = null;
+            user.TokenExpired = null;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            return new ResponseDTO { Success = true, Message = "Password reset successful." };
+        }
+
         public async Task<ResponseDTO> RequestPasswordResetAsync(PasswordResetRequestDto dto)
         {
             var userList = await _userRepository.FindAsync(u => u.Email == dto.Email);
@@ -266,20 +439,26 @@ namespace BLL.Services.Implements
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
 
-            var resetLink = $"https://doigiumcaiurlnha.com/reset-password?token={user.Token}";
+            var baseResetUrl = _frontendSettings.ResetPasswordPageUrl;
+            if (string.IsNullOrWhiteSpace(baseResetUrl))
+            {
+                baseResetUrl = "https://aspdeo123.runasp.net/reset-password";
+            }
+
+            var resetLink = $"{baseResetUrl.TrimEnd('/')}?token={Uri.EscapeDataString(user.Token)}";
             var body = $"Please reset your password by clicking here: <a href='{resetLink}'>Reset Password</a>";
             await _emailService.SendEmailAsync(user.Email, "Password Reset Request", body);
 
             return new ResponseDTO { Success = true, Message = "Password reset request successful." };
         }
 
-        public async Task<ResponseDTO> ResetPasswordAsync(string token, PasswordResetDto dto)
+        public async Task<ResponseDTO> ResetPasswordByTokenAsync(string token, ResetPasswordByTokenDto dto)
         {
             var userList = await _userRepository.FindAsync(u => u.Token == token);
             var user = userList.FirstOrDefault();
 
             if (user == null || user.TokenExpired == null || user.TokenExpired < Common.Utils.VietnamTime.Now)
-                return new ResponseDTO { Success = false, Message = "Invalid or expired token." };
+                return new ResponseDTO { Success = false, Message = GenericInvalidVerificationMessage };
 
             if (dto.NewPassword != dto.ConfirmNewPassword)
                 return new ResponseDTO { Success = false, Message = "New passwords do not match." };
