@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Globalization;
 using DAL.Data;
 using DAL.Repository.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -80,33 +81,15 @@ namespace DAL.Repository.Implements
                                 );
                                 equals = Expression.Equal(propertyToLower, filterValue);
                             }
-                            else if (property.PropertyType.IsEnum)
-                            {
-                                var enumValue = Enum.Parse(
-                                    property.PropertyType,
-                                    filter.Value,
-                                    true
-                                );
-                                var filterValue = Expression.Constant(enumValue);
-                                equals = Expression.Equal(propertyAccess, filterValue);
-                            }
-                            else if (
-                                property.PropertyType == typeof(Guid)
-                                || property.PropertyType == typeof(Guid?)
-                            )
-                            {
-                                var guidValue = Guid.Parse(filter.Value);
-                                var filterValue = Expression.Constant(
-                                    guidValue,
-                                    property.PropertyType
-                                );
-                                equals = Expression.Equal(propertyAccess, filterValue);
-                            }
                             else
                             {
-                                var filterValue = Expression.Constant(
-                                    Convert.ChangeType(filter.Value, property.PropertyType)
-                                );
+                                if (!TryConvertFilterValue(property.PropertyType, filter.Value, out var convertedValue))
+                                {
+                                    // Ignore invalid filter values instead of failing the entire request.
+                                    continue;
+                                }
+
+                                var filterValue = Expression.Constant(convertedValue, property.PropertyType);
                                 equals = Expression.Equal(propertyAccess, filterValue);
                             }
                             var lambda = Expression.Lambda<Func<T, bool>>(equals, parameter);
@@ -116,6 +99,98 @@ namespace DAL.Repository.Implements
                 }
             }
             return query;
+        }
+
+        private static bool TryConvertFilterValue(Type propertyType, string rawValue, out object? convertedValue)
+        {
+            convertedValue = null;
+
+            var isNullable = Nullable.GetUnderlyingType(propertyType) != null;
+            var targetType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+
+            if (string.Equals(rawValue, "null", StringComparison.OrdinalIgnoreCase))
+            {
+                if (isNullable || !propertyType.IsValueType)
+                {
+                    convertedValue = null;
+                    return true;
+                }
+
+                return false;
+            }
+
+            object? parsedValue;
+
+            if (targetType == typeof(Guid))
+            {
+                if (!Guid.TryParse(rawValue, out var guidValue))
+                    return false;
+
+                parsedValue = guidValue;
+            }
+            else if (targetType.IsEnum)
+            {
+                if (!Enum.TryParse(targetType, rawValue, true, out var enumValue))
+                    return false;
+
+                parsedValue = enumValue;
+            }
+            else if (targetType == typeof(DateOnly))
+            {
+                if (!DateOnly.TryParse(rawValue, out var dateOnlyValue))
+                    return false;
+
+                parsedValue = dateOnlyValue;
+            }
+            else if (targetType == typeof(DateTime))
+            {
+                if (!DateTime.TryParse(rawValue, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.RoundtripKind, out var dateTimeValue)
+                    && !DateTime.TryParse(rawValue, out dateTimeValue))
+                {
+                    return false;
+                }
+
+                parsedValue = dateTimeValue;
+            }
+            else if (targetType == typeof(bool))
+            {
+                if (bool.TryParse(rawValue, out var boolValue))
+                {
+                    parsedValue = boolValue;
+                }
+                else if (rawValue == "1")
+                {
+                    parsedValue = true;
+                }
+                else if (rawValue == "0")
+                {
+                    parsedValue = false;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                try
+                {
+                    parsedValue = Convert.ChangeType(rawValue, targetType, CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            if (isNullable)
+            {
+                convertedValue = Activator.CreateInstance(propertyType, parsedValue!);
+                return true;
+            }
+
+            convertedValue = parsedValue;
+            return true;
         }
 
         protected IQueryable<T> ApplySearch(

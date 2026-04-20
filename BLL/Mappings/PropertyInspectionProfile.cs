@@ -10,6 +10,7 @@ public class PropertyInspectionProfile : Profile
     {
         CreateMap<InspectionPhoto, InspectionPhotoResponseDto>();
         CreateMap<PropertyInspection, PropertyInspectionResponseDto>()
+            .ForMember(dest => dest.ApartmentName, opt => opt.MapFrom(src => src.Apartment != null ? src.Apartment.Title : null))
             .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.InspectionPhotos));
         CreateMap<PropertyInspectionRequestDto, PropertyInspection>()
             .ForMember(dest => dest.InspectionId, opt => opt.Ignore());

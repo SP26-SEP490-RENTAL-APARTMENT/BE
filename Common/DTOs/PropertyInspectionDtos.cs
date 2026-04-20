@@ -76,6 +76,7 @@ namespace Common.DTOs
     {
         public Guid InspectionId { get; set; }
         public Guid ApartmentId { get; set; }
+        public string? ApartmentName { get; set; }
         public Guid InspectorId { get; set; }
         public DateOnly? ScheduledDate { get; set; }
         public DateOnly? CompletedDate { get; set; }

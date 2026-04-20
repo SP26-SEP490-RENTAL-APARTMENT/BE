@@ -7,7 +7,7 @@ using Stripe.Forwarding;
 namespace BLL.Services.Implements;
 
 public sealed class PropertyInspectionService(
-    IRepository<PropertyInspection> repository,
+    IPropertyInspectionRepository repository,
     IRepository<InspectionPhoto> inspectionPhotoRepository,
     IImageService imageService)
     : BaseService<PropertyInspection>(repository), IPropertyInspectionService
@@ -37,7 +37,7 @@ public sealed class PropertyInspectionService(
         Dictionary<string, string>? filters = null,
         IEnumerable<string>? allowedColumns = null)
     {
-        var (items, totalCount) = await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, InspectionAllowedColumns);
+        var (items, totalCount) = await _repository.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, InspectionAllowedColumns);
         var inspectionList = items.ToList();
 
         if (!inspectionList.Any())
