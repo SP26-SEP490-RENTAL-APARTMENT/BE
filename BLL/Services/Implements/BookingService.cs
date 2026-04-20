@@ -562,7 +562,31 @@ public class BookingService : BaseService<Booking>, IBookingService
                 throw new ArgumentException("Booking not found.");
 
             if (booking.DepositPaid == true)
+            {
+                var currentPaymentMode = GetBookingPaymentMode(booking);
+                var shouldSetPaid = currentPaymentMode == BookingPaymentMode.full
+                    && !string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase);
+                var shouldSetConfirmed = currentPaymentMode == BookingPaymentMode.partial
+                    && (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(booking.Status, "negotiating", StringComparison.OrdinalIgnoreCase));
+
+                if (shouldSetPaid)
+                {
+                    booking.Status = "paid";
+                    _bookingRepository.Update(booking);
+                    await _bookingRepository.SaveChangesAsync();
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+                }
+                else if (shouldSetConfirmed)
+                {
+                    booking.Status = "confirmed";
+                    _bookingRepository.Update(booking);
+                    await _bookingRepository.SaveChangesAsync();
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+                }
+
                 return booking;
+            }
 
             await _identityVerificationService.EnsureUserVerifiedForBookingAsync(booking.TenantId);
 

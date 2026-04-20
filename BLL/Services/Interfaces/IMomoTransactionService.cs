@@ -6,5 +6,7 @@ namespace BLL.Services.Interfaces
     {
         Task<MomoTransaction?> FindByRequestIdAsync(string requestId);
         Task<MomoTransaction?> FindByRequestBodyContainsAsync(string content);
+        Task<IReadOnlyList<MomoTransaction>> GetPendingIpnQueueItemsAsync(int take, DateTime retryReadyAtOrBefore);
+        Task<IReadOnlyList<MomoTransaction>> GetPendingWalletPaymentRequestsAsync(int take, DateTime createdBefore);
     }
 }

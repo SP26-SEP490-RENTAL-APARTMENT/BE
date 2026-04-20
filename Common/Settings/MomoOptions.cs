@@ -18,5 +18,5 @@ public class MomoOptions
     public long? OrderGroupId { get; set; }
 
     public int PaymentStatusQueryAfterSeconds { get; set; } = 30;
-    public int PaymentStatusRetryDelayMinutes { get; set; } = 5;
+    public double PaymentStatusRetryDelayMinutes { get; set; } = 0.5;
 }

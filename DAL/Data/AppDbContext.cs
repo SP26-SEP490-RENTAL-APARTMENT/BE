@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Common.Utils;
 using DAL.Models;
 using Microsoft.EntityFrameworkCore;
 using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
@@ -1802,7 +1803,7 @@ public partial class AppDbContext : DbContext
 
     private void ApplySoftDeleteInterception()
     {
-        var now = DateTime.UtcNow;
+        var now = VietnamTime.Now;
         foreach (var entry in ChangeTracker.Entries().Where(e => e.State == EntityState.Deleted))
         {
             if (entry.Metadata.FindProperty(SoftDeleteFlagColumn) == null)

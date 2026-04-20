@@ -569,6 +569,7 @@ public class ControllerBehaviorTests
         ILandlordPayoutService? landlordPayoutService = null)
     {
         return new MomoController(
+            momoService ?? new MomoServiceStub(),
             new MomoWebhookService(
                 NullLogger<MomoWebhookService>.Instance,
                 momoService ?? new MomoServiceStub(),

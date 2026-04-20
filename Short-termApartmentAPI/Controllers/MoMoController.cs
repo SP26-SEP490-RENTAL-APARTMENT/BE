@@ -1,4 +1,5 @@
 using Common.DTOs;
+using BLL.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Short_termApartmentAPI.Services;
 
@@ -8,13 +9,16 @@ namespace Short_termApartmentAPI.Controllers
     [Route("api/[controller]")]
     public class MomoController : ControllerBase
     {
+        private readonly IMomoService _momoService;
         private readonly IMomoWebhookService _momoWebhookService;
         private readonly ILogger<MomoController> _logger;
 
         public MomoController(
+            IMomoService momoService,
             IMomoWebhookService momoWebhookService,
             ILogger<MomoController> logger)
         {
+            _momoService = momoService;
             _momoWebhookService = momoWebhookService;
             _logger = logger;
         }
@@ -25,13 +29,6 @@ namespace Short_termApartmentAPI.Controllers
         {
             var body = await ReadAndLogRawRequestAsync("ipn");
             return await _momoWebhookService.HandleIpnAsync(HttpContext, body);
-        }
-
-        [HttpPost("webhook-listener")]
-        public async Task<IActionResult> WebhookListener()
-        {
-            var body = await ReadAndLogRawRequestAsync("webhook-listener");
-            return await _momoWebhookService.HandleWebhookListenerAsync(HttpContext, body);
         }
 
         [HttpPost("booking/reconcile")]
@@ -61,6 +58,34 @@ namespace Short_termApartmentAPI.Controllers
         {
             var body = await ReadAndLogRawRequestAsync("disbursement-ipn");
             return await _momoWebhookService.HandleDisbursementIpnAsync(body);
+        }
+
+        [HttpPost("check-transaction-status")]
+        public async Task<IActionResult> CheckTransactionStatus([FromBody] MomoQueryPaymentRequest request, CancellationToken cancellationToken)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (string.IsNullOrWhiteSpace(request.OrderId))
+            {
+                return BadRequest(new { message = "orderId is required." });
+            }
+
+            _logger.LogInformation(
+                "[MoMo Query] Manual transaction status check requested. orderId={OrderId}, requestId={RequestId}",
+                request.OrderId,
+                request.RequestId);
+
+            var queryResult = await _momoService.QueryPaymentStatusAsync(request, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(queryResult.ResponseRaw))
+            {
+                await _momoWebhookService.ProcessQueriedPaymentAsync(queryResult.ResponseRaw, cancellationToken);
+            }
+
+            return Ok(queryResult);
         }
 
         private async Task<string> ReadAndLogRawRequestAsync(string endpointName)
