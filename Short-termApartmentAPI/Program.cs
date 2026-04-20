@@ -33,6 +33,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHostedService<AdminAnalyticsStreamingService>();
+builder.Services.AddHostedService<MomoIpnQueueWorkerService>();
+builder.Services.AddHostedService<MomoPaymentStatusRecoveryWorkerService>();
 builder.Services.AddScoped<IMomoWebhookService, MomoWebhookService>();
 builder.Services.AddSwaggerGen(c =>
 {

@@ -83,6 +83,38 @@ namespace Common.DTOs
         public string? ResponseRaw { get; set; }
     }
 
+    public class MomoQueryPaymentRequest
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public string? RequestId { get; set; }
+        public string Lang { get; set; } = "vi";
+    }
+
+    public class MomoRefundTransactionDto
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public long Amount { get; set; }
+        public int ResultCode { get; set; }
+        public string TransId { get; set; } = string.Empty;
+        public string CreatedTime { get; set; } = string.Empty;
+    }
+
+    public class MomoQueryPaymentResponse
+    {
+        public string PartnerCode { get; set; } = string.Empty;
+        public string RequestId { get; set; } = string.Empty;
+        public string OrderId { get; set; } = string.Empty;
+        public string ExtraData { get; set; } = string.Empty;
+        public long Amount { get; set; }
+        public string? TransId { get; set; }
+        public string PayType { get; set; } = string.Empty;
+        public int ResultCode { get; set; }
+        public List<MomoRefundTransactionDto> RefundTrans { get; set; } = new();
+        public string Message { get; set; } = string.Empty;
+        public long ResponseTime { get; set; }
+        public string? ResponseRaw { get; set; }
+    }
+
     public class MomoDisbursementIpnDto
     {
         public string PartnerCode { get; set; } = string.Empty;

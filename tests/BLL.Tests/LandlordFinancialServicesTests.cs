@@ -959,6 +959,11 @@ internal sealed class FakeMomoService : IMomoService
         return Task.FromResult(QueryDisbursementResult);
     }
 
+    public Task<MomoQueryPaymentResponse> QueryPaymentStatusAsync(MomoQueryPaymentRequest request, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new MomoQueryPaymentResponse());
+    }
+
     public bool ValidateDisbursementIpnSignature(string requestBody)
     {
         throw new NotImplementedException();
@@ -1059,5 +1064,32 @@ internal sealed class InMemoryMomoTransactionService : IMomoTransactionService
     {
         var result = Items.FirstOrDefault(i => i.RequestBody.Contains(content, StringComparison.Ordinal));
         return Task.FromResult(result);
+    }
+
+    public Task<IReadOnlyList<MomoTransaction>> GetPendingIpnQueueItemsAsync(int take, DateTime retryReadyAtOrBefore)
+    {
+        var items = Items
+            .Where(i => i.Type == "ipn_queue"
+                && (i.Status == "queued" || (i.Status == "retry_wait" && i.UpdatedAt <= retryReadyAtOrBefore)))
+            .OrderBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<MomoTransaction>>(items);
+    }
+
+    public Task<IReadOnlyList<MomoTransaction>> GetPendingWalletPaymentRequestsAsync(int take, DateTime createdBefore)
+    {
+        var items = Items
+            .Where(i => (i.Type == "create_wallet_payment" || i.Type == "create_wallet_payment_subscription")
+                && i.Status == "pending"
+                && i.CreatedAt <= createdBefore)
+            .OrderBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<MomoTransaction>>(items);
     }
 }

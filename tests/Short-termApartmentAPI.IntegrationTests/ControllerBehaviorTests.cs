@@ -129,14 +129,14 @@ public class ControllerBehaviorTests
     }
 
     [Fact]
-    public async Task MomoController_Ipn_ReturnsBadRequest_WhenSignatureIsInvalid()
+    public async Task MomoController_Ipn_ReturnsOk_WhenSignatureIsInvalid()
     {
         var controller = CreateMomoController(momoService: new MomoServiceStub { ValidateDisbursementSignature = false });
         SetRequestBody(controller, "{\"signature\":\"bad\"}");
 
         var result = await controller.Ipn();
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]
@@ -309,7 +309,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.Ipn();
 
-        Assert.IsType<NoContentResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         Assert.Equal(1, bookingService.MarkDepositPaidCalls);
     }
 
@@ -372,7 +372,7 @@ public class ControllerBehaviorTests
 
         var result = await controller.Ipn();
 
-        Assert.IsType<NoContentResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         Assert.Equal(1, bookingService.MarkDepositPaidCalls);
     }
 
@@ -583,7 +583,8 @@ public class ControllerBehaviorTests
                     PartnerCode = "PARTNER",
                     AccessKey = "ACCESS",
                     SecretKey = "SECRET"
-                })));
+                })),
+            NullLogger<MomoController>.Instance);
     }
 
     private static BookingController CreateBookingController(
@@ -935,6 +936,33 @@ internal sealed class MomoTransactionServiceStub : BaseServiceStub<MomoTransacti
         return Task.FromResult(found);
     }
 
+    public Task<IReadOnlyList<MomoTransaction>> GetPendingIpnQueueItemsAsync(int take, DateTime retryReadyAtOrBefore)
+    {
+        var items = ByRequestId.Values
+            .Where(i => i.Type == "ipn_queue"
+                && (i.Status == "queued" || (i.Status == "retry_wait" && i.UpdatedAt <= retryReadyAtOrBefore)))
+            .OrderBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<MomoTransaction>>(items);
+    }
+
+    public Task<IReadOnlyList<MomoTransaction>> GetPendingWalletPaymentRequestsAsync(int take, DateTime createdBefore)
+    {
+        var items = ByRequestId.Values
+            .Where(i => (i.Type == "create_wallet_payment" || i.Type == "create_wallet_payment_subscription")
+                && i.Status == "pending"
+                && i.CreatedAt <= createdBefore)
+            .OrderBy(i => i.CreatedAt)
+            .ThenBy(i => i.Id)
+            .Take(take)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<MomoTransaction>>(items);
+    }
+
     public override Task<MomoTransaction> CreateAsync(MomoTransaction entity)
     {
         Created.Add(entity);
@@ -972,6 +1000,9 @@ internal sealed class MomoServiceStub : IMomoService
 
     public Task<MomoQueryDisbursementResponse> QueryDisbursementStatusAsync(MomoQueryDisbursementRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(new MomoQueryDisbursementResponse());
+
+    public Task<MomoQueryPaymentResponse> QueryPaymentStatusAsync(MomoQueryPaymentRequest request, CancellationToken cancellationToken = default)
+        => Task.FromResult(new MomoQueryPaymentResponse());
 
     public bool ValidateDisbursementIpnSignature(string requestBody) => ValidateDisbursementSignature;
 }
