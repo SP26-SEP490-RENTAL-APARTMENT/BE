@@ -25,7 +25,8 @@ public sealed class PropertyInspectionService(
         "OverallCondition",
         "ApprovedForListing",
         "ApprovedAt",
-        "ApprovedBy"
+        "ApprovedBy",
+        "ApartmentName"
     };
 
     public override async Task<(IEnumerable<PropertyInspection> Items, int TotalCount)> GetAllAsync(
