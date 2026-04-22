@@ -123,7 +123,7 @@ namespace Short_termApartmentAPI.Controllers
             try
             {
                 var created = await _bookingService.CreateWithQuoteAsync(requestDto, userId);
-                var paymentLink = await CreatePaymentLinkIfRequestedAsync(created, requestDto.PaymentProvider);
+                var paymentLink = await CreatePaymentLinkIfRequestedAsync(created, requestDto.PaymentProvider, requestDto.DevicePlatform);
                 var paymentModeText = string.Equals(created.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase)
                     ? "full payment"
                     : "partial payment";
@@ -147,7 +147,7 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
-        private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(Booking booking, string? paymentProvider)
+        private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(Booking booking, string? paymentProvider, string? devicePlatform)
         {
             if (string.IsNullOrWhiteSpace(paymentProvider))
             {
@@ -162,6 +162,7 @@ namespace Short_termApartmentAPI.Controllers
                 var stripeRequest = new StripeCheckoutRequestDto
                 {
                     Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
+                    DevicePlatform = devicePlatform,
                     RelatedEntityId = booking.BookingId,
                     PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
                     PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString()
@@ -187,6 +188,7 @@ namespace Short_termApartmentAPI.Controllers
                 {
                     Provider = "stripe",
                     Url = stripeResponse.Url,
+                    Deeplink = stripeResponse.RedirectPayload.DeepLinkIos ?? stripeResponse.RedirectPayload.DeepLinkAndroid,
                     TransactionId = stripeResponse.SessionId,
                     Status = PaymentStatus.pending.ToString(),
                     PaymentId = payment.PaymentId
@@ -203,6 +205,7 @@ namespace Short_termApartmentAPI.Controllers
                     ExtraData = booking.BookingId.ToString(),
                     PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
                     PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    RedirectUrl = ResolveMomoRedirectUrl(devicePlatform),
                 };
 
                 var momoResponse = await _momoService.CreateWalletPaymentAsync(momoRequest);
@@ -256,6 +259,23 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             return null;
+        }
+
+        private string ResolveMomoRedirectUrl(string? devicePlatform)
+        {
+            if (string.IsNullOrWhiteSpace(devicePlatform))
+            {
+                return _momoOptions.RedirectUrl;
+            }
+
+            return devicePlatform.Trim().ToLowerInvariant() switch
+            {
+                "android" => string.IsNullOrWhiteSpace(_momoOptions.RedirectUrlAndroid)
+                    ? _momoOptions.RedirectUrl
+                    : _momoOptions.RedirectUrlAndroid,
+                "web" => _momoOptions.RedirectUrl,
+                _ => throw new InvalidOperationException("device_platform is invalid. Supported values: ios, android, web.")
+            };
         }
 
         [HttpPost("{id:guid}/residence-report")]

@@ -8,6 +8,7 @@ public class MomoOptions
     public string AccessKey { get; set; } = string.Empty;
     public string SecretKey { get; set; } = string.Empty;
     public string RedirectUrl { get; set; } = string.Empty;
+    public string RedirectUrlAndroid { get; set; } = string.Empty;
     public string IpnUrl { get; set; } = string.Empty;
     public string Endpoint { get; set; } = "https://test-payment.momo.vn";
 

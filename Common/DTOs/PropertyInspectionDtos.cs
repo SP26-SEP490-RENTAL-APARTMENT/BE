@@ -10,7 +10,7 @@ namespace Common.DTOs
         [Required]
         public Guid InspectorId { get; set; }
 
-        public DateOnly? ScheduledDate { get; set; }
+        public DateTime? ScheduledDateTime { get; set; }
 
         [MaxLength(50)]
         public string? Status { get; set; }
@@ -26,9 +26,9 @@ namespace Common.DTOs
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
-            if (ScheduledDate.HasValue && ScheduledDate.Value < today)
+            if (ScheduledDateTime.HasValue && DateOnly.FromDateTime(ScheduledDateTime.Value) < today)
             {
-                yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDate) });
+                yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDateTime) });
             }
 
             // Allowed statuses: pending, scheduled, in_progress, passed, failed, re_inspection_needed
@@ -60,14 +60,14 @@ namespace Common.DTOs
         [Required]
         public Guid InspectorId { get; set; }
 
-        public DateOnly? ScheduledDate { get; set; }
+        public DateTime? ScheduledDateTime { get; set; }
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
-            if (ScheduledDate.HasValue && ScheduledDate.Value < today)
+            if (ScheduledDateTime.HasValue && DateOnly.FromDateTime(ScheduledDateTime.Value) < today)
             {
-                yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDate) });
+                yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDateTime) });
             }
         }
     }
@@ -78,8 +78,8 @@ namespace Common.DTOs
         public Guid ApartmentId { get; set; }
         public string? ApartmentName { get; set; }
         public Guid InspectorId { get; set; }
-        public DateOnly? ScheduledDate { get; set; }
-        public DateOnly? CompletedDate { get; set; }
+        public DateTime? ScheduledDateTime { get; set; }
+        public DateTime? CompletedDateTime { get; set; }
         public string? Status { get; set; }
         public string? OverallCondition { get; set; }
         public string? IssuesFound { get; set; }

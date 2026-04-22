@@ -26,7 +26,7 @@ public class CreateBookingRequestDto : IValidatableObject
     [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
     public int? NoOfAdults { get; set; }
 
-    [Range(0, 3, ErrorMessage = "Number of infants must be between 0 and 3.")]
+    [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
     public int? NoOfInfants { get; set; }
 
     [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
@@ -38,6 +38,9 @@ public class CreateBookingRequestDto : IValidatableObject
 
     [MaxLength(20)]
     public string? PaymentProvider { get; set; }
+
+    [MaxLength(20)]
+    public string? DevicePlatform { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
