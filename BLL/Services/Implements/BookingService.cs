@@ -107,50 +107,86 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
 
-        var penaltyTransactionId = $"occupied_penalty_{bookingId:N}";
-        var existingPenalty = (await _paymentRepository.FindAsync(p => p.TransactionId == penaltyTransactionId)).FirstOrDefault();
-        if (existingPenalty != null)
-        {
-            return new ConfirmOccupiedIncidentPenaltyResponseDto
-            {
-                BookingId = booking.BookingId,
-                TicketId = ticketId,
-                PenaltyAmount = booking.DepositAmount,
-                AlreadyApplied = true,
-                Message = "Penalty was already applied for this occupied incident.",
-                Settlement = new LandlordPenaltyApplicationResultDto
-                {
-                    RequestedAmount = booking.DepositAmount,
-                    DeductedFromAvailable = 0m,
-                    DeductedFromPending = 0m,
-                    DebtRecorded = 0m
-                }
-            };
-        }
-
         var ticket = await ResolveOccupiedIncidentTicketAsync(bookingId, booking.TenantId, ticketId);
         if (ticket == null)
         {
             throw new InvalidOperationException("Occupied incident ticket was not found for this booking.");
         }
 
-        var settlement = await _landlordWalletService.ApplyOccupiedIncidentPenaltyAsync(apartment.LandlordId, booking.DepositAmount);
-
-        var payment = new Payment
+        var now = Common.Utils.VietnamTime.Now;
+        var existingRefund = await HasSuccessfulBookingRefundAsync(bookingId);
+        if (!existingRefund)
         {
-            PaymentId = Guid.NewGuid(),
-            Amount = booking.DepositAmount,
-            PaymentType = Common.Enums.PaymentTypes.refund.ToString(),
-            PaymentPurpose = Common.Enums.PaymentPurposes.other.ToString(),
-            RelatedEntityId = booking.BookingId,
-            RelatedEntityType = Common.Enums.PaymentRelatedEntityType.booking.ToString(),
-            Method = "landlord_wallet_penalty",
-            Status = Common.Enums.PaymentStatus.success.ToString(),
-            TransactionId = penaltyTransactionId,
-            PaidAt = Common.Utils.VietnamTime.Now
-        };
+            await RefundBookingAsync(
+                bookingId,
+                booking.TenantId,
+                new RequestBookingRefundDto
+                {
+                    Reason = "system_cancellation",
+                    Notes = "Refund processed after occupied incident confirmation."
+                });
+        }
 
-        await _paymentRepository.AddAsync(payment);
+        var penaltyTransactionId = $"occupied_penalty_{bookingId:N}";
+        var existingPenalty = (await _paymentRepository.FindAsync(p => p.TransactionId == penaltyTransactionId)).FirstOrDefault();
+        LandlordPenaltyApplicationResultDto settlement;
+        if (existingPenalty != null)
+        {
+            settlement = new LandlordPenaltyApplicationResultDto
+            {
+                RequestedAmount = booking.DepositAmount,
+                DeductedFromAvailable = 0m,
+                DeductedFromPending = 0m,
+                DebtRecorded = 0m
+            };
+        }
+        else
+        {
+            settlement = await _landlordWalletService.ApplyOccupiedIncidentPenaltyAsync(apartment.LandlordId, booking.DepositAmount);
+
+            var payment = new Payment
+            {
+                PaymentId = Guid.NewGuid(),
+                Amount = booking.DepositAmount,
+                PaymentType = Common.Enums.PaymentTypes.refund.ToString(),
+                PaymentPurpose = Common.Enums.PaymentPurposes.other.ToString(),
+                RelatedEntityId = booking.BookingId,
+                RelatedEntityType = Common.Enums.PaymentRelatedEntityType.booking.ToString(),
+                Method = "landlord_wallet_penalty",
+                Status = Common.Enums.PaymentStatus.success.ToString(),
+                TransactionId = penaltyTransactionId,
+                PaidAt = Common.Utils.VietnamTime.Now
+            };
+
+            await _paymentRepository.AddAsync(payment);
+        }
+
+        var existingPendingOffers = (await _bookingOfferRepository.GetPendingOffersByBookingAsync(bookingId, now)).ToList();
+        if (!existingPendingOffers.Any())
+        {
+            try
+            {
+                var alternatives = await FindAlternativeApartmentsAsync(bookingId, 1);
+                var firstAlternative = alternatives.FirstOrDefault();
+
+                if (firstAlternative != null)
+                {
+                    await CreateAlternativeOfferAsync(
+                        bookingId,
+                        firstAlternative.ApartmentId,
+                        confirmedBy,
+                        "room_occupied_after_confirmation");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Keep the occupied-incident confirmation successful even if no offer can be created.
+            }
+            catch (ArgumentException)
+            {
+                // Keep the occupied-incident confirmation successful even if no offer can be created.
+            }
+        }
 
         ticket.Status = "resolved";
         ticket.ResolvedAt = Common.Utils.VietnamTime.Now;
@@ -192,10 +228,21 @@ public class BookingService : BaseService<Booking>, IBookingService
             BookingId = booking.BookingId,
             TicketId = ticket.TicketId,
             PenaltyAmount = booking.DepositAmount,
-            AlreadyApplied = false,
-            Message = "Occupied incident penalty applied successfully.",
+            AlreadyApplied = existingPenalty != null,
+            Message = existingPenalty != null
+                ? "Occupied incident was already settled. Refund and offer handling were verified."
+                : "Occupied incident penalty applied successfully. Refund processed first and an alternative offer was created afterward.",
             Settlement = settlement
         };
+    }
+
+    private async Task<bool> HasSuccessfulBookingRefundAsync(Guid bookingId)
+    {
+        return (await _paymentRepository.FindAsync(payment =>
+            payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+            && payment.RelatedEntityId == bookingId
+            && payment.PaymentType == PaymentTypes.refund.ToString()
+            && payment.Status == PaymentStatus.success.ToString())).Any();
     }
 
     private async Task<SupportTicket?> ResolveOccupiedIncidentTicketAsync(Guid bookingId, Guid tenantId, Guid? ticketId)
