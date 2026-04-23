@@ -14,5 +14,7 @@ public interface IMomoService
 
     Task<MomoQueryDisbursementResponse> QueryDisbursementStatusAsync(MomoQueryDisbursementRequest request, CancellationToken cancellationToken = default);
 
+    Task<MomoRefundPaymentResponse> RefundPaymentAsync(MomoRefundPaymentRequest request, CancellationToken cancellationToken = default);
+
     bool ValidateDisbursementIpnSignature(string requestBody);
 }

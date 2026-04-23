@@ -453,6 +453,8 @@ public class BookingServiceResidenceReportTests
             new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
             new InMemoryRepository<SupportTicket>(s => s.TicketId),
             new InMemoryRepository<Payment>(p => p.PaymentId),
+            new StripeServiceStub(),
+            new FakeMomoService(),
             new NoOpIdentityVerificationService(),
             new RecordingWalletService(),
             new ConfigurationManager(),
@@ -515,6 +517,8 @@ public class BookingServiceResidenceReportTests
             new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
             new InMemoryRepository<SupportTicket>(s => s.TicketId),
             new InMemoryRepository<Payment>(p => p.PaymentId),
+            new StripeServiceStub(),
+            new FakeMomoService(),
             new NoOpIdentityVerificationService(),
             new RecordingWalletService(),
             new ConfigurationManager(),
@@ -622,6 +626,7 @@ internal static class FinancialTestHelpers
         var walletService = new RecordingWalletService();
         var configuration = new ConfigurationManager();
         var mapper = new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper();
+        var momoService = new FakeMomoService();
 
         return new BookingService(
             bookingRepo,
@@ -637,6 +642,8 @@ internal static class FinancialTestHelpers
             availabilityRepo,
             supportTicketRepo,
             paymentRepo,
+            new StripeServiceStub(),
+            momoService,
             identityVerificationService,
             walletService,
             configuration,
@@ -969,6 +976,11 @@ internal sealed class FakeMomoService : IMomoService
         return Task.FromResult(new MomoQueryPaymentResponse());
     }
 
+    public Task<MomoRefundPaymentResponse> RefundPaymentAsync(MomoRefundPaymentRequest request, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new MomoRefundPaymentResponse());
+    }
+
     public bool ValidateDisbursementIpnSignature(string requestBody)
     {
         throw new NotImplementedException();
@@ -989,6 +1001,11 @@ internal sealed class RecordingWalletService : ILandlordWalletService
     }
 
     public Task CreditPendingAsync(Guid landlordId, decimal amount)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task RollbackPendingAsync(Guid landlordId, decimal amount)
     {
         return Task.CompletedTask;
     }
@@ -1020,6 +1037,15 @@ internal sealed class RecordingWalletService : ILandlordWalletService
         RolledBackAmounts.Add(amount);
         return Task.CompletedTask;
     }
+}
+
+internal sealed class StripeServiceStub : IStripeService
+{
+    public Task<StripeCheckoutResponseDto> CreateCheckoutSessionAsync(StripeCheckoutRequestDto request, CancellationToken cancellationToken = default)
+        => Task.FromResult(new StripeCheckoutResponseDto());
+
+    public Task<string> RefundCheckoutSessionAsync(string checkoutSessionId, long amount, CancellationToken cancellationToken = default)
+        => Task.FromResult($"refund_{checkoutSessionId}");
 }
 
 internal sealed class InMemoryMomoTransactionService : IMomoTransactionService

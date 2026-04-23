@@ -113,6 +113,37 @@ public class StripeService : IStripeService
         };
     }
 
+    public async Task<string> RefundCheckoutSessionAsync(string checkoutSessionId, long amount, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(checkoutSessionId))
+        {
+            throw new ArgumentException("Checkout session ID is required.", nameof(checkoutSessionId));
+        }
+
+        if (amount <= 0)
+        {
+            throw new ArgumentException("Refund amount must be greater than zero.", nameof(amount));
+        }
+
+        var sessionService = new SessionService();
+        var session = await sessionService.GetAsync(checkoutSessionId, cancellationToken: cancellationToken);
+        var paymentIntentId = session.PaymentIntentId;
+
+        if (string.IsNullOrWhiteSpace(paymentIntentId))
+        {
+            throw new InvalidOperationException("Stripe payment intent was not found for this checkout session.");
+        }
+
+        var refundService = new RefundService();
+        var refund = await refundService.CreateAsync(new RefundCreateOptions
+        {
+            PaymentIntent = paymentIntentId,
+            Amount = amount
+        }, cancellationToken: cancellationToken);
+
+        return refund.Id;
+    }
+
     private DeviceContext DetectDeviceContext(string? devicePlatform)
     {
         if (string.IsNullOrWhiteSpace(devicePlatform))

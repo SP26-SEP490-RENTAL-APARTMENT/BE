@@ -90,6 +90,30 @@ namespace Common.DTOs
         public string Lang { get; set; } = "vi";
     }
 
+    public class MomoRefundPaymentRequest
+    {
+        public string OrderId { get; set; } = string.Empty;
+        public string RequestId { get; set; } = string.Empty;
+        public long Amount { get; set; }
+        public long TransId { get; set; }
+        public string Lang { get; set; } = "vi";
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class MomoRefundPaymentResponse
+    {
+        public string PartnerCode { get; set; } = string.Empty;
+        public string OrderId { get; set; } = string.Empty;
+        public string RequestId { get; set; } = string.Empty;
+        public string ExtraData { get; set; } = string.Empty;
+        public long Amount { get; set; }
+        public long TransId { get; set; }
+        public int ResultCode { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public long ResponseTime { get; set; }
+        public string? ResponseRaw { get; set; }
+    }
+
     public class MomoRefundTransactionDto
     {
         public string OrderId { get; set; } = string.Empty;

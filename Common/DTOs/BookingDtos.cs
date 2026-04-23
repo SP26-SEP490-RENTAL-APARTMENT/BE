@@ -217,6 +217,41 @@ public class CreateBookingResponseDto
     public BookingPaymentLinkDto? PaymentLink { get; set; }
 }
 
+public class RequestBookingRefundDto : IValidatableObject
+{
+    [Required]
+    [MaxLength(50)]
+    public string Reason { get; set; } = string.Empty;
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        var normalizedReason = Reason.Trim().ToLowerInvariant();
+        var allowedReasons = new[] { "tenant_request", "system_cancellation", "manual_admin" };
+
+        if (string.IsNullOrWhiteSpace(Reason) || !allowedReasons.Contains(normalizedReason))
+        {
+            yield return new ValidationResult(
+                "Reason must be one of: tenant_request, system_cancellation, manual_admin.",
+                new[] { nameof(Reason) });
+        }
+    }
+}
+
+public class BookingRefundResponseDto
+{
+    public Guid BookingId { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public decimal TotalPaidAmount { get; set; }
+    public decimal ProcessingFeeAmount { get; set; }
+    public decimal NetRefundAmount { get; set; }
+    public int RefundedPaymentCount { get; set; }
+    public DateTime ProcessedAt { get; set; }
+    public string Message { get; set; } = string.Empty;
+}
+
 public class BookingQuoteRequestDto : IValidatableObject
 {
     [Required]

@@ -147,6 +147,51 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/refund")]
+        [Authorize(Roles = "tenant,staff,admin")]
+        public async Task<IActionResult> Refund(Guid id, [FromBody] RequestBookingRefundDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+            {
+                return NotFound(new ApiResponse<string>("Booking not found."));
+            }
+
+            if (User.IsInRole("tenant") && booking.TenantId != requesterId)
+            {
+                return Forbid();
+            }
+
+            try
+            {
+                var result = await _bookingService.RefundBookingAsync(id, requesterId, dto);
+                return Ok(new ApiResponse<BookingRefundResponseDto>(result, result.Message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (NotSupportedException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
         private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(Booking booking, string? paymentProvider, string? devicePlatform)
         {
             if (string.IsNullOrWhiteSpace(paymentProvider))

@@ -9,6 +9,7 @@ public interface IBookingService : IBaseService<Booking>
 	Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId);
 	Task<Booking> MarkDepositPaidAsync(Guid bookingId);
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
+	Task<BookingRefundResponseDto> RefundBookingAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto);
 	Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto);
 	Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId);
 	Task<IReadOnlyList<ResidenceReportOccupantDto>> GetOccupantsAsync(Guid bookingId, Guid tenantUserId);

@@ -41,6 +41,8 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<ApartmentAvailability> _apartmentAvailabilityRepository;
     private readonly IRepository<SupportTicket> _supportTicketRepository;
     private readonly IRepository<Payment> _paymentRepository;
+    private readonly IStripeService _stripeService;
+    private readonly IMomoService _momoService;
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
@@ -60,6 +62,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
         IRepository<SupportTicket> supportTicketRepository,
         IRepository<Payment> paymentRepository,
+        IStripeService stripeService,
+        IMomoService momoService,
         IIdentityVerificationService identityVerificationService,
         ILandlordWalletService landlordWalletService,
         IConfiguration configuration,
@@ -79,6 +83,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         _apartmentAvailabilityRepository = apartmentAvailabilityRepository;
         _supportTicketRepository = supportTicketRepository;
         _paymentRepository = paymentRepository;
+        _stripeService = stripeService;
+        _momoService = momoService;
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
@@ -605,27 +611,16 @@ public class BookingService : BaseService<Booking>, IBookingService
             booking.DepositPaid = true;
             if (existingWinner)
             {
-                booking.Status = "cancelled";
-                _bookingRepository.Update(booking);
-                await _bookingRepository.SaveChangesAsync();
-                await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
-
-                if (apartment != null)
-                {
-                    await CreateBookingNotificationAsync(
-                        booking.TenantId,
-                        NotificationType.booking_cancelled.ToString(),
-                        "Booking cancelled",
-                        $"Your booking for apartment '{apartment.Title}' was cancelled because another booking for the same dates was already confirmed.",
-                        booking.BookingId);
-
-                    await CreateBookingNotificationAsync(
-                        apartment.LandlordId,
-                        NotificationType.booking_cancelled.ToString(),
-                        "Overlapping booking cancelled",
-                        $"An overlapping booking for apartment '{apartment.Title}' was cancelled because dates were already confirmed.",
-                        booking.BookingId);
-                }
+                await RefundBookingAsync(
+                    booking.BookingId,
+                    booking.TenantId,
+                    new RequestBookingRefundDto
+                    {
+                        Reason = "system_cancellation",
+                        Notes = apartment != null
+                            ? $"Cancelled because another booking for apartment '{apartment.Title}' was already confirmed."
+                            : "Cancelled because another booking for the same dates was already confirmed."
+                    });
 
                 return booking;
             }
@@ -724,6 +719,262 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return booking;
+    }
+
+    public async Task<BookingRefundResponseDto> RefundBookingAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var normalizedReason = dto.Reason.Trim().ToLowerInvariant();
+        var isSystemCancellation = string.Equals(normalizedReason, "system_cancellation", StringComparison.OrdinalIgnoreCase);
+
+        if (string.Equals(booking.Status, "completed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(booking.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("This booking is no longer eligible for refund.");
+        }
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        var now = Common.Utils.VietnamTime.Now;
+        var hoursUntilCheckIn = (checkTime.ScheduledCheckIn - now).TotalHours;
+
+        if (!isSystemCancellation && hoursUntilCheckIn < 24)
+        {
+            throw new InvalidOperationException("Refunds are only allowed at least 24 hours before check-in.");
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var refundedPayments = (await _paymentRepository.FindAsync(payment =>
+                payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+                && payment.RelatedEntityId == booking.BookingId
+                && payment.Status == PaymentStatus.success.ToString()
+                && payment.PaymentType != PaymentTypes.refund.ToString()))
+            .ToList();
+
+        var existingRefund = (await _paymentRepository.FindAsync(payment =>
+                payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+                && payment.RelatedEntityId == booking.BookingId
+                && payment.PaymentType == PaymentTypes.refund.ToString()
+                && payment.Status == PaymentStatus.success.ToString()))
+            .Any();
+
+        if (existingRefund)
+        {
+            throw new InvalidOperationException("A refund has already been processed for this booking.");
+        }
+
+        var totalPaidAmount = refundedPayments.Sum(payment => payment.Amount);
+        var processingFeeAmount = Math.Round(totalPaidAmount * 0.02m, 2, MidpointRounding.AwayFromZero);
+        var netRefundAmount = Math.Max(0m, totalPaidAmount - processingFeeAmount);
+
+        if (refundedPayments.Count == 0)
+        {
+            booking.Status = "cancelled";
+            _bookingRepository.Update(booking);
+            await _bookingRepository.SaveChangesAsync();
+            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+            return new BookingRefundResponseDto
+            {
+                BookingId = booking.BookingId,
+                Status = booking.Status ?? "cancelled",
+                TotalPaidAmount = 0m,
+                ProcessingFeeAmount = 0m,
+                NetRefundAmount = 0m,
+                RefundedPaymentCount = 0,
+                ProcessedAt = now,
+                Message = "Booking cancelled. No paid amount was found to refund."
+            };
+        }
+
+        var refundAllocations = AllocateRefundAmounts(refundedPayments.Select(payment => payment.Amount).ToList(), netRefundAmount);
+
+        for (var index = 0; index < refundedPayments.Count; index++)
+        {
+            var payment = refundedPayments[index];
+            var refundAmount = refundAllocations[index];
+
+            if (string.Equals(payment.Method, "stripe", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(payment.TransactionId))
+                {
+                    throw new InvalidOperationException($"Stripe payment {payment.PaymentId} is missing a transaction ID.");
+                }
+
+                var refundId = await _stripeService.RefundCheckoutSessionAsync(
+                    payment.TransactionId,
+                    Convert.ToInt64(Math.Round(refundAmount, 0, MidpointRounding.AwayFromZero)));
+
+                var refundPayment = new Payment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    Amount = refundAmount,
+                    PaymentType = PaymentTypes.refund.ToString(),
+                    PaymentPurpose = PaymentPurposes.refund_booking.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    LandlordId = apartment.LandlordId,
+                    LandlordAmount = 0m,
+                    PlatformFee = 0m,
+                    SettlementStatus = "pending",
+                    Method = payment.Method,
+                    Status = PaymentStatus.success.ToString(),
+                    TransactionId = refundId,
+                    PaidAt = now
+                };
+
+                await _paymentRepository.AddAsync(refundPayment);
+            }
+            else if (string.Equals(payment.Method, "momo_wallet", StringComparison.OrdinalIgnoreCase))
+            {
+                var originalTransId = await ResolveMomoPaymentTransIdAsync(payment);
+                var refundRequest = new MomoRefundPaymentRequest
+                {
+                    OrderId = $"RF{booking.BookingId:N}{index + 1}",
+                    RequestId = $"RF{Guid.NewGuid():N}"[..22],
+                    Amount = Convert.ToInt64(Math.Round(refundAmount, 0, MidpointRounding.AwayFromZero)),
+                    TransId = originalTransId,
+                    Lang = "vi",
+                    Description = dto.Notes ?? $"Refund for booking {booking.BookingId}"
+                };
+
+                var refundResult = await _momoService.RefundPaymentAsync(refundRequest);
+                if (refundResult.ResultCode != 0)
+                {
+                    throw new InvalidOperationException($"MoMo refund failed: {refundResult.Message}");
+                }
+
+                var refundPayment = new Payment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    Amount = refundAmount,
+                    PaymentType = PaymentTypes.refund.ToString(),
+                    PaymentPurpose = PaymentPurposes.refund_booking.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    LandlordId = apartment.LandlordId,
+                    LandlordAmount = 0m,
+                    PlatformFee = 0m,
+                    SettlementStatus = "pending",
+                    Method = payment.Method,
+                    Status = PaymentStatus.success.ToString(),
+                    TransactionId = refundResult.TransId.ToString(),
+                    PaidAt = now
+                };
+
+                await _paymentRepository.AddAsync(refundPayment);
+            }
+            else
+            {
+                throw new NotSupportedException($"Refunds for payment method '{payment.Method}' are not supported yet.");
+            }
+
+            payment.Status = PaymentStatus.refunded.ToString();
+            _paymentRepository.Update(payment);
+
+            var landlordShare = Math.Round(payment.Amount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+            await _landlordWalletService.RollbackPendingAsync(apartment.LandlordId, landlordShare);
+        }
+
+        booking.Status = "cancelled";
+        _bookingRepository.Update(booking);
+
+        await _paymentRepository.SaveChangesAsync();
+        await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.booking_cancelled.ToString(),
+            "Booking refunded",
+            $"Your booking refund has been processed. Net amount refunded: {netRefundAmount:0.00}. Processing fee: {processingFeeAmount:0.00}.",
+            booking.BookingId);
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.booking_cancelled.ToString(),
+            "Booking refunded",
+            $"Booking {booking.BookingId} was refunded to the tenant.",
+            booking.BookingId);
+
+        return new BookingRefundResponseDto
+        {
+            BookingId = booking.BookingId,
+            Status = booking.Status ?? "cancelled",
+            TotalPaidAmount = totalPaidAmount,
+            ProcessingFeeAmount = processingFeeAmount,
+            NetRefundAmount = netRefundAmount,
+            RefundedPaymentCount = refundedPayments.Count,
+            ProcessedAt = now,
+            Message = string.IsNullOrWhiteSpace(dto.Notes)
+                ? "Booking refund processed successfully."
+                : $"Booking refund processed successfully. Notes: {dto.Notes}"
+        };
+    }
+
+    private static List<decimal> AllocateRefundAmounts(IReadOnlyList<decimal> paymentAmounts, decimal totalRefundAmount)
+    {
+        if (paymentAmounts.Count == 0)
+        {
+            return new List<decimal>();
+        }
+
+        if (paymentAmounts.Count == 1)
+        {
+            return new List<decimal> { totalRefundAmount };
+        }
+
+        var allocations = new List<decimal>(paymentAmounts.Count);
+        var remainingRefund = totalRefundAmount;
+        var remainingBase = paymentAmounts.Sum();
+
+        for (var index = 0; index < paymentAmounts.Count; index++)
+        {
+            var amount = paymentAmounts[index];
+            var allocation = index == paymentAmounts.Count - 1
+                ? remainingRefund
+                : Math.Round((amount / remainingBase) * totalRefundAmount, 2, MidpointRounding.AwayFromZero);
+
+            allocations.Add(allocation);
+            remainingRefund -= allocation;
+            remainingBase -= amount;
+        }
+
+        return allocations;
+    }
+
+    private async Task<long> ResolveMomoPaymentTransIdAsync(Payment payment)
+    {
+        if (long.TryParse(payment.TransactionId, out var existingTransId) && existingTransId > 0)
+        {
+            return existingTransId;
+        }
+
+        if (string.IsNullOrWhiteSpace(payment.TransactionId))
+        {
+            throw new InvalidOperationException($"MoMo payment {payment.PaymentId} is missing an order ID.");
+        }
+
+        var queryResult = await _momoService.QueryPaymentStatusAsync(new MomoQueryPaymentRequest
+        {
+            OrderId = payment.TransactionId,
+            Lang = "vi"
+        });
+
+        if (queryResult.ResultCode != 0)
+        {
+            throw new InvalidOperationException($"MoMo payment status query failed: {queryResult.Message}");
+        }
+
+        if (!long.TryParse(queryResult.TransId, out var queriedTransId) || queriedTransId <= 0)
+        {
+            throw new InvalidOperationException("MoMo payment transaction ID was not available for refund.");
+        }
+
+        return queriedTransId;
     }
 
     private static BookingPaymentMode GetBookingPaymentMode(Booking booking)
@@ -2563,9 +2814,23 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             if (string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) && booking.BalanceDueDate < today)
             {
-                booking.Status = "cancelled";
-                _bookingRepository.Update(booking);
-                changedBookings.Add(booking);
+                if (booking.DepositPaid == true)
+                {
+                    await RefundBookingAsync(
+                        booking.BookingId,
+                        booking.TenantId,
+                        new RequestBookingRefundDto
+                        {
+                            Reason = "system_cancellation",
+                            Notes = "Booking cancelled due to payment timeout."
+                        });
+                }
+                else
+                {
+                    booking.Status = "cancelled";
+                    _bookingRepository.Update(booking);
+                    changedBookings.Add(booking);
+                }
             }
         }
 

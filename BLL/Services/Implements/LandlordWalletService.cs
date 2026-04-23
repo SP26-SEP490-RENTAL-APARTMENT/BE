@@ -51,6 +51,25 @@ public class LandlordWalletService : ILandlordWalletService
         await _walletRepository.SaveChangesAsync();
     }
 
+    public async Task RollbackPendingAsync(Guid landlordId, decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return;
+        }
+
+        var wallet = await GetOrCreateAsync(landlordId);
+        if (wallet.PendingBalance < amount)
+        {
+            throw new InvalidOperationException("Insufficient pending balance to rollback refund credit.");
+        }
+
+        wallet.PendingBalance -= amount;
+        wallet.UpdatedAt = Common.Utils.VietnamTime.Now;
+        _walletRepository.Update(wallet);
+        await _walletRepository.SaveChangesAsync();
+    }
+
     public async Task DebitAvailableAsync(Guid landlordId, decimal amount)
     {
         if (amount <= 0)

@@ -128,6 +128,91 @@ namespace BLL.Services.Implements
             return response;
         }
 
+        public async Task<MomoRefundPaymentResponse> RefundPaymentAsync(MomoRefundPaymentRequest request, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(request.OrderId))
+            {
+                throw new ArgumentException("orderId is required.", nameof(request.OrderId));
+            }
+
+            if (string.IsNullOrWhiteSpace(request.RequestId))
+            {
+                throw new ArgumentException("requestId is required.", nameof(request.RequestId));
+            }
+
+            if (request.Amount <= 0)
+            {
+                throw new ArgumentException("amount must be greater than zero.", nameof(request.Amount));
+            }
+
+            if (request.TransId <= 0)
+            {
+                throw new ArgumentException("transId must be greater than zero.", nameof(request.TransId));
+            }
+
+            var amountString = request.Amount.ToString();
+            var transIdString = request.TransId.ToString();
+            var description = request.Description ?? string.Empty;
+
+            var rawSignature =
+                $"accessKey={_options.AccessKey}" +
+                $"&amount={amountString}" +
+                $"&description={description}" +
+                $"&orderId={request.OrderId}" +
+                $"&partnerCode={_options.PartnerCode}" +
+                $"&requestId={request.RequestId}" +
+                $"&transId={transIdString}";
+
+            var signature = ComputeHmac(rawSignature, _options.SecretKey);
+
+            var payload = new
+            {
+                partnerCode = _options.PartnerCode,
+                orderId = request.OrderId,
+                requestId = request.RequestId,
+                amount = amountString,
+                transId = transIdString,
+                lang = string.IsNullOrWhiteSpace(request.Lang) ? "vi" : request.Lang,
+                description,
+                signature
+            };
+
+            var requestRaw = JsonSerializer.Serialize(payload);
+            var root = await PostJsonAsync("/v2/gateway/api/refund", requestRaw, cancellationToken);
+
+            return new MomoRefundPaymentResponse
+            {
+                PartnerCode = root.TryGetProperty("partnerCode", out var partnerCode) && partnerCode.ValueKind == JsonValueKind.String
+                    ? partnerCode.GetString() ?? _options.PartnerCode
+                    : _options.PartnerCode,
+                OrderId = root.TryGetProperty("orderId", out var orderId) && orderId.ValueKind == JsonValueKind.String
+                    ? orderId.GetString() ?? request.OrderId
+                    : request.OrderId,
+                RequestId = root.TryGetProperty("requestId", out var responseRequestId) && responseRequestId.ValueKind == JsonValueKind.String
+                    ? responseRequestId.GetString() ?? request.RequestId
+                    : request.RequestId,
+                ExtraData = root.TryGetProperty("extraData", out var extraData) && extraData.ValueKind == JsonValueKind.String
+                    ? extraData.GetString() ?? string.Empty
+                    : string.Empty,
+                Amount = root.TryGetProperty("amount", out var amount) && amount.ValueKind == JsonValueKind.Number
+                    ? amount.GetInt64()
+                    : request.Amount,
+                TransId = root.TryGetProperty("transId", out var responseTransId) && responseTransId.ValueKind == JsonValueKind.Number
+                    ? responseTransId.GetInt64()
+                    : request.TransId,
+                ResultCode = root.TryGetProperty("resultCode", out var resultCode) && resultCode.ValueKind == JsonValueKind.Number
+                    ? resultCode.GetInt32()
+                    : -1,
+                Message = root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String
+                    ? message.GetString() ?? string.Empty
+                    : string.Empty,
+                ResponseTime = root.TryGetProperty("responseTime", out var responseTime) && responseTime.ValueKind == JsonValueKind.Number
+                    ? responseTime.GetInt64()
+                    : 0,
+                ResponseRaw = root.GetRawText()
+            };
+        }
+
         public async Task<MomoCreatePaymentResponse> CreateWalletPaymentAsync(MomoCreatePaymentRequest request, CancellationToken cancellationToken = default)
         {
             var orderId = _options.PartnerCode + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();

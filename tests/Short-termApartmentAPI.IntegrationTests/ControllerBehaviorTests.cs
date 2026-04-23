@@ -801,6 +801,10 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
         MarkBalancePaidCalls++;
         return Task.FromResult(BookingById ?? new Booking { BookingId = bookingId });
     }
+
+    public Task<BookingRefundResponseDto> RefundBookingAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto)
+        => Task.FromResult(new BookingRefundResponseDto { BookingId = bookingId, Status = "cancelled", ProcessedAt = DateTime.UtcNow });
+
     public Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto) => Task.FromResult(new TemporaryResidenceReport());
     public Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId) => Task.FromResult(new TemporaryResidenceReportDetailsDto());
     public Task<IReadOnlyList<ResidenceReportOccupantDto>> GetOccupantsAsync(Guid bookingId, Guid tenantUserId)
@@ -1005,6 +1009,9 @@ internal sealed class MomoServiceStub : IMomoService
     public Task<MomoQueryPaymentResponse> QueryPaymentStatusAsync(MomoQueryPaymentRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(new MomoQueryPaymentResponse());
 
+    public Task<MomoRefundPaymentResponse> RefundPaymentAsync(MomoRefundPaymentRequest request, CancellationToken cancellationToken = default)
+        => Task.FromResult(new MomoRefundPaymentResponse());
+
     public bool ValidateDisbursementIpnSignature(string requestBody) => ValidateDisbursementSignature;
 }
 
@@ -1023,6 +1030,9 @@ internal sealed class StripeServiceStub : IStripeService
 {
     public Task<StripeCheckoutResponseDto> CreateCheckoutSessionAsync(StripeCheckoutRequestDto request, CancellationToken cancellationToken = default)
         => Task.FromResult(new StripeCheckoutResponseDto());
+
+    public Task<string> RefundCheckoutSessionAsync(string checkoutSessionId, long amount, CancellationToken cancellationToken = default)
+        => Task.FromResult($"refund_{checkoutSessionId}");
 }
 
 internal sealed class ResidenceReportPdfGeneratorStub : IResidenceReportPdfGenerator
@@ -1086,6 +1096,8 @@ internal sealed class LandlordWalletServiceStub : ILandlordWalletService
     }
 
     public Task CreditPendingAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
+
+    public Task RollbackPendingAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
 
     public Task DebitAvailableAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
 
