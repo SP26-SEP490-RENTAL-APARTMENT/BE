@@ -161,33 +161,6 @@ public class BookingService : BaseService<Booking>, IBookingService
             await _paymentRepository.AddAsync(payment);
         }
 
-        var existingPendingOffers = (await _bookingOfferRepository.GetPendingOffersByBookingAsync(bookingId, now)).ToList();
-        if (!existingPendingOffers.Any())
-        {
-            try
-            {
-                var alternatives = await FindAlternativeApartmentsAsync(bookingId, 1);
-                var firstAlternative = alternatives.FirstOrDefault();
-
-                if (firstAlternative != null)
-                {
-                    await CreateAlternativeOfferAsync(
-                        bookingId,
-                        firstAlternative.ApartmentId,
-                        confirmedBy,
-                        "room_occupied_after_confirmation");
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // Keep the occupied-incident confirmation successful even if no offer can be created.
-            }
-            catch (ArgumentException)
-            {
-                // Keep the occupied-incident confirmation successful even if no offer can be created.
-            }
-        }
-
         ticket.Status = "resolved";
         ticket.ResolvedAt = Common.Utils.VietnamTime.Now;
         ticket.ResolvedBy = confirmedBy;
@@ -3141,6 +3114,31 @@ public class BookingService : BaseService<Booking>, IBookingService
                 sibling.RespondedAt = now;
                 sibling.TenantResponseNotes = "Automatically cancelled after another offer was accepted.";
                 _bookingOfferRepository.Update(sibling);
+            }
+        }
+        else
+        {
+            try
+            {
+                var alternatives = await FindAlternativeApartmentsAsync(offer.OriginalBookingId, 1);
+                var nextAlternative = alternatives.FirstOrDefault();
+
+                if (nextAlternative != null)
+                {
+                    await CreateAlternativeOfferAsync(
+                        offer.OriginalBookingId,
+                        nextAlternative.ApartmentId,
+                        null,
+                        "room_occupied_offer_after_rejection");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Silently continue: keep rejection successful even if next offer cannot be created.
+            }
+            catch (ArgumentException)
+            {
+                // Silently continue: keep rejection successful even if next offer cannot be created.
             }
         }
 

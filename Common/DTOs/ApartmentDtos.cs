@@ -282,3 +282,9 @@ public class RemoveApartmentAvailabilityResponseDto
     public int RemainingRanges { get; set; }
     public IList<AvailabilityAppliedRangeDto> UpdatedRanges { get; set; } = new List<AvailabilityAppliedRangeDto>();
 }
+
+public class UnpublishApartmentDto
+{
+    [MaxLength(500)]
+    public string? Reason { get; set; }
+}

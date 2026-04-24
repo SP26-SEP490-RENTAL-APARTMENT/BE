@@ -379,4 +379,37 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         return apartment;
     }
+
+    public async Task<Apartment> UnpublishApartmentAsync(Guid apartmentId, Guid requesterId, string? reason = null)
+    {
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        // Only allow unpublishing of posted apartments
+        if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Only posted apartments can be unpublished.");
+
+        // Transition apartment back to draft status
+        apartment.Status = "draft";
+        apartment.BookingStatus = "unavailable";
+
+        _apartmentRepository.Update(apartment);
+        await _apartmentRepository.SaveChangesAsync();
+
+        // Send notification to landlord
+        string title = "Apartment unpublished";
+        string message = $"Your apartment '{apartment.Title}' has been unpublished and returned to draft status.";
+        if (!string.IsNullOrWhiteSpace(reason))
+            message += $" Reason: {reason}";
+
+        await CreateListingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.system_announcement.ToString(),
+            title,
+            message,
+            apartment.ApartmentId);
+
+        return apartment;
+    }
 }

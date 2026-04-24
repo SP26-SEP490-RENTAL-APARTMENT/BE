@@ -437,6 +437,54 @@ public sealed class ApartmentsController : ControllerBase
     }
 
     /// <summary>
+    /// Admin/Staff/Landlord unpublishes a posted apartment, transitioning it back to draft status.
+    /// Landlords can only unpublish their own apartments; admin and staff can unpublish any apartment.
+    /// </summary>
+    [HttpPost("{id:guid}/unpublish")]
+    [Authorize(Roles = "admin,staff,landlord")]
+    public async Task<IActionResult> UnpublishApartment(Guid id, [FromBody] UnpublishApartmentDto? dto = null)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var apartment = await _apartmentService.GetByIdAsync(id);
+            if (apartment == null)
+            {
+                return NotFound(new ApiResponse<string>("Apartment not found."));
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+            
+            // For landlords, verify ownership
+            if (userRole == "landlord")
+            {
+                var landlord = await _landlordService.GetByUserIdAsync(userId);
+                if (landlord == null || apartment.LandlordId != landlord.LandlordId)
+                {
+                    return NotFound(new ApiResponse<string>("Apartment not found."));
+                }
+            }
+
+            var updated = await _apartmentService.UnpublishApartmentAsync(id, userId, dto?.Reason);
+            var response = _mapper.Map<ApartmentResponseDto>(updated);
+            return Ok(new ApiResponse<ApartmentResponseDto>(response, "Apartment unpublished successfully and returned to draft status."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    /// <summary>
     /// Gets the availability calendar for an apartment showing available and unavailable date ranges.
     /// Default range: next 90 days from today. Can be customized via query parameters.
     /// Anonymous users see availability only; landlord/staff see booking details for unavailable periods.

@@ -869,11 +869,42 @@ namespace Short_termApartmentAPI.Controllers
 
             var created = await _supportTicketService.CreateTicketAsync(supportTicket);
 
+            try
+            {
+                var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, 1);
+                var firstAlternative = alternatives.FirstOrDefault();
+
+                if (firstAlternative != null)
+                {
+                    var offer = await _bookingService.CreateAlternativeOfferAsync(
+                        id,
+                        firstAlternative.ApartmentId,
+                        null,
+                        "room_occupied_auto_after_incident");
+
+                    return Ok(new ApiResponse<object>(new
+                    {
+                        TicketId = created.TicketId,
+                        created.Status,
+                        Offer = offer,
+                        Message = "Incident reported. We are actively investigating and have already compiled alternative apartments for you to review."
+                    }));
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Keep incident report successful even if immediate offer generation is not possible.
+            }
+            catch (ArgumentException)
+            {
+                // Keep incident report successful even if immediate offer generation is not possible.
+            }
+
             return Ok(new ApiResponse<object>(new
             {
                 TicketId = created.TicketId,
                 created.Status,
-                Message = "Incident reported successfully. Staff will confirm the incident, refund the tenant first, and publish an alternative offer afterward."
+                Message = "Incident reported. We are actively investigating this issue. Alternative apartments will be compiled shortly."
             }));
         }
 

@@ -8,13 +8,11 @@ The flow starts when a tenant arrives at the booked apartment and finds that the
 
 The system then moves through these stages:
 1. Tenant reports the issue.
-2. The system creates a support ticket.
-3. The system searches for alternative apartments.
-4. Staff confirms the incident.
-5. The tenant is refunded first.
-6. The system publishes an alternative offer afterward.
-7. The tenant views and responds to the offer.
-8. Staff can confirm the incident penalty after settlement.
+2. The system creates a support ticket **and immediately searches for alternatives** (concurrent investigation).
+3. The system publishes the first viable alternative offer right away.
+4. The tenant views and responds to the offer (acceptance or rejection).
+5. If rejected, the system automatically searches for and publishes the next viable alternative.
+6. Staff later confirms the incident and applies settlement (refund + penalty).
 
 ## Main Endpoints
 - GET /api/booking/{id}/occupied-alternatives
@@ -32,8 +30,8 @@ The tenant sends a report with a short description of the occupied-apartment pro
 Expected behavior:
 - The request must be made by the tenant who owns the booking.
 - A support ticket is created for tracking.
-- The report succeeds without creating an immediate alternative offer.
-- Staff will handle refund and offer publication after confirming the incident.
+- **The system immediately searches for and publishes an alternative offer** (no waiting for staff confirmation).
+- The tenant can review alternatives right away while the system investigates.
 
 ### 2. System Finds Alternative Apartments
 The service looks for apartments that can replace the original booking.
@@ -49,8 +47,8 @@ Validation rules:
 
 ### 3. Staff Or System Creates An Offer
 An alternative offer can be created in two ways:
-- Automatically after occupied-incident confirmation, after the refund is processed.
-- Manually by staff or admin.
+- Automatically after the tenant reports the incident (no waiting for staff confirmation).
+- Manually by staff or admin if the automatic search doesn't produce viable alternatives.
 
 Expected behavior:
 - The offer status starts as pending.
@@ -66,52 +64,72 @@ Expected behavior:
 - Expired offers are excluded from the list.
 - Each response includes the alternative apartment details and pricing difference.
 
-### 5. Tenant Responds To An Offer
+### 5. Tenant Responds To An Offer (Accept or Reject)
 The tenant accepts or rejects one active offer.
 
 Expected behavior when accepted:
 - The selected offer becomes accepted.
 - Any sibling pending offers for the same booking become cancelled.
 - The tenant receives an acceptance notification.
-- Manual settlement is still required after acceptance.
+- Staff will later complete settlement (refund + penalty confirmation).
 
 Expected behavior when rejected:
 - The offer becomes rejected.
-- The tenant receives a rejection notification.
+- **The system automatically searches for and publishes the next viable alternative** (if available).
+- The tenant receives a rejection notification (and potentially a new offer notification if alternatives were found).
 
 Expected behavior when expired:
 - The offer is marked expired.
 - The response is rejected with an error.
 
-### 6. Staff Confirms The Penalty
-After the incident is handled, staff can confirm the penalty settlement.
+### 6. Staff Confirms The Incident (Settlement)
+After the tenant has accepted an alternative, staff reviews the support ticket and confirms the incident.
 
 Expected behavior:
-- The tenant refund is processed first if it has not already been applied.
-- An alternative offer is published after refunding.
+- Staff marks the incident as confirmed.
+- The system automatically refunds the original booking (if not already refunded).
+- An alternative offer is published if none exist yet (for manual ticket paths).
+- The system applies a penalty to the landlord's wallet.
 - The endpoint returns settlement details.
 - The booking incident is treated as closed from the operational side.
 
 ## Test Scenarios
 
-### Happy Path
+### Happy Path (Immediate Alternative + Accept)
 1. Create or identify a booking that can be used as the occupied booking.
 2. Call POST /api/booking/{id}/occupied-incident as the tenant.
-3. Confirm the support ticket is created.
-4. Call POST /api/booking/{id}/occupied-incident/confirm-penalty as staff or admin.
-5. Confirm the refund is processed before the offer appears.
-6. Call GET /api/booking/occupied-offers/my as the tenant.
-7. Accept one offer.
+3. Confirm the support ticket is created AND an alternative offer is published immediately.
+4. Call GET /api/booking/occupied-offers/my as the tenant.
+5. Confirm the alternative apartment is available and details are accurate.
+6. Call POST /api/booking/occupied-offers/{offerId}/respond with accepted=true as the tenant.
+7. Confirm the selected offer becomes accepted.
 8. Confirm sibling offers are cancelled.
-9. Confirm the penalty through the staff endpoint.
+9. Call POST /api/booking/{id}/occupied-incident/confirm-penalty as staff or admin.
+10. Confirm the refund is processed.
+11. Confirm the penalty is applied to the landlord.
 
-### Manual Offer Path
-1. Call GET /api/booking/{id}/occupied-alternatives.
+### Alternative Rejection With Auto-Recovery Path
+1. Execute steps 1-5 of the Happy Path.
+2. Call POST /api/booking/occupied-offers/{offerId}/respond with accepted=false as the tenant.
+3. Confirm the offer becomes rejected.
+4. **Confirm a new alternative offer is automatically published** (no staff action needed).
+5. Call GET /api/booking/occupied-offers/my as the tenant to see the new offer.
+6. Accept the new offer and proceed to step 9 of the Happy Path.
+
+### Manual Offer Path (Fallback)
+1. Call GET /api/booking/{id}/occupied-alternatives as staff or admin.
 2. Choose one valid apartment.
-3. Call POST /api/booking/{id}/occupied-offers as staff or admin.
+3. Call POST /api/booking/{id}/occupied-offers as staff or admin to manually create an offer.
 4. Confirm the offer is pending.
-5. Log in as the tenant and confirm the offer appears in active offers.
-6. Respond to the offer.
+5. Call POST /api/booking/occupied-offers/{offerId}/respond as the tenant to accept it.
+
+### No Viable Alternatives Path
+1. Create a booking in a remote location where no alternatives exist.
+2. Call POST /api/booking/{id}/occupied-incident as the tenant.
+3. Confirm the support ticket is created.
+4. Confirm that GET /api/booking/occupied-offers/my shows no pending offers (search had no results).
+5. Staff manually creates an alternative using POST /api/booking/{id}/occupied-offers.
+6. Tenant accepts the manual offer.
 
 ### Negative Path
 - Try to create an offer with the original apartment as the alternative.
@@ -119,14 +137,17 @@ Expected behavior:
 - Try to respond to an offer that belongs to another tenant.
 - Try to respond to a non-pending offer.
 - Try to respond after expiry.
+- Try to respond to a booking that doesn't belong to the current user.
 
 ## What To Verify In Tests
 - HTTP status codes are correct for success and failure cases.
 - Offer status changes are persisted in the database.
 - Sibling offers are cancelled after acceptance.
+- New alternatives are automatically published after rejection.
 - Notifications are generated for the tenant and landlord.
 - The response payload contains the correct apartment and price information.
-- Manual settlement is still required after acceptance.
+- Refund happens AFTER tenant accepts an alternative (not before offer publication).
+- Penalty is applied to the landlord after staff confirms the incident.
 
 ## Suggested Evidence
 - Request and response bodies.

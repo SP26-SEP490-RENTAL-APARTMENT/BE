@@ -32,6 +32,12 @@ public interface IApartmentService : IBaseService<Apartment>
     Task<Apartment> ApproveListingAsync(Guid apartmentId, Guid adminId, ApproveListingDto dto);
 
     /// <summary>
+    /// Unpublishes a posted apartment, transitioning it back to draft status.
+    /// Can be called by landlord (owning the apartment) or admin/staff.
+    /// </summary>
+    Task<Apartment> UnpublishApartmentAsync(Guid apartmentId, Guid requesterId, string? reason = null);
+
+    /// <summary>
     /// Validates that apartment has required details for submission:
     /// - At least one photo
     /// - At least one amenity
