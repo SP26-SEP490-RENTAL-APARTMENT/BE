@@ -13,8 +13,18 @@ public interface IApartmentService : IBaseService<Apartment>
         string? search = null,
         Dictionary<string, string>? filters = null);
 
+    Task<(IEnumerable<ApartmentResponseDto> Items, int TotalCount)> GetAllPublicResponseAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        Guid? tenantId = null);
+
     Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId);
     Task<ApartmentResponseDto?> GetApartmentWithDetailsAsync(Guid id);
+    Task<ApartmentResponseDto?> GetApartmentWithDetailsResponseAsync(Guid id, Guid? tenantId = null);
     Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds);
     Task RemoveAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds);
     Task UpdateApartmentPhotosAsync(Guid apartmentId, List<Microsoft.AspNetCore.Http.IFormFile> photos);

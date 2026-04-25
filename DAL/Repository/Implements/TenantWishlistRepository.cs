@@ -112,6 +112,24 @@ namespace DAL.Repository.Implements
             .AnyAsync(w => w.TenantId == tenantId && w.ApartmentId == apartmentId && w.CollectionId == collectionId);
         }
 
+        public async Task<IEnumerable<TenantWishlist>> GetByTenantAndApartmentIdsAsync(Guid tenantId, IEnumerable<Guid> apartmentIds)
+        {
+            var apartmentIdSet = apartmentIds
+                .Where(id => id != Guid.Empty)
+                .Distinct()
+                .ToList();
+
+            if (apartmentIdSet.Count == 0)
+            {
+                return Enumerable.Empty<TenantWishlist>();
+            }
+
+            return await _context.TenantWishlists
+                .Where(w => w.TenantId == tenantId && apartmentIdSet.Contains(w.ApartmentId))
+                .AsNoTracking()
+                .ToListAsync();
+        }
+
         public async Task<int> GetWishlistCountAsync(Guid tenantId)
         {
             return await _context.TenantWishlists

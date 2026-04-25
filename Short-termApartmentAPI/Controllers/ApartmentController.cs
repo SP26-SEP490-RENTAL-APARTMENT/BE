@@ -42,9 +42,58 @@ public sealed class ApartmentsController : ControllerBase
             [FromQuery] string? search = null,
             [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var (items, totalCount) = await _apartmentService.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters);
-        var mappedItems = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
+        var tenantId = GetAuthenticatedTenantId();
+        var effectiveFilters = BuildPublicApartmentFilters(filters);
+        var (mappedItems, totalCount) = await _apartmentService.GetAllPublicResponseAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters, tenantId);
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
+    }
+
+    private Dictionary<string, string>? BuildPublicApartmentFilters(Dictionary<string, string>? filters)
+    {
+        var merged = filters != null
+            ? new Dictionary<string, string>(filters, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        var reservedQueryKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "page",
+            "pageSize",
+            "sortBy",
+            "sortOrder",
+            "search",
+            "filters"
+        };
+
+        foreach (var queryEntry in Request.Query)
+        {
+            var rawKey = queryEntry.Key;
+            var value = queryEntry.Value.ToString();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            string? normalizedKey = null;
+            if (rawKey.StartsWith("filters[", StringComparison.OrdinalIgnoreCase) && rawKey.EndsWith("]", StringComparison.Ordinal))
+            {
+                normalizedKey = rawKey.Substring(8, rawKey.Length - 9);
+            }
+            else if (rawKey.StartsWith("filters.", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedKey = rawKey.Substring(8);
+            }
+            else if (!reservedQueryKeys.Contains(rawKey))
+            {
+                normalizedKey = rawKey;
+            }
+
+            if (!string.IsNullOrWhiteSpace(normalizedKey))
+            {
+                merged[normalizedKey] = value;
+            }
+        }
+
+        return merged.Count > 0 ? merged : null;
     }
 
     [HttpGet]
@@ -130,13 +179,25 @@ public sealed class ApartmentsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var apartment = await _apartmentService.GetApartmentWithDetailsAsync(id);
+        var tenantId = GetAuthenticatedTenantId();
+        var apartment = await _apartmentService.GetApartmentWithDetailsResponseAsync(id, tenantId);
         if (apartment == null)
         {
             return NotFound(new ApiResponse<string>("Apartment not found."));
         }
 
         return Ok(new ApiResponse<ApartmentResponseDto>(apartment));
+    }
+
+    private Guid? GetAuthenticatedTenantId()
+    {
+        if (!User.IsInRole("tenant"))
+        {
+            return null;
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(userIdClaim, out var tenantId) ? tenantId : null;
     }
 
     [HttpPost]

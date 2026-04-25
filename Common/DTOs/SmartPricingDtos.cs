@@ -24,6 +24,7 @@ public class SmartPricingResponseDto
 {
     public Guid PricingId { get; set; }
     public Guid ApartmentId { get; set; }
+    public SmartPricingApartmentPhotoDto? Apartment { get; set; }
     public DateOnly Date { get; set; }
     public decimal BasePrice { get; set; }
     public decimal OccupancyRate { get; set; }
@@ -35,10 +36,30 @@ public class SmartPricingResponseDto
 }
 
 /// <summary>
+/// Apartment payload used in smart pricing response.
+/// Contains photo URL information only.
+/// </summary>
+public class SmartPricingApartmentPhotoDto
+{
+    public IEnumerable<string> PhotoUrls { get; set; } = Enumerable.Empty<string>();
+}
+
+/// <summary>
 /// Landlord accepts or overrides the suggested price.
 /// </summary>
 public class AcceptPriceSuggestionDto
 {
     [Range(0, double.MaxValue, ErrorMessage = "Override price must be positive.")]
     public decimal? OverridePrice { get; set; }
+}
+
+/// <summary>
+/// Paginated smart pricing suggestion response.
+/// </summary>
+public class SmartPricingListResponseDto
+{
+    public IEnumerable<SmartPricingResponseDto> Items { get; set; } = Enumerable.Empty<SmartPricingResponseDto>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
 }

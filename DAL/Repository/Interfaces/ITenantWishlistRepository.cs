@@ -19,6 +19,8 @@ namespace DAL.Repository.Interfaces
 
         Task<bool> IsApartmentInWishlistAsync(Guid tenantId, Guid apartmentId, Guid collectionId);
 
+        Task<IEnumerable<TenantWishlist>> GetByTenantAndApartmentIdsAsync(Guid tenantId, IEnumerable<Guid> apartmentIds);
+
         Task<int> GetWishlistCountAsync(Guid tenantId);
 
         Task<TenantWishlist?> FindByTenantAndApartmentAsync(Guid tenantId, Guid apartmentId, Guid collectionId);

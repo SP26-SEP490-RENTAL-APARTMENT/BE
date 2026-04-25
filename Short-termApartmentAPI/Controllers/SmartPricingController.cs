@@ -114,4 +114,81 @@ public sealed class SmartPricingController : ControllerBase
             return BadRequest(new ApiResponse<string>(ex.Message));
         }
     }
+
+    /// <summary>
+    /// Admin gets all smart pricing suggestions.
+    /// </summary>
+    [HttpGet("admin/suggestions")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> GetAllSuggestionsForAdmin(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var (items, totalCount) = await _smartPricingService.GetAllSuggestionsAsync(
+            page,
+            pageSize,
+            sortBy,
+            sortOrder,
+            search,
+            filters);
+
+        var response = new SmartPricingListResponseDto
+        {
+            Items = _mapper.Map<IEnumerable<SmartPricingResponseDto>>(items),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+
+        return Ok(new ApiResponse<SmartPricingListResponseDto>(response));
+    }
+
+    /// <summary>
+    /// Landlord gets smart pricing suggestions for their own apartments.
+    /// </summary>
+    [HttpGet("landlord/suggestions")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> GetOwnSuggestionsForLandlord(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var (items, totalCount) = await _smartPricingService.GetSuggestionsForLandlordAsync(
+            landlord.LandlordId,
+            page,
+            pageSize,
+            sortBy,
+            sortOrder,
+            search,
+            filters);
+
+        var response = new SmartPricingListResponseDto
+        {
+            Items = _mapper.Map<IEnumerable<SmartPricingResponseDto>>(items),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
+
+        return Ok(new ApiResponse<SmartPricingListResponseDto>(response));
+    }
 }

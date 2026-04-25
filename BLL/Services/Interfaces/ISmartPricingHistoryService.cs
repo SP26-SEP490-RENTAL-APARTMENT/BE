@@ -25,4 +25,27 @@ public interface ISmartPricingHistoryService : IBaseService<SmartPricingHistory>
     /// Used to show non-blocking submission warnings.
     /// </summary>
     Task<bool> HasAcceptedSuggestionAsync(Guid apartmentId);
+
+    /// <summary>
+    /// Gets all smart pricing suggestions for admin view.
+    /// </summary>
+    Task<(IEnumerable<SmartPricingHistory> Items, int TotalCount)> GetAllSuggestionsAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null);
+
+    /// <summary>
+    /// Gets smart pricing suggestions for apartments owned by a specific landlord.
+    /// </summary>
+    Task<(IEnumerable<SmartPricingHistory> Items, int TotalCount)> GetSuggestionsForLandlordAsync(
+        Guid landlordId,
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null);
 }

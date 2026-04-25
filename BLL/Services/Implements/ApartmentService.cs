@@ -15,6 +15,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IMapper _mapper;
 
     private readonly IApartmentRepository _apartmentRepository;
+    private readonly ITenantWishlistRepository _tenantWishlistRepository;
     private readonly IAmenityRepository _amenityRepository;
     private readonly IUserRepository _userRepository;
     private readonly IRepository<Notification> _notificationRepository;
@@ -22,6 +23,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
     public ApartmentService(
         IApartmentRepository repository,
+        ITenantWishlistRepository tenantWishlistRepository,
         IAmenityRepository amenityRepository,
         IImageService imageService,
         IApartmentMediumService apartmentMediumService,
@@ -32,6 +34,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         : base(repository)
     {
         _apartmentRepository = repository;
+        _tenantWishlistRepository = tenantWishlistRepository;
         _amenityRepository = amenityRepository;
         _imageService = imageService;
         _apartmentMediumService = apartmentMediumService;
@@ -90,6 +93,22 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         };
 
         return await _apartmentRepository.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+    }
+
+    public async Task<(IEnumerable<ApartmentResponseDto> Items, int TotalCount)> GetAllPublicResponseAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        Guid? tenantId = null)
+    {
+        var (items, totalCount) = await GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters);
+        var mappedItems = _mapper.Map<List<ApartmentResponseDto>>(items);
+
+        await ApplyWishlistMetadataAsync(mappedItems, tenantId);
+        return (mappedItems, totalCount);
     }
 
     public async Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)
@@ -217,6 +236,78 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     {
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(id);
         return apartment == null ? null : _mapper.Map<ApartmentResponseDto>(apartment);
+    }
+
+    public async Task<ApartmentResponseDto?> GetApartmentWithDetailsResponseAsync(Guid id, Guid? tenantId = null)
+    {
+        var apartment = await GetApartmentWithDetailsAsync(id);
+        if (apartment == null)
+        {
+            return null;
+        }
+
+        await ApplyWishlistMetadataAsync(apartment, tenantId);
+        return apartment;
+    }
+
+    private async Task ApplyWishlistMetadataAsync(List<ApartmentResponseDto> apartments, Guid? tenantId)
+    {
+        if (!tenantId.HasValue || apartments.Count == 0)
+        {
+            return;
+        }
+
+        var apartmentIds = apartments.Select(a => a.ApartmentId)
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (apartmentIds.Count == 0)
+        {
+            return;
+        }
+
+        var wishlistRows = await _tenantWishlistRepository.GetByTenantAndApartmentIdsAsync(tenantId.Value, apartmentIds);
+        var metadataByApartmentId = wishlistRows
+            .GroupBy(w => w.ApartmentId)
+            .Select(group => group
+                .OrderByDescending(w => w.IsFavorite)
+                .ThenByDescending(w => w.CreatedAt)
+                .First())
+            .ToDictionary(
+                w => w.ApartmentId,
+                w => (w.IsFavorite, w.CollectionId));
+
+        foreach (var apartment in apartments)
+        {
+            if (metadataByApartmentId.TryGetValue(apartment.ApartmentId, out var metadata))
+            {
+                apartment.IsFavorite = metadata.IsFavorite;
+                apartment.CollectionId = metadata.CollectionId;
+            }
+        }
+    }
+
+    private async Task ApplyWishlistMetadataAsync(ApartmentResponseDto apartment, Guid? tenantId)
+    {
+        if (!tenantId.HasValue)
+        {
+            return;
+        }
+
+        var wishlistRows = await _tenantWishlistRepository.GetByTenantAndApartmentIdsAsync(tenantId.Value, new[] { apartment.ApartmentId });
+        var metadata = wishlistRows
+            .OrderByDescending(w => w.IsFavorite)
+            .ThenByDescending(w => w.CreatedAt)
+            .FirstOrDefault();
+
+        if (metadata == null)
+        {
+            return;
+        }
+
+        apartment.IsFavorite = metadata.IsFavorite;
+        apartment.CollectionId = metadata.CollectionId;
     }
 
     public async Task<bool> ValidateListingDetailsAsync(Guid apartmentId)
