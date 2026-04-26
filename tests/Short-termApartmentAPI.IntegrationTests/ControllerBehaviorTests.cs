@@ -22,6 +22,250 @@ namespace Short_termApartmentAPI.IntegrationTests;
 public class ControllerBehaviorTests
 {
     [Fact]
+    public async Task IdentityVerificationController_UploadDocument_ReturnsUnauthorized_WhenTokenIsInvalid()
+    {
+        var controller = CreateIdentityVerificationController();
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, "not-a-guid"));
+
+        var result = await controller.UploadDocument(new IdentityDocumentUploadDto
+        {
+            DocumentType = "passport"
+        });
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_UploadDocument_ReturnsBadRequest_WhenServiceThrowsArgumentException()
+    {
+        var controller = CreateIdentityVerificationController(new IdentityVerificationServiceStub
+        {
+            AddDocumentException = new ArgumentException("National ID verification requires both frontImage and backImage.")
+        });
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()));
+
+        var result = await controller.UploadDocument(new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card"
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("National ID verification requires both frontImage and backImage.", response.Message);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_UploadDocument_ReturnsBadRequest_WhenServiceThrowsStrictMismatch()
+    {
+        var controller = CreateIdentityVerificationController(new IdentityVerificationServiceStub
+        {
+            AddDocumentException = new ArgumentException("National ID number does not match your profile.")
+        });
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()));
+
+        var result = await controller.UploadDocument(new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new FormFile(new MemoryStream(new byte[] { 1 }), 0, 1, "frontImage", "front.jpg")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/jpeg"
+            },
+            BackImage = new FormFile(new MemoryStream(new byte[] { 2 }), 0, 1, "backImage", "back.jpg")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/jpeg"
+            }
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("National ID number does not match your profile.", response.Message);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_UploadDocument_ReturnsBadRequest_WhenServiceThrowsOcrFailure()
+    {
+        var controller = CreateIdentityVerificationController(new IdentityVerificationServiceStub
+        {
+            AddDocumentException = new ArgumentException("ID card not detected or image quality is too low.")
+        });
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()));
+
+        var result = await controller.UploadDocument(new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new FormFile(new MemoryStream(new byte[] { 1 }), 0, 1, "frontImage", "front.jpg")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/jpeg"
+            },
+            BackImage = new FormFile(new MemoryStream(new byte[] { 2 }), 0, 1, "backImage", "back.jpg")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/jpeg"
+            }
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("ID card not detected or image quality is too low.", response.Message);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_UploadDocument_ReturnsOk_WhenServiceSucceeds()
+    {
+        var expectedIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var stub = new IdentityVerificationServiceStub
+        {
+            AddDocumentResult = expectedIds
+        };
+        var controller = CreateIdentityVerificationController(stub);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()));
+
+        var result = await controller.UploadDocument(new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new FormFile(new MemoryStream(new byte[] { 1, 2, 3 }), 0, 3, "frontImage", "front.jpg")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/jpeg"
+            },
+            BackImage = new FormFile(new MemoryStream(new byte[] { 4, 5, 6 }), 0, 3, "backImage", "back.jpg")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/jpeg"
+            }
+        });
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<Guid[]>>(ok.Value);
+        Assert.Equal(expectedIds, response.Data);
+        Assert.NotNull(stub.LastUploadDto);
+        Assert.Equal("national_id_card", stub.LastUploadDto!.DocumentType);
+        Assert.NotNull(stub.LastUploadDto.FrontImage);
+        Assert.NotNull(stub.LastUploadDto.BackImage);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_GetMyDocuments_ReturnsUnauthorized_WhenTokenIsInvalid()
+    {
+        var controller = CreateIdentityVerificationController();
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, "not-a-guid"));
+
+        var result = await controller.GetMyDocuments();
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_GetMyDocuments_ReturnsItemsWithOcrSummary()
+    {
+        var userId = Guid.NewGuid();
+        var stub = new IdentityVerificationServiceStub
+        {
+            UserDocumentsResult = (
+                new[]
+                {
+                    new IdentityDocumentDto
+                    {
+                        DocumentId = Guid.NewGuid(),
+                        UserId = userId,
+                        DocumentType = "national_id_card",
+                        Side = "front",
+                        FileUrl = "https://example.test/front.jpg",
+                        VerificationStatus = "verified",
+                        OcrSummary = new IdentityDocumentOcrSummaryDto
+                        {
+                            Provider = "fpt_id_recognition",
+                            CardType = "new",
+                            OverallConfidence = 0.95m,
+                            AutoApproved = true,
+                            MatchPassed = true
+                        }
+                    }
+                },
+                1)
+        };
+
+        var controller = CreateIdentityVerificationController(stub);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
+
+        var result = await controller.GetMyDocuments(page: 1, pageSize: 10);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<object>>(ok.Value);
+
+        var items = GetProperty<IEnumerable<IdentityDocumentDto>>(response.Data!, "Items");
+        var totalCount = GetProperty<int>(response.Data!, "TotalCount");
+
+        Assert.Equal(1, totalCount);
+        var item = Assert.Single(items);
+        Assert.NotNull(item.OcrSummary);
+        Assert.Equal("fpt_id_recognition", item.OcrSummary!.Provider);
+        Assert.Equal(0.95m, item.OcrSummary.OverallConfidence);
+        Assert.True(item.OcrSummary.AutoApproved);
+        Assert.True(item.OcrSummary.MatchPassed);
+
+        Assert.Equal(userId, stub.LastGetUserDocumentsUserId);
+    }
+
+    [Fact]
+    public async Task IdentityVerificationController_GetUserDocuments_ForStaff_ReturnsPagedItemsWithOcrSummary()
+    {
+        var targetUserId = Guid.NewGuid();
+        var stub = new IdentityVerificationServiceStub
+        {
+            UserDocumentsResult = (
+                new[]
+                {
+                    new IdentityDocumentDto
+                    {
+                        DocumentId = Guid.NewGuid(),
+                        UserId = targetUserId,
+                        DocumentType = "national_id_card",
+                        Side = "back",
+                        FileUrl = "https://example.test/back.jpg",
+                        VerificationStatus = "verified",
+                        OcrSummary = new IdentityDocumentOcrSummaryDto
+                        {
+                            Provider = "fpt_id_recognition",
+                            CardType = "new_back",
+                            OverallConfidence = 0.91m,
+                            AutoApproved = true,
+                            MatchPassed = true
+                        }
+                    }
+                },
+                1)
+        };
+
+        var controller = CreateIdentityVerificationController(stub);
+
+        var result = await controller.GetUserDocuments(targetUserId, page: 2, pageSize: 5, sortBy: "UploadedAt", sortOrder: "desc");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<object>>(ok.Value);
+
+        var items = GetProperty<IEnumerable<IdentityDocumentDto>>(response.Data!, "Items");
+        var totalCount = GetProperty<int>(response.Data!, "TotalCount");
+        var page = GetProperty<int>(response.Data!, "Page");
+        var pageSize = GetProperty<int>(response.Data!, "PageSize");
+
+        Assert.Equal(1, totalCount);
+        Assert.Equal(2, page);
+        Assert.Equal(5, pageSize);
+
+        var item = Assert.Single(items);
+        Assert.NotNull(item.OcrSummary);
+        Assert.Equal("new_back", item.OcrSummary!.CardType);
+
+        Assert.Equal(targetUserId, stub.LastGetUserDocumentsUserId);
+        Assert.Equal("UploadedAt", stub.LastSortBy);
+        Assert.Equal("desc", stub.LastSortOrder);
+    }
+
+    [Fact]
     public async Task LandlordController_GetPaymentHistory_ReturnsUnauthorized_WhenTokenIsInvalid()
     {
         var controller = CreateLandlordController();
@@ -618,6 +862,12 @@ public class ControllerBehaviorTests
             CreateMapper());
     }
 
+    private static IdentityVerificationController CreateIdentityVerificationController(
+        IIdentityVerificationService? identityVerificationService = null)
+    {
+        return new IdentityVerificationController(identityVerificationService ?? new IdentityVerificationServiceStub());
+    }
+
     private static TenantController CreateTenantController(
         IBookingService? bookingService = null,
         IPaymentService? paymentService = null,
@@ -760,6 +1010,60 @@ internal sealed class LandlordServiceStub : BaseServiceStub<Landlord>, ILandlord
     public Task<LandlordPayoutProfileDto> UpdateMomoPayoutProfileAsync(Guid landlordId, UpdateMomoPayoutProfileRequestDto request) => Task.FromResult(new LandlordPayoutProfileDto());
 
     public Task<LandlordPayoutProfileDto> UpsertPayoutProfileAsync(Guid landlordId, UpsertLandlordPayoutProfileRequestDto request) => Task.FromResult(new LandlordPayoutProfileDto());
+}
+
+internal sealed class IdentityVerificationServiceStub : IIdentityVerificationService
+{
+    public Guid[] AddDocumentResult { get; set; } = Array.Empty<Guid>();
+
+    public Exception? AddDocumentException { get; set; }
+
+    public IdentityDocumentUploadDto? LastUploadDto { get; private set; }
+
+    public (IEnumerable<IdentityDocumentDto> Items, int TotalCount) UserDocumentsResult { get; set; }
+        = (Enumerable.Empty<IdentityDocumentDto>(), 0);
+
+    public (IEnumerable<IdentityDocumentDto> Items, int TotalCount) AllDocumentsResult { get; set; }
+        = (Enumerable.Empty<IdentityDocumentDto>(), 0);
+
+    public Guid? LastGetUserDocumentsUserId { get; private set; }
+
+    public string? LastSortBy { get; private set; }
+
+    public string? LastSortOrder { get; private set; }
+
+    public Task EnsureUserVerifiedForBookingAsync(Guid userId) => Task.CompletedTask;
+
+    public Task EnsureUserVerifiedForInspectionAsync(Guid landlordId) => Task.CompletedTask;
+
+    public Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
+    {
+        LastUploadDto = dto;
+
+        if (AddDocumentException != null)
+        {
+            throw AddDocumentException;
+        }
+
+        return Task.FromResult(AddDocumentResult);
+    }
+
+    public Task ReviewIdentityDocumentAsync(ReviewIdentityDocumentDto dto) => Task.CompletedTask;
+
+    public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(Guid userId, int page, int pageSize, string? sortBy = null, string? sortOrder = null)
+    {
+        LastGetUserDocumentsUserId = userId;
+        LastSortBy = sortBy;
+        LastSortOrder = sortOrder;
+        return Task.FromResult(UserDocumentsResult);
+    }
+
+    public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null)
+    {
+        LastSortBy = sortBy;
+        LastSortOrder = sortOrder;
+        return Task.FromResult(AllDocumentsResult);
+    }
 }
 
 internal sealed class PaymentServiceStub : BaseServiceStub<Payment>, IPaymentService

@@ -16,9 +16,13 @@ namespace Common.DTOs
             ErrorMessage = "Invalid document side.")]
         public string? Side { get; set; }
 
-        [Required]
-        [MinLength(1, ErrorMessage = "At least one file is required.")]
+        // Legacy bulk upload field.
         public List<IFormFile> Files { get; set; } = new();
+
+        // Preferred explicit side-based fields, required for national_id_card.
+        public IFormFile? FrontImage { get; set; }
+
+        public IFormFile? BackImage { get; set; }
 
         public string? Notes { get; set; }
     }
@@ -48,5 +52,38 @@ namespace Common.DTOs
         public DateTime? VerifiedAt { get; set; }
         public string? RejectionReason { get; set; }
         public string? Notes { get; set; }
+
+        public IdentityDocumentOcrSummaryDto? OcrSummary { get; set; }
+    }
+
+    public class IdentityDocumentOcrSummaryDto
+    {
+        public string Provider { get; set; } = string.Empty;
+
+        public int? ProviderErrorCode { get; set; }
+
+        public string? ProviderErrorMessage { get; set; }
+
+        public string? CardType { get; set; }
+
+        public string? CardTypeDetail { get; set; }
+
+        public string? IdNumber { get; set; }
+
+        public string? FullName { get; set; }
+
+        public string? DateOfBirthRaw { get; set; }
+
+        public string? IssueDateRaw { get; set; }
+
+        public decimal? OverallConfidence { get; set; }
+
+        public bool? AutoApproved { get; set; }
+
+        public bool? MatchPassed { get; set; }
+
+        public string? MatchFailureReason { get; set; }
+
+        public DateTime? ProcessedAt { get; set; }
     }
 }

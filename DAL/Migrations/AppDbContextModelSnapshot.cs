@@ -762,6 +762,114 @@ namespace DAL.Migrations
                     b.ToTable("inspection_photos", (string)null);
                 });
 
+            modelBuilder.Entity("DAL.Models.IdentityDocumentOcrResult", b =>
+                {
+                    b.Property<Guid>("OcrResultId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)")
+                        .HasColumnName("ocr_result_id");
+
+                    b.Property<bool>("is_deleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("is_deleted")
+                        .HasDefaultValueSql("'0'");
+
+                    b.Property<string>("CardType")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("card_type");
+
+                    b.Property<string>("CardTypeDetail")
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("card_type_detail");
+
+                    b.Property<DateTime?>("deleted_at")
+                        .HasColumnType("datetime")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("DateOfBirthRaw")
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("date_of_birth_raw");
+
+                    b.Property<Guid>("DocumentId")
+                        .HasColumnType("char(36)")
+                        .HasColumnName("document_id");
+
+                    b.Property<string>("ExtractedFieldsJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("extracted_fields_json");
+
+                    b.Property<string>("FieldConfidencesJson")
+                        .HasColumnType("longtext")
+                        .HasColumnName("field_confidences_json");
+
+                    b.Property<string>("FullName")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("full_name");
+
+                    b.Property<string>("IdNumber")
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)")
+                        .HasColumnName("id_number");
+
+                    b.Property<string>("IssueDateRaw")
+                        .HasMaxLength(30)
+                        .HasColumnType("varchar(30)")
+                        .HasColumnName("issue_date_raw");
+
+                    b.Property<bool?>("AutoApproved")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("auto_approved");
+
+                    b.Property<string>("MatchFailureReason")
+                        .HasColumnType("text")
+                        .HasColumnName("match_failure_reason");
+
+                    b.Property<bool?>("MatchPassed")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("match_passed");
+
+                    b.Property<decimal?>("OverallConfidence")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("overall_confidence");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp")
+                        .HasColumnName("processed_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)")
+                        .HasColumnName("provider");
+
+                    b.Property<int?>("ProviderErrorCode")
+                        .HasColumnType("int")
+                        .HasColumnName("provider_error_code");
+
+                    b.Property<string>("ProviderErrorMessage")
+                        .HasColumnType("text")
+                        .HasColumnName("provider_error_message");
+
+                    b.HasKey("OcrResultId")
+                        .HasName("PRIMARY");
+
+                    b.HasIndex(new[] { "DocumentId" }, "idx_document");
+
+                    b.HasIndex(new[] { "ProcessedAt" }, "idx_processed_at");
+
+                    b.HasIndex(new[] { "Provider" }, "idx_provider");
+
+                    b.ToTable("identity_document_ocr_results", (string)null);
+                });
+
             modelBuilder.Entity("DAL.Models.Landlord", b =>
                 {
                     b.Property<Guid>("LandlordId")
@@ -2522,7 +2630,21 @@ namespace DAL.Migrations
                         .IsRequired()
                         .HasConstraintName("user_identity_documents_ibfk_1");
 
+                    b.Navigation("IdentityDocumentOcrResults");
+
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("DAL.Models.IdentityDocumentOcrResult", b =>
+                {
+                    b.HasOne("DAL.Models.UserIdentityDocument", "Document")
+                        .WithMany("IdentityDocumentOcrResults")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("identity_document_ocr_results_ibfk_1");
+
+                    b.Navigation("Document");
                 });
 
             modelBuilder.Entity("DAL.Models.Apartment", b =>

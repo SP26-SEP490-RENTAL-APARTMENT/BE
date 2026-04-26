@@ -343,6 +343,27 @@ CREATE TABLE `user_identity_documents` (
   `notes` text
 );
 
+CREATE TABLE `identity_document_ocr_results` (
+  `ocr_result_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
+  `document_id` char(36) NOT NULL,
+  `provider` varchar(50) NOT NULL,
+  `provider_error_code` int,
+  `provider_error_message` text,
+  `card_type` varchar(50),
+  `card_type_detail` varchar(50),
+  `id_number` varchar(32),
+  `full_name` varchar(150),
+  `date_of_birth_raw` varchar(30),
+  `issue_date_raw` varchar(30),
+  `overall_confidence` decimal(5,4),
+  `extracted_fields_json` longtext,
+  `field_confidences_json` longtext,
+  `auto_approved` tinyint(1),
+  `match_passed` tinyint(1),
+  `match_failure_reason` text,
+  `processed_at` timestamp DEFAULT (CURRENT_TIMESTAMP)
+);
+
 CREATE TABLE `users` (
   `user_id` char(36) PRIMARY KEY NOT NULL DEFAULT (uuid()),
   `email` varchar(255) NOT NULL,
@@ -832,6 +853,8 @@ ALTER TABLE `temporary_residence_reports` ADD CONSTRAINT `temporary_residence_re
 ALTER TABLE `tenants` ADD CONSTRAINT `tenants_ibfk_1` FOREIGN KEY (`tenant_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE;
 
 ALTER TABLE `user_identity_documents` ADD CONSTRAINT `user_identity_documents_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE;
+
+ALTER TABLE `identity_document_ocr_results` ADD CONSTRAINT `identity_document_ocr_results_ibfk_1` FOREIGN KEY (`document_id`) REFERENCES `user_identity_documents` (`document_id`) ON DELETE CASCADE;
 
 ALTER TABLE `booking_check_times` ADD CONSTRAINT `booking_check_times_ibfk_1` FOREIGN KEY (`booking_id`) REFERENCES `bookings` (`booking_id`) ON DELETE CASCADE;
 

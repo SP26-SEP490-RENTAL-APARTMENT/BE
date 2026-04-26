@@ -31,5 +31,7 @@ public partial class UserIdentityDocument
 
     public string? Notes { get; set; }
 
+    public virtual ICollection<IdentityDocumentOcrResult> IdentityDocumentOcrResults { get; set; } = new List<IdentityDocumentOcrResult>();
+
     public virtual User User { get; set; } = null!;
 }

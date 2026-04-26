@@ -7,7 +7,15 @@ public static class DbInitializer
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
-        await context.Database.MigrateAsync(cancellationToken);
+        // Integration tests use InMemory provider, which does not support relational migrations.
+        if (context.Database.IsRelational())
+        {
+            await context.Database.MigrateAsync(cancellationToken);
+        }
+        else
+        {
+            await context.Database.EnsureCreatedAsync(cancellationToken);
+        }
 
         // Core entities
         await UserSeed.SeedAsync(context, cancellationToken);

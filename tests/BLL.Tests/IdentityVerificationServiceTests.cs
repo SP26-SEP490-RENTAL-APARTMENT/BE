@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using BLL.Services.Implements;
 using BLL.Services.Interfaces;
 using Common.DTOs;
+using Common.Settings;
 using DAL.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 
 namespace BLL.Tests;
 
@@ -44,9 +46,20 @@ public class IdentityVerificationServiceTests
             UploadedAt = DateTime.UtcNow
         });
 
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, landlordRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
 
         await sut.ReviewIdentityDocumentAsync(new ReviewIdentityDocumentDto
         {
@@ -114,9 +127,20 @@ public class IdentityVerificationServiceTests
             UploadedAt = DateTime.UtcNow
         });
 
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, landlordRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
 
         await sut.ReviewIdentityDocumentAsync(new ReviewIdentityDocumentDto
         {
@@ -174,10 +198,20 @@ public class IdentityVerificationServiceTests
         var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
 
         var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
 
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, landlordRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
 
         IFormFile file = new TestFormFile("id.jpg", "image/jpeg", new byte[] { 1, 2, 3 });
 
@@ -229,9 +263,20 @@ public class IdentityVerificationServiceTests
             UploadedAt = DateTime.UtcNow
         });
 
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, landlordRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.ReviewIdentityDocumentAsync(new ReviewIdentityDocumentDto
         {
@@ -276,9 +321,20 @@ public class IdentityVerificationServiceTests
             UploadedAt = DateTime.UtcNow
         });
 
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, landlordRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
 
         await sut.EnsureUserVerifiedForInspectionAsync(landlordId);
 
@@ -315,14 +371,291 @@ public class IdentityVerificationServiceTests
         });
 
         var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
 
         var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
         var notificationService = new NotificationService(notificationRepo);
-        var sut = new IdentityVerificationService(userRepo, tenantRepo, landlordRepo, documentRepo, notificationService, new NoOpIdentityDocumentUploadService());
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.EnsureUserVerifiedForInspectionAsync(landlordId));
 
         Assert.Equal("Vietnamese landlords must verify identity with a national ID card or other government-issued ID (passport, driver's license, or similar) before property inspection.", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddIdentityDocumentAsync_WhenNationalIdMissingBack_ThrowsArgumentException()
+    {
+        var userId = Guid.NewGuid();
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId, new User
+        {
+            UserId = userId,
+            Role = "tenant",
+            Nationality = "VN",
+            IdentityVerified = false,
+            FullName = "Nguyen Van A",
+            Birthday = new DateOnly(2000, 1, 1),
+            NationalIdCardNumber = "012345678901"
+        });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
+        {
+            TenantId = userId,
+            IdentityVerificationStatus = "not_started"
+        });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()));
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new TestFormFile("front.jpg", "image/jpeg", new byte[] { 1, 2, 3 })
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.AddIdentityDocumentAsync(userId, dto));
+
+        Assert.Equal("National ID verification requires both frontImage and backImage.", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddIdentityDocumentAsync_WhenNationalIdStrictMismatch_ThrowsArgumentException()
+    {
+        var userId = Guid.NewGuid();
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId, new User
+        {
+            UserId = userId,
+            Role = "tenant",
+            Nationality = "VN",
+            IdentityVerified = false,
+            FullName = "Nguyen Van A",
+            Birthday = new DateOnly(2000, 1, 1),
+            NationalIdCardNumber = "012345678901"
+        });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
+        {
+            TenantId = userId,
+            IdentityVerificationStatus = "not_started"
+        });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+
+        var fptService = new SequenceFptIdRecognitionService(
+            new FptIdRecognitionResult
+            {
+                Success = true,
+                CardType = "new",
+                IdNumber = "099999999999",
+                FullName = "NGUYEN VAN A",
+                DateOfBirth = "01/01/2000",
+                OverallConfidence = 0.99
+            },
+            new FptIdRecognitionResult
+            {
+                Success = true,
+                CardType = "new_back",
+                IssueDate = "01/01/2020",
+                OverallConfidence = 0.98
+            });
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            fptService,
+            Options.Create(new FptIdRecognitionOptions()));
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new TestFormFile("front.jpg", "image/jpeg", new byte[] { 1, 2, 3 }),
+            BackImage = new TestFormFile("back.jpg", "image/jpeg", new byte[] { 4, 5, 6 })
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.AddIdentityDocumentAsync(userId, dto));
+
+        Assert.Equal("National ID number does not match your profile.", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddIdentityDocumentAsync_WhenNationalIdStrictMatch_AutoApprovesAndPersistsOcrResults()
+    {
+        var userId = Guid.NewGuid();
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId, new User
+        {
+            UserId = userId,
+            Role = "tenant",
+            Nationality = "VN",
+            IdentityVerified = false,
+            FullName = "Nguyễn Văn A",
+            Birthday = new DateOnly(2000, 1, 1),
+            NationalIdCardNumber = "012345678901"
+        });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
+        {
+            TenantId = userId,
+            IdentityVerificationStatus = "not_started"
+        });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+
+        var fptService = new SequenceFptIdRecognitionService(
+            new FptIdRecognitionResult
+            {
+                Success = true,
+                CardType = "new",
+                IdNumber = "012345678901",
+                FullName = "NGUYEN VAN A",
+                DateOfBirth = "01/01/2000",
+                OverallConfidence = 0.96,
+                FieldConfidences = new Dictionary<string, double>
+                {
+                    ["id_prob"] = 0.98,
+                    ["name_prob"] = 0.95,
+                    ["dob_prob"] = 0.95
+                }
+            },
+            new FptIdRecognitionResult
+            {
+                Success = true,
+                CardType = "new_back",
+                IssueDate = "01/01/2020",
+                OverallConfidence = 0.94
+            });
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            fptService,
+            Options.Create(new FptIdRecognitionOptions
+            {
+                AutoApproveConfidenceThreshold = 0.90
+            }));
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new TestFormFile("front.jpg", "image/jpeg", new byte[] { 1, 2, 3 }),
+            BackImage = new TestFormFile("back.jpg", "image/jpeg", new byte[] { 4, 5, 6 })
+        };
+
+        var created = await sut.AddIdentityDocumentAsync(userId, dto);
+
+        Assert.Equal(2, created.Length);
+        Assert.Equal(2, documentRepo.Items.Count);
+        Assert.All(documentRepo.Items, d =>
+        {
+            Assert.Equal("verified", d.VerificationStatus);
+            Assert.NotNull(d.VerifiedAt);
+        });
+
+        var updatedUser = await userRepo.GetByIdAsync(userId);
+        var updatedTenant = await tenantRepo.GetByIdAsync(userId);
+        Assert.True(updatedUser!.IdentityVerified);
+        Assert.Equal("verified", updatedTenant!.IdentityVerificationStatus);
+        Assert.NotNull(updatedTenant.LastVerifiedAt);
+
+        Assert.Equal(2, ocrResultRepo.Items.Count);
+        Assert.All(ocrResultRepo.Items, x =>
+        {
+            Assert.True(x.AutoApproved);
+            Assert.True(x.MatchPassed);
+        });
+    }
+
+    [Fact]
+    public async Task AddIdentityDocumentAsync_WhenOcrServiceReturnsError_ThrowsArgumentException()
+    {
+        var userId = Guid.NewGuid();
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId, new User
+        {
+            UserId = userId,
+            Role = "tenant",
+            Nationality = "VN",
+            IdentityVerified = false,
+            FullName = "Nguyen Van A",
+            Birthday = new DateOnly(2000, 1, 1),
+            NationalIdCardNumber = "012345678901"
+        });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
+        {
+            TenantId = userId,
+            IdentityVerificationStatus = "not_started"
+        });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new ThrowingFptIdRecognitionService("ID card not detected or image quality is too low."),
+            Options.Create(new FptIdRecognitionOptions()));
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new TestFormFile("front.jpg", "image/jpeg", new byte[] { 1, 2, 3 }),
+            BackImage = new TestFormFile("back.jpg", "image/jpeg", new byte[] { 4, 5, 6 })
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.AddIdentityDocumentAsync(userId, dto));
+
+        Assert.Equal("ID card not detected or image quality is too low.", ex.Message);
     }
 }
 
@@ -370,5 +703,56 @@ internal sealed class TestFormFile : IFormFile
     public Stream OpenReadStream()
     {
         return new MemoryStream(_content, writable: false);
+    }
+}
+
+internal sealed class NoOpFptIdRecognitionService : IFptIdRecognitionService
+{
+    public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new FptIdRecognitionResult
+        {
+            Success = true,
+            CardType = "new",
+            IdNumber = "000000000000",
+            FullName = "TEST USER",
+            DateOfBirth = "01/01/2000",
+            OverallConfidence = 0.99
+        });
+    }
+}
+
+internal sealed class SequenceFptIdRecognitionService : IFptIdRecognitionService
+{
+    private readonly Queue<FptIdRecognitionResult> _results;
+
+    public SequenceFptIdRecognitionService(params FptIdRecognitionResult[] results)
+    {
+        _results = new Queue<FptIdRecognitionResult>(results);
+    }
+
+    public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+    {
+        if (_results.Count == 0)
+        {
+            throw new InvalidOperationException("No OCR result configured for test.");
+        }
+
+        return Task.FromResult(_results.Dequeue());
+    }
+}
+
+internal sealed class ThrowingFptIdRecognitionService : IFptIdRecognitionService
+{
+    private readonly string _message;
+
+    public ThrowingFptIdRecognitionService(string message)
+    {
+        _message = message;
+    }
+
+    public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+    {
+        throw new ArgumentException(_message);
     }
 }

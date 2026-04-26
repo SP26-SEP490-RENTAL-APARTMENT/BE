@@ -95,6 +95,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<UserIdentityDocument> UserIdentityDocuments { get; set; }
 
+    public virtual DbSet<IdentityDocumentOcrResult> IdentityDocumentOcrResults { get; set; }
+
     public virtual DbSet<ReportDefinition> ReportDefinitions { get; set; }
 
     public virtual DbSet<ReportQueryConfig> ReportQueryConfigs { get; set; }
@@ -1747,6 +1749,73 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.UserIdentityDocuments)
                 .HasForeignKey(d => d.UserId)
                 .HasConstraintName("user_identity_documents_ibfk_1");
+
+            entity.HasMany(d => d.IdentityDocumentOcrResults)
+                .WithOne(p => p.Document)
+                .HasForeignKey(p => p.DocumentId)
+                .HasConstraintName("identity_document_ocr_results_ibfk_1");
+        });
+
+        modelBuilder.Entity<IdentityDocumentOcrResult>(entity =>
+        {
+            entity.HasKey(e => e.OcrResultId).HasName("PRIMARY");
+
+            entity.ToTable("identity_document_ocr_results");
+
+            entity.HasIndex(e => e.DocumentId, "idx_document");
+
+            entity.HasIndex(e => e.Provider, "idx_provider");
+
+            entity.HasIndex(e => e.ProcessedAt, "idx_processed_at");
+
+            entity.Property(e => e.OcrResultId).HasColumnName("ocr_result_id");
+            entity.Property(e => e.DocumentId).HasColumnName("document_id");
+            entity.Property(e => e.Provider)
+                .HasMaxLength(50)
+                .HasColumnName("provider");
+            entity.Property(e => e.ProviderErrorCode)
+                .HasColumnName("provider_error_code");
+            entity.Property(e => e.ProviderErrorMessage)
+                .HasColumnType("text")
+                .HasColumnName("provider_error_message");
+            entity.Property(e => e.CardType)
+                .HasMaxLength(50)
+                .HasColumnName("card_type");
+            entity.Property(e => e.CardTypeDetail)
+                .HasMaxLength(50)
+                .HasColumnName("card_type_detail");
+            entity.Property(e => e.IdNumber)
+                .HasMaxLength(32)
+                .HasColumnName("id_number");
+            entity.Property(e => e.FullName)
+                .HasMaxLength(150)
+                .HasColumnName("full_name");
+            entity.Property(e => e.DateOfBirthRaw)
+                .HasMaxLength(30)
+                .HasColumnName("date_of_birth_raw");
+            entity.Property(e => e.IssueDateRaw)
+                .HasMaxLength(30)
+                .HasColumnName("issue_date_raw");
+            entity.Property(e => e.OverallConfidence)
+                .HasPrecision(5, 4)
+                .HasColumnName("overall_confidence");
+            entity.Property(e => e.ExtractedFieldsJson)
+                .HasColumnType("longtext")
+                .HasColumnName("extracted_fields_json");
+            entity.Property(e => e.FieldConfidencesJson)
+                .HasColumnType("longtext")
+                .HasColumnName("field_confidences_json");
+            entity.Property(e => e.AutoApproved)
+                .HasColumnName("auto_approved");
+            entity.Property(e => e.MatchPassed)
+                .HasColumnName("match_passed");
+            entity.Property(e => e.MatchFailureReason)
+                .HasColumnType("text")
+                .HasColumnName("match_failure_reason");
+            entity.Property(e => e.ProcessedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("processed_at");
         });
 
         modelBuilder.Entity<LandlordWallet>(entity =>

@@ -1,11 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using BLL.Services.Interfaces;
 using Common.DTOs;
+using Common.Settings;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Microsoft.Extensions.Options;
 
 namespace BLL.Services.Implements
 {
@@ -38,8 +43,11 @@ namespace BLL.Services.Implements
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<Landlord> _landlordRepository;
         private readonly IRepository<UserIdentityDocument> _userIdentityDocumentRepository;
+        private readonly IRepository<IdentityDocumentOcrResult> _identityDocumentOcrResultRepository;
         private readonly INotificationService _notificationService;
         private readonly IIdentityDocumentUploadService _identityDocumentUploadService;
+        private readonly IFptIdRecognitionService _fptIdRecognitionService;
+        private readonly FptIdRecognitionOptions _fptIdRecognitionOptions;
 
         private const string IdentityDocumentReferenceType = "identity_document";
         private const string IdentityVerifiedNotificationType = "identity_verified";
@@ -50,15 +58,21 @@ namespace BLL.Services.Implements
             IRepository<Tenant> tenantRepository,
             IRepository<Landlord> landlordRepository,
             IRepository<UserIdentityDocument> userIdentityDocumentRepository,
+            IRepository<IdentityDocumentOcrResult> identityDocumentOcrResultRepository,
             INotificationService notificationService,
-            IIdentityDocumentUploadService identityDocumentUploadService)
+            IIdentityDocumentUploadService identityDocumentUploadService,
+            IFptIdRecognitionService fptIdRecognitionService,
+            IOptions<FptIdRecognitionOptions> fptIdRecognitionOptions)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _landlordRepository = landlordRepository;
             _userIdentityDocumentRepository = userIdentityDocumentRepository;
+            _identityDocumentOcrResultRepository = identityDocumentOcrResultRepository;
             _notificationService = notificationService;
             _identityDocumentUploadService = identityDocumentUploadService;
+            _fptIdRecognitionService = fptIdRecognitionService;
+            _fptIdRecognitionOptions = fptIdRecognitionOptions.Value;
         }
 
         public async Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(
@@ -82,7 +96,7 @@ namespace BLL.Services.Implements
                 filters,
                 DocumentAllowedColumns);
 
-            return (MapDocumentDtos(documents), totalCount);
+            return (await MapDocumentDtosAsync(documents), totalCount);
         }
 
         public async Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(
@@ -100,12 +114,26 @@ namespace BLL.Services.Implements
                 null,
                 DocumentAllowedColumns);
 
-            return (MapDocumentDtos(documents), totalCount);
+            return (await MapDocumentDtosAsync(documents), totalCount);
         }
 
-        private static IEnumerable<IdentityDocumentDto> MapDocumentDtos(IEnumerable<UserIdentityDocument> documents)
+        private async Task<IEnumerable<IdentityDocumentDto>> MapDocumentDtosAsync(IEnumerable<UserIdentityDocument> documents)
         {
-            return documents
+            var documentList = documents.ToList();
+            var documentIds = documentList.Select(d => d.DocumentId).ToList();
+
+            Dictionary<Guid, IdentityDocumentOcrSummaryDto> ocrMap = new();
+            if (documentIds.Count > 0)
+            {
+                var ocrResults = await _identityDocumentOcrResultRepository.FindAsync(x => documentIds.Contains(x.DocumentId));
+                ocrMap = ocrResults
+                    .GroupBy(x => x.DocumentId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => BuildOcrSummaryDto(g.OrderByDescending(x => x.ProcessedAt ?? DateTime.MinValue).First()));
+            }
+
+            return documentList
                 .Select(d => new IdentityDocumentDto
                 {
                     DocumentId = d.DocumentId,
@@ -119,7 +147,8 @@ namespace BLL.Services.Implements
                     VerificationStatus = d.VerificationStatus,
                     VerifiedAt = d.VerifiedAt,
                     RejectionReason = d.RejectionReason,
-                    Notes = d.Notes
+                    Notes = d.Notes,
+                    OcrSummary = ocrMap.TryGetValue(d.DocumentId, out var ocrSummary) ? ocrSummary : null
                 });
         }
 
@@ -130,6 +159,13 @@ namespace BLL.Services.Implements
             {
                 throw new ArgumentException("User not found.");
             }
+
+            if (string.IsNullOrWhiteSpace(dto.DocumentType))
+            {
+                throw new ArgumentException("Document type is required.");
+            }
+
+            var normalizedDocumentType = dto.DocumentType.Trim().ToLowerInvariant();
 
             Tenant? tenant = null;
             Landlord? landlord = null;
@@ -143,15 +179,43 @@ namespace BLL.Services.Implements
                 landlord = await _landlordRepository.GetByIdAsync(userId);
             }
 
-            if (dto.Files == null || dto.Files.Count == 0)
+            var uploads = BuildUploads(normalizedDocumentType, dto);
+            if (uploads.Count == 0)
             {
                 throw new ArgumentException("At least one identity document file is required.");
             }
 
-            var createdDocumentIds = new List<Guid>();
-
-            foreach (var file in dto.Files)
+            var shouldAutoApprove = false;
+            string? ocrSummary = null;
+            if (string.Equals(normalizedDocumentType, "national_id_card", StringComparison.OrdinalIgnoreCase))
             {
+                var frontUpload = uploads.FirstOrDefault(x => string.Equals(x.Side, "front", StringComparison.OrdinalIgnoreCase));
+                var backUpload = uploads.FirstOrDefault(x => string.Equals(x.Side, "back", StringComparison.OrdinalIgnoreCase));
+
+                if (frontUpload == null || backUpload == null)
+                {
+                    throw new ArgumentException("National ID verification requires both front and back images.");
+                }
+
+                frontUpload.Ocr = await _fptIdRecognitionService.RecognizeAsync(frontUpload.File);
+                backUpload.Ocr = await _fptIdRecognitionService.RecognizeAsync(backUpload.File);
+
+                var strictFailure = ValidateStrictNationalId(user, frontUpload.Ocr, backUpload.Ocr, out ocrSummary);
+                if (!string.IsNullOrWhiteSpace(strictFailure))
+                {
+                    throw new ArgumentException(strictFailure);
+                }
+
+                shouldAutoApprove = true;
+            }
+
+            var createdDocumentIds = new List<Guid>();
+            var now = Common.Utils.VietnamTime.Now;
+            var ocrResultsToPersist = new List<IdentityDocumentOcrResult>();
+
+            foreach (var upload in uploads)
+            {
+                var file = upload.File;
                 if (file == null || file.Length == 0)
                 {
                     throw new ArgumentException("Each identity document file must be non-empty.");
@@ -163,23 +227,86 @@ namespace BLL.Services.Implements
                 {
                     DocumentId = Guid.NewGuid(),
                     UserId = userId,
-                    DocumentType = dto.DocumentType.Trim().ToLowerInvariant(),
-                    Side = string.IsNullOrWhiteSpace(dto.Side) ? null : dto.Side.Trim().ToLowerInvariant(),
+                    DocumentType = normalizedDocumentType,
+                    Side = upload.Side,
                     FileUrl = fileUrl,
                     FileKey = null,
                     MimeType = file.ContentType,
                     FileSize = file.Length,
-                    Notes = dto.Notes,
-                    UploadedAt = Common.Utils.VietnamTime.Now
+                    Notes = CombineNotes(dto.Notes, ocrSummary, upload.Ocr),
+                    UploadedAt = now,
+                    VerificationStatus = shouldAutoApprove ? "verified" : "pending",
+                    VerifiedAt = shouldAutoApprove ? now : null,
+                    RejectionReason = null
                 };
 
                 await _userIdentityDocumentRepository.AddAsync(document);
                 createdDocumentIds.Add(document.DocumentId);
+
+                if (upload.Ocr != null)
+                {
+                    var ocrResult = new IdentityDocumentOcrResult
+                    {
+                        OcrResultId = Guid.NewGuid(),
+                        DocumentId = document.DocumentId,
+                        Provider = "fpt_id_recognition",
+                        ProviderErrorCode = upload.Ocr.ErrorCode,
+                        ProviderErrorMessage = string.IsNullOrWhiteSpace(upload.Ocr.ErrorMessage) ? null : upload.Ocr.ErrorMessage,
+                        CardType = upload.Ocr.CardType,
+                        CardTypeDetail = upload.Ocr.CardTypeDetail,
+                        IdNumber = upload.Ocr.IdNumber,
+                        FullName = upload.Ocr.FullName,
+                        DateOfBirthRaw = upload.Ocr.DateOfBirth,
+                        IssueDateRaw = upload.Ocr.IssueDate,
+                        OverallConfidence = Convert.ToDecimal(upload.Ocr.OverallConfidence),
+                        ExtractedFieldsJson = upload.Ocr.ExtractedFields.Count > 0 ? JsonSerializer.Serialize(upload.Ocr.ExtractedFields) : null,
+                        FieldConfidencesJson = upload.Ocr.FieldConfidences.Count > 0 ? JsonSerializer.Serialize(upload.Ocr.FieldConfidences) : null,
+                        AutoApproved = shouldAutoApprove,
+                        MatchPassed = shouldAutoApprove,
+                        MatchFailureReason = shouldAutoApprove ? null : "OCR strict matching did not pass.",
+                        ProcessedAt = now
+                    };
+
+                    ocrResultsToPersist.Add(ocrResult);
+                }
             }
 
             await _userIdentityDocumentRepository.SaveChangesAsync();
 
-            if (tenant != null && !string.Equals(tenant.IdentityVerificationStatus, "verified", StringComparison.OrdinalIgnoreCase))
+            if (ocrResultsToPersist.Count > 0)
+            {
+                foreach (var ocrResult in ocrResultsToPersist)
+                {
+                    await _identityDocumentOcrResultRepository.AddAsync(ocrResult);
+                }
+
+                await _identityDocumentOcrResultRepository.SaveChangesAsync();
+            }
+
+            if (shouldAutoApprove)
+            {
+                user.IdentityVerified = true;
+                _userRepository.Update(user);
+                await _userRepository.SaveChangesAsync();
+
+                if (tenant != null)
+                {
+                    tenant.IdentityVerificationStatus = "verified";
+                    tenant.LastVerifiedAt = now;
+                    _tenantRepository.Update(tenant);
+                    await _tenantRepository.SaveChangesAsync();
+                }
+                else if (landlord != null)
+                {
+                    landlord.IdentityVerificationStatus = "verified";
+                    landlord.LastVerifiedAt = now;
+                    _landlordRepository.Update(landlord);
+                    await _landlordRepository.SaveChangesAsync();
+                }
+
+                await CreateReviewNotificationAsync(userId, createdDocumentIds.First(), approved: true, rejectionReason: null);
+            }
+            else if (tenant != null && !string.Equals(tenant.IdentityVerificationStatus, "verified", StringComparison.OrdinalIgnoreCase))
             {
                 tenant.IdentityVerificationStatus = "pending";
                 _tenantRepository.Update(tenant);
@@ -389,6 +516,269 @@ namespace BLL.Services.Implements
             };
 
             await _notificationService.CreateAsync(notification);
+        }
+
+        private List<IdentityUploadCandidate> BuildUploads(string normalizedDocumentType, IdentityDocumentUploadDto dto)
+        {
+            if (string.Equals(normalizedDocumentType, "national_id_card", StringComparison.OrdinalIgnoreCase))
+            {
+                if (dto.FrontImage == null || dto.FrontImage.Length == 0 || dto.BackImage == null || dto.BackImage.Length == 0)
+                {
+                    throw new ArgumentException("National ID verification requires both frontImage and backImage.");
+                }
+
+                return new List<IdentityUploadCandidate>
+                {
+                    new(dto.FrontImage, "front"),
+                    new(dto.BackImage, "back")
+                };
+            }
+
+            var uploads = new List<IdentityUploadCandidate>();
+
+            if (dto.FrontImage != null && dto.FrontImage.Length > 0)
+            {
+                uploads.Add(new IdentityUploadCandidate(dto.FrontImage, "front"));
+            }
+
+            if (dto.BackImage != null && dto.BackImage.Length > 0)
+            {
+                uploads.Add(new IdentityUploadCandidate(dto.BackImage, "back"));
+            }
+
+            if (uploads.Count == 0 && dto.Files != null && dto.Files.Count > 0)
+            {
+                var side = string.IsNullOrWhiteSpace(dto.Side) ? "front" : dto.Side.Trim().ToLowerInvariant();
+                uploads.AddRange(dto.Files.Where(f => f != null).Select(f => new IdentityUploadCandidate(f, side)));
+            }
+
+            return uploads;
+        }
+
+        private string? ValidateStrictNationalId(User user, FptIdRecognitionResult front, FptIdRecognitionResult back, out string ocrSummary)
+        {
+            ocrSummary = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(user.FullName) || user.Birthday == null || string.IsNullOrWhiteSpace(user.NationalIdCardNumber))
+            {
+                return "User profile must include full name, birthday, and national ID number before verification.";
+            }
+
+            if (front == null || !front.Success)
+            {
+                return "Failed to detect front side ID information.";
+            }
+
+            if (back == null || !back.Success)
+            {
+                return "Failed to detect back side ID information.";
+            }
+
+            if (string.IsNullOrWhiteSpace(front.CardType) || front.CardType.Contains("back", StringComparison.OrdinalIgnoreCase))
+            {
+                return "The uploaded front image was not recognized as an ID front side.";
+            }
+
+            if (string.IsNullOrWhiteSpace(back.CardType) || !back.CardType.Contains("back", StringComparison.OrdinalIgnoreCase))
+            {
+                return "The uploaded back image was not recognized as an ID back side.";
+            }
+
+            var normalizedUserId = NormalizeIdNumber(user.NationalIdCardNumber);
+            var normalizedOcrId = NormalizeIdNumber(front.IdNumber);
+            if (string.IsNullOrWhiteSpace(normalizedOcrId) || !string.Equals(normalizedUserId, normalizedOcrId, StringComparison.Ordinal))
+            {
+                return "National ID number does not match your profile.";
+            }
+
+            var normalizedUserName = NormalizeText(user.FullName);
+            var normalizedOcrName = NormalizeText(front.FullName);
+            if (string.IsNullOrWhiteSpace(normalizedOcrName) || !string.Equals(normalizedUserName, normalizedOcrName, StringComparison.Ordinal))
+            {
+                return "Full name on ID does not match your profile.";
+            }
+
+            var ocrBirthday = TryParseDateOnly(front.DateOfBirth);
+            if (!ocrBirthday.HasValue || ocrBirthday.Value != user.Birthday.Value)
+            {
+                return "Date of birth on ID does not match your profile.";
+            }
+
+            if (front.OverallConfidence < _fptIdRecognitionOptions.AutoApproveConfidenceThreshold)
+            {
+                return $"OCR confidence is below required threshold {_fptIdRecognitionOptions.AutoApproveConfidenceThreshold:0.00}.";
+            }
+
+            var summary = new
+            {
+                provider = "fpt_id_recognition",
+                threshold = _fptIdRecognitionOptions.AutoApproveConfidenceThreshold,
+                autoApproved = true,
+                front = new
+                {
+                    front.CardType,
+                    front.CardTypeDetail,
+                    front.IdNumber,
+                    front.FullName,
+                    front.DateOfBirth,
+                    front.OverallConfidence,
+                    front.FieldConfidences
+                },
+                back = new
+                {
+                    back.CardType,
+                    back.CardTypeDetail,
+                    back.IssueDate,
+                    back.OverallConfidence,
+                    back.FieldConfidences
+                },
+                processedAt = Common.Utils.VietnamTime.Now
+            };
+
+            ocrSummary = JsonSerializer.Serialize(summary);
+            return null;
+        }
+
+        private static string? CombineNotes(string? userNotes, string? ocrSummary, FptIdRecognitionResult? ocr)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(userNotes))
+            {
+                parts.Add(userNotes.Trim());
+            }
+
+            if (ocr != null)
+            {
+                var sideSummary = JsonSerializer.Serialize(new
+                {
+                    ocr.CardType,
+                    ocr.CardTypeDetail,
+                    ocr.IdNumber,
+                    ocr.FullName,
+                    ocr.DateOfBirth,
+                    ocr.OverallConfidence,
+                    ocr.FieldConfidences
+                });
+                parts.Add("OCR_SIDE:" + sideSummary);
+            }
+
+            if (!string.IsNullOrWhiteSpace(ocrSummary))
+            {
+                parts.Add("OCR_SUMMARY:" + ocrSummary);
+            }
+
+            return parts.Count == 0 ? null : string.Join("\n", parts);
+        }
+
+        private static IdentityDocumentOcrSummaryDto BuildOcrSummaryDto(IdentityDocumentOcrResult result)
+        {
+            return new IdentityDocumentOcrSummaryDto
+            {
+                Provider = result.Provider,
+                ProviderErrorCode = result.ProviderErrorCode,
+                ProviderErrorMessage = result.ProviderErrorMessage,
+                CardType = result.CardType,
+                CardTypeDetail = result.CardTypeDetail,
+                IdNumber = result.IdNumber,
+                FullName = result.FullName,
+                DateOfBirthRaw = result.DateOfBirthRaw,
+                IssueDateRaw = result.IssueDateRaw,
+                OverallConfidence = result.OverallConfidence,
+                AutoApproved = result.AutoApproved,
+                MatchPassed = result.MatchPassed,
+                MatchFailureReason = result.MatchFailureReason,
+                ProcessedAt = result.ProcessedAt
+            };
+        }
+
+        private static string NormalizeIdNumber(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var digits = value.Where(char.IsDigit).ToArray();
+            return new string(digits);
+        }
+
+        private static string NormalizeText(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var normalized = value.Normalize(NormalizationForm.FormD);
+            var builder = new StringBuilder();
+            foreach (var ch in normalized)
+            {
+                var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+                if (category != UnicodeCategory.NonSpacingMark)
+                {
+                    builder.Append(ch);
+                }
+            }
+
+            var withoutMarks = builder.ToString().Normalize(NormalizationForm.FormC).ToUpperInvariant();
+            var compact = new StringBuilder();
+            var previousWasSpace = false;
+            foreach (var ch in withoutMarks)
+            {
+                if (char.IsLetterOrDigit(ch))
+                {
+                    compact.Append(ch);
+                    previousWasSpace = false;
+                }
+                else if (char.IsWhiteSpace(ch) && !previousWasSpace)
+                {
+                    compact.Append(' ');
+                    previousWasSpace = true;
+                }
+            }
+
+            return compact.ToString().Trim();
+        }
+
+        private static DateOnly? TryParseDateOnly(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || string.Equals(value, "N/A", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var normalized = value.Trim();
+            var formats = new[]
+            {
+                "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "d-M-yyyy", "yyyy-MM-dd"
+            };
+
+            foreach (var format in formats)
+            {
+                if (DateOnly.TryParseExact(normalized, format, CultureInfo.InvariantCulture, DateTimeStyles.None, out var exactDate))
+                {
+                    return exactDate;
+                }
+            }
+
+            return DateOnly.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                ? date
+                : null;
+        }
+
+        private sealed class IdentityUploadCandidate
+        {
+            public IdentityUploadCandidate(Microsoft.AspNetCore.Http.IFormFile file, string side)
+            {
+                File = file;
+                Side = side;
+            }
+
+            public Microsoft.AspNetCore.Http.IFormFile File { get; }
+
+            public string Side { get; }
+
+            public FptIdRecognitionResult? Ocr { get; set; }
         }
 
         public async Task EnsureUserVerifiedForBookingAsync(Guid userId)

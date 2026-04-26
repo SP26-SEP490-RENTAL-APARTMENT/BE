@@ -870,6 +870,35 @@ CREATE TABLE `user_identity_documents` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `identity_document_ocr_results`
+--
+
+CREATE TABLE `identity_document_ocr_results` (
+  `ocr_result_id` char(36) NOT NULL DEFAULT (uuid()),
+  `document_id` char(36) NOT NULL,
+  `provider` varchar(50) NOT NULL,
+  `provider_error_code` int DEFAULT NULL,
+  `provider_error_message` text DEFAULT NULL,
+  `card_type` varchar(50) DEFAULT NULL,
+  `card_type_detail` varchar(50) DEFAULT NULL,
+  `id_number` varchar(32) DEFAULT NULL,
+  `full_name` varchar(150) DEFAULT NULL,
+  `date_of_birth_raw` varchar(30) DEFAULT NULL,
+  `issue_date_raw` varchar(30) DEFAULT NULL,
+  `overall_confidence` decimal(5,4) DEFAULT NULL,
+  `extracted_fields_json` longtext DEFAULT NULL,
+  `field_confidences_json` longtext DEFAULT NULL,
+  `auto_approved` tinyint(1) DEFAULT NULL,
+  `match_passed` tinyint(1) DEFAULT NULL,
+  `match_failure_reason` text DEFAULT NULL,
+  `processed_at` timestamp NULL DEFAULT current_timestamp(),
+  `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
+  `deleted_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `wishlist_collections`
 --
 
@@ -1239,6 +1268,15 @@ ALTER TABLE `user_identity_documents`
   ADD KEY `idx_type` (`document_type`);
 
 --
+-- Indexes for table `identity_document_ocr_results`
+--
+ALTER TABLE `identity_document_ocr_results`
+  ADD PRIMARY KEY (`ocr_result_id`),
+  ADD KEY `idx_document` (`document_id`),
+  ADD KEY `idx_provider` (`provider`),
+  ADD KEY `idx_processed_at` (`processed_at`);
+
+--
 -- Indexes for table `wishlist_collections`
 --
 ALTER TABLE `wishlist_collections`
@@ -1477,6 +1515,12 @@ ALTER TABLE `tenant_wishlists`
 --
 ALTER TABLE `user_identity_documents`
   ADD CONSTRAINT `user_identity_documents_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `identity_document_ocr_results`
+--
+ALTER TABLE `identity_document_ocr_results`
+  ADD CONSTRAINT `identity_document_ocr_results_ibfk_1` FOREIGN KEY (`document_id`) REFERENCES `user_identity_documents` (`document_id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `wishlist_collections`
