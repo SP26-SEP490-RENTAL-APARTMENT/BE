@@ -21,7 +21,7 @@ public class FptIdRecognitionServiceTests
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.RecognizeAsync(new TestFormFile("id.jpg", "image/jpeg", new byte[] { 1, 2, 3 })));
 
-        Assert.Equal("Identity recognition service is unavailable. Please try again.", ex.Message);
+        Assert.Equal("gateway error", ex.Message);
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class FptIdRecognitionServiceTests
         var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.RecognizeAsync(new TestFormFile("id.jpg", "image/jpeg", new byte[] { 1, 2, 3 })));
 
-        Assert.Equal("Cannot crop the ID card. Please ensure all 4 corners are visible.", ex.Message);
+        Assert.Equal("Failed in cropping", ex.Message);
     }
 
     [Fact]

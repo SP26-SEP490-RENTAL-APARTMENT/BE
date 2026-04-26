@@ -48,7 +48,7 @@ public class FptIdRecognitionService : IFptIdRecognitionService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new ArgumentException("Identity recognition service is unavailable. Please try again.");
+            throw new ArgumentException(ExtractProviderFailureMessage(raw, "Identity recognition service is unavailable. Please try again."));
         }
 
         JsonDocument doc;
@@ -69,7 +69,7 @@ public class FptIdRecognitionService : IFptIdRecognitionService
 
             if (errorCode != 0)
             {
-                throw new ArgumentException(MapProviderError(errorCode, errorMessage));
+                throw new ArgumentException(ExtractProviderFailureMessage(errorMessage, MapProviderError(errorCode, errorMessage)));
             }
 
             if (!root.TryGetProperty("data", out var dataElement) ||
@@ -219,5 +219,32 @@ public class FptIdRecognitionService : IFptIdRecognitionService
                 ? "Identity recognition failed. Please upload a clearer image."
                 : providerMessage
         };
+    }
+
+    private static string ExtractProviderFailureMessage(string? rawResponse, string fallbackMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawResponse))
+        {
+            return fallbackMessage;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(rawResponse);
+            var root = document.RootElement;
+            var providerMessage = TryGetString(root, "errorMessage");
+            if (!string.IsNullOrWhiteSpace(providerMessage))
+            {
+                return providerMessage;
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall back to the raw body if the provider did not send JSON.
+        }
+
+        return string.IsNullOrWhiteSpace(rawResponse)
+            ? fallbackMessage
+            : rawResponse.Trim();
     }
 }
