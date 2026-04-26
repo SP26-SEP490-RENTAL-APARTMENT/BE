@@ -14,6 +14,7 @@ namespace BLL.DependencyInjection
             services.Configure<CloudinarySettings>(configuration.GetSection("CloudinarySettings"));
             services.Configure<MomoOptions>(configuration.GetSection("Momo"));
             services.Configure<StripeSettings>(configuration.GetSection("Stripe"));
+            services.Configure<FptIdRecognitionOptions>(configuration.GetSection(FptIdRecognitionOptions.SectionName));
             return services;
         }
     }

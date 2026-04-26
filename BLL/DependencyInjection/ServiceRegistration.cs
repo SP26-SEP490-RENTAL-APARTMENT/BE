@@ -43,6 +43,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<ISubscriptionPlanService, SubscriptionPlanService>();
             services.AddScoped<IMomoTransactionService, MomoTransactionService>();
             services.AddHttpClient<IMomoService, MomoService>();
+            services.AddHttpClient<IFptIdRecognitionService, FptIdRecognitionService>();
             services.AddScoped<IStripeService, StripeService>();
             services.AddScoped<IResidenceReportPdfGenerator, ResidenceReportPdfGenerator>();
             services.AddScoped<IResidenceReportDocxGenerator, ResidenceReportDocxGenerator>();

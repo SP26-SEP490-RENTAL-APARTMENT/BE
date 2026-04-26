@@ -241,7 +241,9 @@ internal sealed class InMemoryApartmentRepository : IApartmentRepository
         string? sortOrder = null,
         string? search = null,
         Dictionary<string, string>? filters = null,
-        IEnumerable<string>? allowedColumns = null)
+        IEnumerable<string>? allowedColumns = null,
+        DateOnly? checkInDate = null,
+        DateOnly? checkOutDate = null)
     {
         IEnumerable<Apartment> result = _apartments.Where(a =>
             a.Status == null || !string.Equals(a.Status, "draft", StringComparison.OrdinalIgnoreCase));

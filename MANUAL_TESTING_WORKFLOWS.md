@@ -66,31 +66,105 @@ Controller: Short-termApartmentAPI/Controllers/AuthController.cs
 ## Workflow 2: Identity Verification (Booking Prerequisite)
 Controller: Short-termApartmentAPI/Controllers/IdentityVerificationController.cs
 
-### Tenant Steps
-1. Upload tenant identity document.
-- Endpoint: POST /api/identity/documents
+### Verification Goal
+Validate that identity verification enforces OCR + strict matching rules correctly, auto-verifies only when all conditions pass, and blocks booking/inspection for non-verified users.
+
+### Preconditions
+1. Tenant profile has `full_name`, `birthday`, and `national_id_card_number` set.
+2. Tenant has valid auth token (`TenantAccessToken`).
+3. Staff/Admin has valid auth token (`StaffAccessToken` or `AdminAccessToken`).
+4. Test images prepared:
+- `id_front_valid.jpg` (clear front side, matches tenant profile)
+- `id_back_valid.jpg` (clear back side)
+- `id_front_blurry.jpg` (blurry/low quality)
+- `id_front_other_person.jpg` (different person/ID details)
+
+### Core Endpoints
+1. POST `/api/identity/documents` (multipart/form-data)
+2. GET `/api/identity/my-documents`
+3. GET `/api/identity/users/{userId}/documents`
+4. POST `/api/identity/documents/review`
+
+### Happy Path A: National ID Auto-Verification
+1. Upload national ID with both sides.
+- Endpoint: POST `/api/identity/documents`
 - Auth: tenant
-- Expected: 200 and pending verification message
+- Body (multipart/form-data):
+	- `documentType=national_id_card`
+	- `frontImage=@id_front_valid.jpg`
+	- `backImage=@id_back_valid.jpg`
+- Expected:
+	- HTTP 200
+	- Returns document IDs
+	- Two document rows created (`front`, `back`)
+	- OCR summary generated
+	- Verification status becomes `verified` when strict match passes and confidence >= 0.90
 
-2. Retrieve tenant documents.
-- Endpoint: GET /api/identity/my-documents
-- Auth: tenant
-- Expected: 200 with uploaded document
+2. Verify tenant-facing document list.
+- Endpoint: GET `/api/identity/my-documents`
+- Expected:
+	- HTTP 200
+	- At least one item contains `ocrSummary`
+	- `ocrSummary.provider = fpt_id_recognition`
+	- `ocrSummary.matchPassed = true`
+	- `ocrSummary.autoApproved = true`
+	- `ocrSummary.overallConfidence >= 0.90`
 
-### Staff/Admin Review Steps
-3. Review and approve tenant document.
-- Endpoint: POST /api/identity/documents/review
-- Auth: staff or admin
-- Expected: 200
+3. Verify staff/admin visibility for same user.
+- Endpoint: GET `/api/identity/users/{TenantUserId}/documents`
+- Auth: staff/admin
+- Expected:
+	- HTTP 200
+	- Same verification status and OCR summary fields visible
 
-4. Verify tenant documents by user id.
-- Endpoint: GET /api/identity/users/{userId}/documents
-- Auth: staff or admin
-- Expected: 200 and verified document status
+### Happy Path B: Manual Review Flow (Non-National-ID or Pending Cases)
+1. Upload passport (or non-auto-approved case).
+- Endpoint: POST `/api/identity/documents`
+- Body: `documentType=passport` + file(s)
+- Expected: HTTP 200, status `pending`
 
-### Negative Tests
-- Tenant calls review endpoint should return 403.
-- Missing/invalid token should return 401.
+2. Staff approves document.
+- Endpoint: POST `/api/identity/documents/review`
+- Auth: staff/admin
+- Body: `{ "documentId": "...", "approved": true }`
+- Expected: HTTP 200 and verification state updated to `verified`
+
+### Negative Case Set
+1. Missing side for national ID.
+- Input: `documentType=national_id_card` with only `frontImage`
+- Expected: HTTP 400 with message requiring both `frontImage` and `backImage`
+
+2. OCR quality failure.
+- Input: blurry front image
+- Expected: HTTP 400 with OCR actionable error (cannot detect/crop/quality too low)
+
+3. Strict profile mismatch.
+- Input: clear image with different ID number/name/DOB
+- Expected: HTTP 400 with mismatch reason (for example, ID number does not match profile)
+
+4. Unauthorized upload/list.
+- Missing/invalid token
+- Expected: HTTP 401
+
+5. Tenant attempting staff review endpoint.
+- Endpoint: POST `/api/identity/documents/review` as tenant
+- Expected: HTTP 403
+
+### Gate Verification (Business Rule)
+1. Unverified tenant attempts booking creation.
+- Endpoint: POST `/api/booking`
+- Expected: HTTP 400 due to identity verification requirement
+
+2. Verified tenant retries booking creation.
+- Endpoint: POST `/api/booking`
+- Expected: booking flow proceeds (subject to booking validations)
+
+### Evidence Checklist
+Capture and archive for each run:
+1. Request payloads and response bodies for upload/list/review calls.
+2. OCR summary snapshots (`provider`, `cardType`, `overallConfidence`, `matchPassed`, `autoApproved`).
+3. Verification status transitions (`not_started/pending/verified/rejected`).
+4. Booking gate behavior before and after verification.
 
 ---
 

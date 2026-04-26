@@ -76,7 +76,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         string? sortBy = null,
         string? sortOrder = null,
         string? search = null,
-        Dictionary<string, string>? filters = null)
+        Dictionary<string, string>? filters = null,
+        DateOnly? checkInDate = null,
+        DateOnly? checkOutDate = null)
     {
         var effectiveAllowedColumns = new[]
         {
@@ -92,7 +94,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             "CreatedAt"
         };
 
-        return await _apartmentRepository.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
+        return await _apartmentRepository.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns, checkInDate, checkOutDate);
     }
 
     public async Task<(IEnumerable<ApartmentResponseDto> Items, int TotalCount)> GetAllPublicResponseAsync(
@@ -102,9 +104,11 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         string? sortOrder = null,
         string? search = null,
         Dictionary<string, string>? filters = null,
-        Guid? tenantId = null)
+        Guid? tenantId = null,
+        DateOnly? checkInDate = null,
+        DateOnly? checkOutDate = null)
     {
-        var (items, totalCount) = await GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters);
+        var (items, totalCount) = await GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, checkInDate, checkOutDate);
         var mappedItems = _mapper.Map<List<ApartmentResponseDto>>(items);
 
         await ApplyWishlistMetadataAsync(mappedItems, tenantId);

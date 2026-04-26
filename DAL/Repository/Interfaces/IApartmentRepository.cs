@@ -16,6 +16,8 @@ namespace DAL.Repository.Interfaces
             string? sortOrder = null,
             string? search = null,
             Dictionary<string, string>? filters = null,
-            IEnumerable<string>? allowedColumns = null);
+            IEnumerable<string>? allowedColumns = null,
+            DateOnly? checkInDate = null,
+            DateOnly? checkOutDate = null);
     }
 }

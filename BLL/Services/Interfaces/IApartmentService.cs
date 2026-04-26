@@ -11,7 +11,9 @@ public interface IApartmentService : IBaseService<Apartment>
         string? sortBy = null,
         string? sortOrder = null,
         string? search = null,
-        Dictionary<string, string>? filters = null);
+        Dictionary<string, string>? filters = null,
+        DateOnly? checkInDate = null,
+        DateOnly? checkOutDate = null);
 
     Task<(IEnumerable<ApartmentResponseDto> Items, int TotalCount)> GetAllPublicResponseAsync(
         int page,
@@ -20,7 +22,9 @@ public interface IApartmentService : IBaseService<Apartment>
         string? sortOrder = null,
         string? search = null,
         Dictionary<string, string>? filters = null,
-        Guid? tenantId = null);
+        Guid? tenantId = null,
+        DateOnly? checkInDate = null,
+        DateOnly? checkOutDate = null);
 
     Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId);
     Task<ApartmentResponseDto?> GetApartmentWithDetailsAsync(Guid id);

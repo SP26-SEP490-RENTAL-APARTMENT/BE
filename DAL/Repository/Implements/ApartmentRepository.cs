@@ -91,9 +91,30 @@ namespace DAL.Repository.Implements
             string? sortOrder = null,
             string? search = null,
             Dictionary<string, string>? filters = null,
-            IEnumerable<string>? allowedColumns = null)
+            IEnumerable<string>? allowedColumns = null,
+            DateOnly? checkInDate = null,
+            DateOnly? checkOutDate = null)
         {
             var query = _dbSet.Where(a => a.Status == null || a.Status.ToLower() == "posted");
+
+            if (checkInDate.HasValue && checkOutDate.HasValue)
+            {
+                var requestedCheckIn = checkInDate.Value;
+                var requestedCheckOut = checkOutDate.Value;
+                var blockingStatuses = new[] { "negotiating", "confirmed", "paid", "completed", "disputed" };
+
+                query = query.Where(a =>
+                    !_context.Set<Booking>().Any(b =>
+                        b.ApartmentId == a.ApartmentId
+                        && b.Status != null
+                        && blockingStatuses.Contains(b.Status)
+                        && b.CheckInDate < requestedCheckOut
+                        && b.CheckOutDate > requestedCheckIn)
+                    && !_context.Set<ApartmentAvailability>().Any(availability =>
+                        availability.ApartmentId == a.ApartmentId
+                        && availability.StartDate < requestedCheckOut
+                        && availability.EndDate > requestedCheckIn));
+            }
 
             query = ApplyFilters(query, filters, allowedColumns);
             query = ApplyApartmentSearchWithLandlordName(query, search, allowedColumns);

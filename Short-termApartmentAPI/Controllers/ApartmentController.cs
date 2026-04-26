@@ -40,11 +40,43 @@ public sealed class ApartmentsController : ControllerBase
             [FromQuery] string? sortBy = null,
             [FromQuery] string? sortOrder = null,
             [FromQuery] string? search = null,
+            [FromQuery] string? checkInDate = null,
+            [FromQuery] string? checkOutDate = null,
             [FromQuery] Dictionary<string, string>? filters = null)
     {
+        var hasCheckIn = !string.IsNullOrWhiteSpace(checkInDate);
+        var hasCheckOut = !string.IsNullOrWhiteSpace(checkOutDate);
+        if (hasCheckIn != hasCheckOut)
+        {
+            return BadRequest(new ApiResponse<string>("Both checkInDate and checkOutDate are required when searching by availability period."));
+        }
+
+        DateOnly? parsedCheckInDate = null;
+        DateOnly? parsedCheckOutDate = null;
+        if (hasCheckIn && hasCheckOut)
+        {
+            if (!DateOnly.TryParse(checkInDate, out var checkIn))
+            {
+                return BadRequest(new ApiResponse<string>("Invalid checkInDate. Use a valid date format (yyyy-MM-dd)."));
+            }
+
+            if (!DateOnly.TryParse(checkOutDate, out var checkOut))
+            {
+                return BadRequest(new ApiResponse<string>("Invalid checkOutDate. Use a valid date format (yyyy-MM-dd)."));
+            }
+
+            if (checkIn >= checkOut)
+            {
+                return BadRequest(new ApiResponse<string>("checkOutDate must be later than checkInDate."));
+            }
+
+            parsedCheckInDate = checkIn;
+            parsedCheckOutDate = checkOut;
+        }
+
         var tenantId = GetAuthenticatedTenantId();
         var effectiveFilters = BuildPublicApartmentFilters(filters);
-        var (mappedItems, totalCount) = await _apartmentService.GetAllPublicResponseAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters, tenantId);
+        var (mappedItems, totalCount) = await _apartmentService.GetAllPublicResponseAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters, tenantId, parsedCheckInDate, parsedCheckOutDate);
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
@@ -61,6 +93,8 @@ public sealed class ApartmentsController : ControllerBase
             "sortBy",
             "sortOrder",
             "search",
+            "checkInDate",
+            "checkOutDate",
             "filters"
         };
 
