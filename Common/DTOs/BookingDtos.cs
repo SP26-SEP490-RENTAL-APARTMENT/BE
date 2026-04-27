@@ -615,3 +615,9 @@ public class FillBookingOccupantsDto
     [MinLength(1)]
     public List<FillBookingOccupantItemDto> Occupants { get; set; } = new();
 }
+
+public class BookingOccupantOcrUploadDto
+{
+    [Required]
+    public IFormFile Image { get; set; } = null!;
+}

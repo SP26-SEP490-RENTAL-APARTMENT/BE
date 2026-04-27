@@ -24,6 +24,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IMomoService _momoService;
         private readonly IMomoTransactionService _momoTransactionService;
         private readonly IImageService _imageService;
+        private readonly IFptIdRecognitionService _idRecognitionService;
         private readonly MomoOptions _momoOptions;
         private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
         private readonly IResidenceReportDocxGenerator _residenceReportDocxGenerator;
@@ -40,7 +41,8 @@ namespace Short_termApartmentAPI.Controllers
             IOptions<MomoOptions> momoOptions,
             IResidenceReportPdfGenerator residenceReportPdfGenerator,
             IResidenceReportDocxGenerator residenceReportDocxGenerator,
-            IMapper mapper)
+            IMapper mapper,
+            IFptIdRecognitionService idRecognitionService)
         {
             _bookingService = bookingService;
             _paymentService = paymentService;
@@ -53,6 +55,7 @@ namespace Short_termApartmentAPI.Controllers
             _residenceReportPdfGenerator = residenceReportPdfGenerator;
             _residenceReportDocxGenerator = residenceReportDocxGenerator;
             _mapper = mapper;
+            _idRecognitionService = idRecognitionService;
         }
 
         [HttpGet("{id:guid}")]
@@ -323,6 +326,29 @@ namespace Short_termApartmentAPI.Controllers
             };
         }
 
+        private static bool TryParseDateOnly(string? rawValue, out DateOnly date)
+        {
+            var formats = new[] { "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd", "dd-MM-yyyy", "d-M-yyyy" };
+            if (!string.IsNullOrWhiteSpace(rawValue))
+            {
+                foreach (var format in formats)
+                {
+                    if (DateOnly.TryParseExact(rawValue, format, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out date))
+                    {
+                        return true;
+                    }
+                }
+
+                if (DateOnly.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out date))
+                {
+                    return true;
+                }
+            }
+
+            date = default;
+            return false;
+        }
+
         [HttpPost("{id:guid}/residence-report")]
         [Authorize(Roles = "landlord")]
         public async Task<IActionResult> SubmitResidenceReport(Guid id, [FromBody] SubmitResidenceReportDto dto)
@@ -513,6 +539,78 @@ namespace Short_termApartmentAPI.Controllers
                     ProofPhotoUrl = proofPhotoUrl
                 });
                 return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant added successfully."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpPost("{id:guid}/occupants/ocr-upload")]
+        [Authorize(Roles = "tenant,landlord")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadOccupantByOcr(Guid id, [FromForm] BookingOccupantOcrUploadDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterUserId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (dto.Image == null || dto.Image.Length == 0)
+            {
+                return BadRequest(new ApiResponse<string>("Image is required."));
+            }
+
+            // Run OCR first to extract fields
+            FptIdRecognitionResult recognition;
+            try
+            {
+                recognition = await _idRecognitionService.RecognizeAsync(dto.Image);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+
+            // Upload image to image service
+            string proofPhotoUrl;
+            try
+            {
+                proofPhotoUrl = await _imageService.UploadImageAsync(dto.Image);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse<string>("Failed to upload image."));
+            }
+
+            // Build occupant DTO from OCR fields
+            var occupantDto = new AddBookingOccupantDto
+            {
+                FullName = string.IsNullOrWhiteSpace(recognition.FullName) ? null : recognition.FullName,
+                NationalIdCardNumber = string.IsNullOrWhiteSpace(recognition.IdNumber) ? null : recognition.IdNumber,
+                DateOfBirth = TryParseDateOnly(recognition.DateOfBirth, out var dob) ? dob : null,
+                Nationality = null,
+                PassportId = null,
+                Sex = null,
+                Phone = null,
+                Email = null,
+                ProofPhotoUrl = proofPhotoUrl
+            };
+
+            try
+            {
+                var occupant = await _bookingService.AddOccupantAsync(id, requesterUserId, occupantDto);
+                return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant added from OCR upload."));
             }
             catch (InvalidOperationException ex)
             {

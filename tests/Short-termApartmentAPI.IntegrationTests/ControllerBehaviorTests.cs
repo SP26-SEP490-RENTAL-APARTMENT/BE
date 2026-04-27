@@ -859,7 +859,23 @@ public class ControllerBehaviorTests
             }),
             residenceReportPdfGenerator ?? new ResidenceReportPdfGeneratorStub(),
             residenceReportDocxGenerator ?? new ResidenceReportDocxGeneratorStub(),
-            CreateMapper());
+            CreateMapper(),
+            new IdentityRecognitionServiceStub());
+    }
+
+    private sealed class IdentityRecognitionServiceStub : IFptIdRecognitionService
+    {
+        public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new FptIdRecognitionResult
+            {
+                Success = true,
+                OverallConfidence = 0.95,
+                FullName = "OCR Test",
+                IdNumber = "ID123",
+                DateOfBirth = "01/01/1990"
+            });
+        }
     }
 
     private static IdentityVerificationController CreateIdentityVerificationController(
