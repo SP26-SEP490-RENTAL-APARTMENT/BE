@@ -19,6 +19,9 @@ public class CreateApartmentRequestDto
     [Range(1, sbyte.MaxValue, ErrorMessage = "MaxOccupants must be at least 1.")]
     public sbyte? maxOccupants { get; set; }
 
+    [Range(0, sbyte.MaxValue, ErrorMessage = "MaxInfants cannot be negative.")]
+    public sbyte? maxInfants { get; set; }
+
     [Required]
     public bool? isPetAllowed { get; set; }
 
@@ -65,6 +68,9 @@ public class UpdateApartmentRequestDto
     [Range(1, sbyte.MaxValue, ErrorMessage = "MaxOccupants must be at least 1.")]
     public sbyte? MaxOccupants { get; set; }
 
+    [Range(0, sbyte.MaxValue, ErrorMessage = "MaxInfants cannot be negative.")]
+    public sbyte? MaxInfants { get; set; }
+
     [Range(0, sbyte.MaxValue, ErrorMessage = "MaxPets cannot be negative.")]
     public sbyte? MaxPets { get; set; }
     
@@ -101,6 +107,8 @@ public class CreateApartmentResponseDto
 
     public sbyte? MaxOccupants { get; set; }
 
+    public sbyte? MaxInfants { get; set; }
+
     public sbyte? MaxPets { get; set; }
 
     public bool? IsPetAllowed { get; set; }
@@ -134,6 +142,7 @@ public class ApartmentResponseDto
     public string Title { get; set; } = null!;
     public string? Description { get; set; }
     public sbyte? MaxOccupants { get; set; }
+    public sbyte? MaxInfants { get; set; }
     public sbyte? MaxPets { get; set; }
     public bool? IsPetAllowed { get; set; }
     public string? Address { get; set; }

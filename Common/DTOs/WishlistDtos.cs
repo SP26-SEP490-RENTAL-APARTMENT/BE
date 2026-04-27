@@ -120,6 +120,8 @@ public class WishlistApartmentDetailsDto
 
     public sbyte? maxOccupants { get; set; }
 
+    public sbyte? maxInfants { get; set; }
+
     public sbyte? maxPets { get; set; }
 
     public bool? isPetAllowed { get; set; }

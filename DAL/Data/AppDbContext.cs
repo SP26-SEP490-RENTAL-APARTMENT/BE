@@ -224,6 +224,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.MaxOccupants)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("max_occupants");
+            entity.Property(e => e.MaxInfants).HasColumnName("max_infants");
             entity.Property(e => e.MaxPets).HasColumnName("max_pets");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'draft'")
@@ -395,6 +396,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("payment_mode");
             entity.Property(e => e.Nights).HasColumnName("nights");
             entity.Property(e => e.NoOfAdults).HasColumnName("noOfAdults");
+            entity.Property(e => e.NoOfChildren).HasColumnName("noOfChildren");
             entity.Property(e => e.NoOfInfants).HasColumnName("noOfInfants");
             entity.Property(e => e.NoOfPets).HasColumnName("noOfPets");
             entity.Property(e => e.PackageId).HasColumnName("package_id");

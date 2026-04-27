@@ -26,6 +26,9 @@ public class CreateBookingRequestDto : IValidatableObject
     [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
     public int? NoOfAdults { get; set; }
 
+    [Range(0, int.MaxValue, ErrorMessage = "Number of children cannot be negative.")]
+    public int? NoOfChildren { get; set; }
+
     [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
     public int? NoOfInfants { get; set; }
 
@@ -114,6 +117,9 @@ public class UpdateBookingRequestDto : IValidatableObject
     
     [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
     public int? NoOfAdults { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Number of children cannot be negative.")]
+    public int? NoOfChildren { get; set; }
     
     [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
     public int? NoOfInfants { get; set; }
@@ -166,6 +172,7 @@ public class BookingResponseDto
     public DateOnly CheckOutDate { get; set; }
     public int Nights { get; set; }
     public int? NoOfAdults { get; set; }
+    public int? NoOfChildren { get; set; }
     public int? NoOfInfants { get; set; }
     public int? NoOfPets { get; set; }
     public decimal TotalPrice { get; set; }
@@ -261,6 +268,9 @@ public class BookingQuoteRequestDto : IValidatableObject
 
     [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
     public int? NoOfAdults { get; set; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Number of children cannot be negative.")]
+    public int? NoOfChildren { get; set; }
 
     [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
     public int? NoOfInfants { get; set; }

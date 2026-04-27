@@ -324,6 +324,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         ValidateOccupancyLimits(
             apartment,
             dto.NoOfAdults,
+            dto.NoOfChildren,
+            dto.NoOfInfants,
             dto.NoOfPets);
 
         await EnsureNoConflictingBookingsAsync(dto.ApartmentId, checkInDate, checkOutDate);
@@ -398,6 +400,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ApartmentId = requestDto.ApartmentId,
             PackageId = requestDto.PackageId,
             NoOfAdults = requestDto.NoOfAdults,
+            NoOfChildren = requestDto.NoOfChildren,
             NoOfInfants = requestDto.NoOfInfants,
             NoOfPets = requestDto.NoOfPets,
             CheckInDate = checkInDate,
@@ -424,6 +427,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             CheckOutDate = checkOutDate,
             Nights = quote.Nights,
             NoOfAdults = requestDto.NoOfAdults,
+            NoOfChildren = requestDto.NoOfChildren,
             NoOfInfants = requestDto.NoOfInfants,
             NoOfPets = requestDto.NoOfPets,
             TotalPrice = quote.TotalPrice,
@@ -517,12 +521,32 @@ public class BookingService : BaseService<Booking>, IBookingService
     private static void ValidateOccupancyLimits(
         Apartment apartment,
         int? requestedAdults,
+        int? requestedChildren,
+        int? requestedInfants,
         int? requestedPets)
     {
         var adults = requestedAdults ?? 0;
+        var children = requestedChildren ?? 0;
+        var infants = requestedInfants ?? 0;
+
         if (apartment.MaxOccupants.HasValue && adults > apartment.MaxOccupants.Value)
         {
             throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} adult(s).");
+        }
+
+        if (apartment.MaxOccupants.HasValue && children > apartment.MaxOccupants.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} child(ren).");
+        }
+
+        if (apartment.MaxOccupants.HasValue && (adults + children) > apartment.MaxOccupants.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} occupant(s) (adults + children).");
+        }
+
+        if (apartment.MaxInfants.HasValue && infants > apartment.MaxInfants.Value)
+        {
+            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxInfants.Value} infant(s).");
         }
 
         var pets = requestedPets ?? 0;
@@ -1494,7 +1518,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ProofPhotoUrl = null
         };
 
-        var fallbackCount = Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0));
+        var fallbackCount = Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0) + (booking.NoOfInfants ?? 0));
         return Enumerable.Range(1, fallbackCount)
             .Select(index => new ResidenceReportOccupantDto
             {
@@ -2905,7 +2929,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         var sourceApartment = await _apartmentRepository.GetApartmentWithDetailsAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
 
-        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0);
+        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0);
         if (occupantCount <= 0)
         {
             occupantCount = 1;
@@ -2924,7 +2948,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             a.City == sourceApartment.City &&
             a.District == sourceApartment.District &&
             (!hasPets || a.IsPetAllowed == true) &&
-            (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount));
+            (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
+            (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value));
 
         var alternatives = new List<OccupiedRoomAlternativeOptionDto>();
         foreach (var candidate in candidateApartments)
@@ -2997,7 +3022,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Alternative apartment must be in the same city and district as the original booking.");
         }
 
-        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfInfants ?? 0);
+        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0);
         if (occupantCount <= 0)
         {
             occupantCount = 1;
@@ -3006,6 +3031,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (alternativeApartment.MaxOccupants.HasValue && (int)alternativeApartment.MaxOccupants < occupantCount)
         {
             throw new InvalidOperationException("Alternative apartment does not satisfy occupancy requirements.");
+        }
+
+        if (alternativeApartment.MaxInfants.HasValue && (booking.NoOfInfants ?? 0) > alternativeApartment.MaxInfants.Value)
+        {
+            throw new InvalidOperationException("Alternative apartment does not satisfy infant capacity requirements.");
         }
 
         if ((booking.NoOfPets ?? 0) > 0 && alternativeApartment.IsPetAllowed != true)

@@ -275,6 +275,7 @@ public class BookingServiceQuoteValidationTests
             CheckInDate = new DateOnly(2026, 5, 10),
             CheckOutDate = new DateOnly(2026, 5, 10),
             NoOfAdults = 1,
+            NoOfChildren = 0,
             NoOfInfants = 0,
             NoOfPets = 0
         };
@@ -347,6 +348,7 @@ public class BookingServiceQuoteValidationTests
             CheckInDate = new DateOnly(2026, 5, 10),
             CheckOutDate = new DateOnly(2026, 5, 12),
             NoOfAdults = 1,
+            NoOfChildren = 0,
             NoOfInfants = 0,
             NoOfPets = 0
         };
@@ -354,6 +356,57 @@ public class BookingServiceQuoteValidationTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetQuoteAsync(dto));
 
         Assert.Contains("at least 3 night(s)", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenAdultsPlusChildrenExceedsMaxOccupants()
+    {
+        var apartmentId = Guid.NewGuid();
+        var apartment = FinancialTestHelpers.CreateApartment(apartmentId);
+        apartment.MaxOccupants = 2;
+
+        var sut = FinancialTestHelpers.CreateBookingService(apartment: apartment);
+
+        var dto = new BookingQuoteRequestDto
+        {
+            ApartmentId = apartmentId,
+            CheckInDate = new DateOnly(2026, 5, 10),
+            CheckOutDate = new DateOnly(2026, 5, 12),
+            NoOfAdults = 1,
+            NoOfChildren = 2,
+            NoOfInfants = 0,
+            NoOfPets = 0
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("at most 2 occupant(s)", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ThrowsWhenInfantsExceedsMaxInfants()
+    {
+        var apartmentId = Guid.NewGuid();
+        var apartment = FinancialTestHelpers.CreateApartment(apartmentId);
+        apartment.MaxOccupants = 4;
+        apartment.MaxInfants = 1;
+
+        var sut = FinancialTestHelpers.CreateBookingService(apartment: apartment);
+
+        var dto = new BookingQuoteRequestDto
+        {
+            ApartmentId = apartmentId,
+            CheckInDate = new DateOnly(2026, 5, 10),
+            CheckOutDate = new DateOnly(2026, 5, 12),
+            NoOfAdults = 2,
+            NoOfChildren = 0,
+            NoOfInfants = 2,
+            NoOfPets = 0
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetQuoteAsync(dto));
+
+        Assert.Contains("at most 1 infant(s)", ex.Message);
     }
 
     [Fact]
@@ -688,6 +741,7 @@ internal static class FinancialTestHelpers
             CheckInDate = new DateOnly(2026, 5, 10),
             CheckOutDate = new DateOnly(2026, 5, 12),
             NoOfAdults = 1,
+            NoOfChildren = 0,
             NoOfInfants = 0,
             NoOfPets = 0
         };

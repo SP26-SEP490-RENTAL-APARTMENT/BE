@@ -29,6 +29,7 @@ public class WishlistProfile : Profile
                         city = src.Apartment.City,
                         district = src.Apartment.District,
                         maxOccupants = src.Apartment.MaxOccupants,
+                        maxInfants = src.Apartment.MaxInfants,
                         maxPets = src.Apartment.MaxPets,
                         isPetAllowed = src.Apartment.IsPetAllowed,
                         latitude = src.Apartment.Latitude,

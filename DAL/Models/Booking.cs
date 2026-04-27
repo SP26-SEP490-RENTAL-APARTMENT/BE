@@ -19,6 +19,8 @@ public partial class Booking
 
     public int? NoOfAdults { get; set; }
 
+    public int? NoOfChildren { get; set; }
+
     public int? NoOfInfants { get; set; }
 
     public int? NoOfPets { get; set; }

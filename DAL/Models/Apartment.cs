@@ -16,6 +16,8 @@ public partial class Apartment
 
     public sbyte? MaxOccupants { get; set; }
 
+    public sbyte? MaxInfants { get; set; }
+
     public sbyte? MaxPets { get; set; }
 
     public bool? IsPetAllowed { get; set; }

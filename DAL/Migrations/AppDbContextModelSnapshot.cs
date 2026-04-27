@@ -206,6 +206,10 @@ namespace DAL.Migrations
                         .HasColumnName("max_occupants")
                         .HasDefaultValueSql("'1'");
 
+                    b.Property<sbyte?>("MaxInfants")
+                        .HasColumnType("tinyint")
+                        .HasColumnName("max_infants");
+
                     b.Property<string>("Status")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("enum('draft','pending_review','posted','blocked','archived')")
@@ -427,6 +431,10 @@ namespace DAL.Migrations
                     b.Property<int?>("NoOfAdults")
                         .HasColumnType("int")
                         .HasColumnName("noOfAdults");
+
+                    b.Property<int?>("NoOfChildren")
+                        .HasColumnType("int")
+                        .HasColumnName("noOfChildren");
 
                     b.Property<int?>("NoOfInfants")
                         .HasColumnType("int")
