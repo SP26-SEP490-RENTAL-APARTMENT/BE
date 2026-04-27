@@ -665,6 +665,36 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/check-time/payment-confirmation")]
+        [Authorize(Roles = "landlord")]
+        public async Task<IActionResult> SubmitPaymentConfirmation(Guid id, [FromBody] LandlordPaymentConfirmationDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var landlordId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var checkTimeResponse = await _bookingService.SubmitPaymentConfirmationAsync(id, landlordId, dto);
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Payment confirmation submitted successfully and is awaiting staff verification."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
         [HttpGet("{id:guid}/occupied-alternatives")]
         [Authorize(Roles = "tenant,staff,admin")]
         public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int maxResults = 5)

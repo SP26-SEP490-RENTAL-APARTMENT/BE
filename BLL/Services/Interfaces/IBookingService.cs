@@ -64,6 +64,12 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> SettleCheckTimeFeeAsync(Guid bookingId, Guid settledBy, SettleBookingCheckTimeFeeDto dto);
 
 	/// <summary>
+	/// Allows landlord to submit payment confirmation for a check-time fee marked as due.
+	/// Creates a record for staff/admin verification with payment evidence.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto);
+
+	/// <summary>
 	/// Retrieves the availability calendar for an apartment showing available and unavailable date ranges.
 	/// Returns a 90-day calendar by default (customizable via startDate/endDate parameters).
 	/// Anonymous users see availability only; landlord/owner roles see booking IDs and statuses for blocked periods.

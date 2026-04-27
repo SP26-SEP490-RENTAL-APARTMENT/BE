@@ -194,3 +194,24 @@ public class SettleBookingCheckTimeFeeDto : IValidatableObject
         }
     }
 }
+
+/// <summary>
+/// Landlord payment confirmation payload for reporting that a check-time fee has been paid.
+/// </summary>
+public class LandlordPaymentConfirmationDto : IValidatableObject
+{
+
+    [Required]
+    public DateTime PaymentDate { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (PaymentDate > Common.Utils.VietnamTime.Now)
+        {
+            yield return new ValidationResult("Payment date cannot be in the future.", new[] { nameof(PaymentDate) });
+        }
+    }
+}

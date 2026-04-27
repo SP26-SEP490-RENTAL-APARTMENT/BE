@@ -8,7 +8,7 @@ namespace Common.DTOs
     public class IdentityDocumentUploadDto
     {
         [Required]
-        [RegularExpression("^(passport|national_id_card|drivers_license|other_government_id|selfie_with_id)$",
+        [RegularExpression("^(passport|national_id_card|other_government_id)$",
             ErrorMessage = "Invalid document type.")]
         public string DocumentType { get; set; } = null!;
 

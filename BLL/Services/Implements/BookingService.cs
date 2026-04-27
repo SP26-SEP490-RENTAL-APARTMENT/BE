@@ -513,9 +513,17 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private async Task<BookingCheckTime> GetOrCreateBookingCheckTimeAsync(Booking booking)
     {
+        // Reuse the navigation instance when available to avoid tracking two
+        // BookingCheckTime objects with the same key in one DbContext scope.
+        if (booking.BookingCheckTime != null)
+        {
+            return booking.BookingCheckTime;
+        }
+
         var checkTime = (await _bookingCheckTimeRepository.FindAsync(ct => ct.BookingId == booking.BookingId)).FirstOrDefault();
         if (checkTime != null)
         {
+            booking.BookingCheckTime = checkTime;
             return checkTime;
         }
 
@@ -534,6 +542,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         await _bookingCheckTimeRepository.AddAsync(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
+        booking.BookingCheckTime = checkTime;
         return checkTime;
     }
 
@@ -1687,6 +1696,59 @@ public class BookingService : BaseService<Booking>, IBookingService
         return await GetCheckTimeDetailsAsync(bookingId, settledBy);
     }
 
+    public async Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        if (apartment.LandlordId != landlordId)
+        {
+            throw new InvalidOperationException("Only the apartment landlord can submit payment confirmations.");
+        }
+
+        var totalFee = GetCheckTimeFeeTotal(checkTime);
+        if (totalFee <= 0m)
+        {
+            throw new InvalidOperationException("No check-time fee is available for this booking.");
+        }
+
+        var currentStatus = string.IsNullOrWhiteSpace(checkTime.FeeSettlementStatus) ? "none" : checkTime.FeeSettlementStatus.ToLowerInvariant();
+        if (currentStatus != FeeSettlementStatusDue)
+        {
+            throw new InvalidOperationException($"Fee settlement status must be 'due' to submit payment confirmation. Current status: {currentStatus}");
+        }
+
+        // Store payment evidence in FeeSettlementNotes
+        var paymentEvidence = $"[LANDLORD SUBMITTED PAYMENT] Amount: Date: {dto.PaymentDate:yyyy-MM-dd HH:mm:ss}";
+
+        if (!string.IsNullOrWhiteSpace(dto.Notes))
+        {
+            paymentEvidence += $", Notes: {dto.Notes}";
+        }
+
+        checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
+        checkTime.FeeSettlementNotes = paymentEvidence;
+        checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        // Notify landlord of submission
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.system_announcement.ToString(),
+            "Payment Confirmation Submitted",
+            $"Your payment confirmation for booking {booking.BookingId} has been submitted and is awaiting staff verification.",
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, landlordId);
+    }
+
     private async Task EnsureTenantHasNoOutstandingCheckTimeFeesAsync(Guid tenantId)
     {
         var bookings = await _bookingRepository.FindAsync(b => b.TenantId == tenantId);
@@ -2060,7 +2122,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (firstCalendar != null)
         {
-            return defaultPrice * (1 - firstCalendar.DiscountPercentage.Value / 100);
+            return defaultPrice * (1 - firstCalendar.DiscountPercentage!.Value / 100);
         }
 
         return defaultPrice;
