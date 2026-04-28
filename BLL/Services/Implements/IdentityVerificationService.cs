@@ -47,6 +47,7 @@ namespace BLL.Services.Implements
         private readonly INotificationService _notificationService;
         private readonly IIdentityDocumentUploadService _identityDocumentUploadService;
         private readonly IFptIdRecognitionService _fptIdRecognitionService;
+        private readonly IFptPassportRecognitionService? _fptPassportRecognitionService;
         private readonly FptIdRecognitionOptions _fptIdRecognitionOptions;
 
         private const string IdentityDocumentReferenceType = "identity_document";
@@ -62,7 +63,8 @@ namespace BLL.Services.Implements
             INotificationService notificationService,
             IIdentityDocumentUploadService identityDocumentUploadService,
             IFptIdRecognitionService fptIdRecognitionService,
-            IOptions<FptIdRecognitionOptions> fptIdRecognitionOptions)
+            IOptions<FptIdRecognitionOptions> fptIdRecognitionOptions,
+            IFptPassportRecognitionService? fptPassportRecognitionService = null)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
@@ -72,6 +74,7 @@ namespace BLL.Services.Implements
             _notificationService = notificationService;
             _identityDocumentUploadService = identityDocumentUploadService;
             _fptIdRecognitionService = fptIdRecognitionService;
+            _fptPassportRecognitionService = fptPassportRecognitionService;
             _fptIdRecognitionOptions = fptIdRecognitionOptions.Value;
         }
 
@@ -208,6 +211,29 @@ namespace BLL.Services.Implements
 
                 shouldAutoApprove = true;
             }
+            else if (string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_fptPassportRecognitionService == null)
+                {
+                    throw new InvalidOperationException("Passport recognition service is not configured.");
+                }
+
+                if (uploads.Count != 1)
+                {
+                    throw new ArgumentException("Passport verification requires a single image.");
+                }
+
+                var passportUpload = uploads[0];
+                passportUpload.Ocr = await _fptPassportRecognitionService.RecognizeAsync(passportUpload.File);
+
+                var strictFailure = ValidateStrictPassport(user, tenant, passportUpload.Ocr, out ocrSummary);
+                if (!string.IsNullOrWhiteSpace(strictFailure))
+                {
+                    throw new ArgumentException(strictFailure);
+                }
+
+                shouldAutoApprove = true;
+            }
 
             var createdDocumentIds = new List<Guid>();
             var now = Common.Utils.VietnamTime.Now;
@@ -245,16 +271,22 @@ namespace BLL.Services.Implements
 
                 if (upload.Ocr != null)
                 {
+                    var ocrIdNumber = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
+                        ? (upload.Ocr.PassportNumber ?? upload.Ocr.IdNumber)
+                        : upload.Ocr.IdNumber;
+
                     var ocrResult = new IdentityDocumentOcrResult
                     {
                         OcrResultId = Guid.NewGuid(),
                         DocumentId = document.DocumentId,
-                        Provider = "fpt_id_recognition",
+                        Provider = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
+                            ? "fpt_passport_recognition"
+                            : "fpt_id_recognition",
                         ProviderErrorCode = upload.Ocr.ErrorCode,
                         ProviderErrorMessage = string.IsNullOrWhiteSpace(upload.Ocr.ErrorMessage) ? null : upload.Ocr.ErrorMessage,
                         CardType = upload.Ocr.CardType,
                         CardTypeDetail = upload.Ocr.CardTypeDetail,
-                        IdNumber = upload.Ocr.IdNumber,
+                        IdNumber = ocrIdNumber,
                         FullName = upload.Ocr.FullName,
                         DateOfBirthRaw = upload.Ocr.DateOfBirth,
                         IssueDateRaw = upload.Ocr.IssueDate,
@@ -286,6 +318,12 @@ namespace BLL.Services.Implements
             if (shouldAutoApprove)
             {
                 user.IdentityVerified = true;
+                if (tenant != null && string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase))
+                {
+                    tenant.PassportId = uploads[0].Ocr?.PassportNumber
+                        ?? uploads[0].Ocr?.IdNumber
+                        ?? tenant.PassportId;
+                }
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
@@ -639,6 +677,85 @@ namespace BLL.Services.Implements
             return null;
         }
 
+        private string? ValidateStrictPassport(User user, Tenant? tenant, FptIdRecognitionResult passport, out string ocrSummary)
+        {
+            ocrSummary = string.Empty;
+
+            var normalizedPassportNumber = NormalizePassportNumber(passport.PassportNumber ?? passport.IdNumber);
+            if (string.IsNullOrWhiteSpace(normalizedPassportNumber))
+            {
+                return "Passport number was not detected.";
+            }
+
+            if (string.IsNullOrWhiteSpace(user.FullName) && !string.IsNullOrWhiteSpace(passport.FullName))
+            {
+                user.FullName = passport.FullName.Trim();
+            }
+            else if (!string.IsNullOrWhiteSpace(user.FullName))
+            {
+                var normalizedUserName = NormalizeText(user.FullName);
+                var normalizedPassportName = NormalizeText(passport.FullName);
+                if (string.IsNullOrWhiteSpace(normalizedPassportName) || !string.Equals(normalizedUserName, normalizedPassportName, StringComparison.Ordinal))
+                {
+                    return "Full name on passport does not match your profile.";
+                }
+            }
+
+            var passportBirthday = TryParseDateOnly(passport.DateOfBirth);
+            if (user.Birthday == null && passportBirthday.HasValue)
+            {
+                user.Birthday = passportBirthday.Value;
+            }
+            else if (user.Birthday != null)
+            {
+                if (!passportBirthday.HasValue || passportBirthday.Value != user.Birthday.Value)
+                {
+                    return "Date of birth on passport does not match your profile.";
+                }
+            }
+
+            if (passport.OverallConfidence < _fptIdRecognitionOptions.AutoApproveConfidenceThreshold)
+            {
+                return $"OCR confidence is below required threshold {_fptIdRecognitionOptions.AutoApproveConfidenceThreshold:0.00}.";
+            }
+
+            if (tenant != null)
+            {
+                if (string.IsNullOrWhiteSpace(tenant.PassportId))
+                {
+                    tenant.PassportId = normalizedPassportNumber;
+                }
+                else if (!string.Equals(NormalizePassportNumber(tenant.PassportId), normalizedPassportNumber, StringComparison.Ordinal))
+                {
+                    return "Passport number does not match your profile.";
+                }
+            }
+
+            var summary = new
+            {
+                provider = "fpt_passport_recognition",
+                threshold = _fptIdRecognitionOptions.AutoApproveConfidenceThreshold,
+                autoApproved = true,
+                passport = new
+                {
+                    passport.PassportNumber,
+                    passport.FullName,
+                    passport.DateOfBirth,
+                    passport.PlaceOfBirth,
+                    passport.Sex,
+                    passport.IdNumber,
+                    passport.IssueDate,
+                    passport.ExpiryDate,
+                    passport.OverallConfidence,
+                    passport.FieldConfidences
+                },
+                processedAt = Common.Utils.VietnamTime.Now
+            };
+
+            ocrSummary = JsonSerializer.Serialize(summary);
+            return null;
+        }
+
         private static string? CombineNotes(string? userNotes, string? ocrSummary, FptIdRecognitionResult? ocr)
         {
             var parts = new List<string>();
@@ -700,6 +817,25 @@ namespace BLL.Services.Implements
 
             var digits = value.Where(char.IsDigit).ToArray();
             return new string(digits);
+        }
+
+        private static string NormalizePassportNumber(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var builder = new StringBuilder();
+            foreach (var ch in value.Trim().ToUpperInvariant())
+            {
+                if (char.IsLetterOrDigit(ch))
+                {
+                    builder.Append(ch);
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static string NormalizeText(string? value)

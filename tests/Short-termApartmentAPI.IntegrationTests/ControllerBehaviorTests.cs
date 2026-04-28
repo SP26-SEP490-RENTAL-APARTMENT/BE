@@ -714,6 +714,40 @@ public class ControllerBehaviorTests
     }
 
     [Fact]
+    public async Task BookingController_UploadOccupantByPassport_AddsOccupantFromPassportRecognition()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking { BookingId = bookingId, TenantId = tenantId }
+        };
+
+        var controller = CreateBookingController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var image = new FormFile(new MemoryStream(new byte[] { 1, 2, 3 }), 0, 3, "image", "passport.jpg")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/jpeg"
+        };
+
+        var result = await controller.UploadOccupantByPassport(bookingId, new BookingOccupantOcrUploadDto
+        {
+            Image = image
+        });
+
+        var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
+        var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<ResidenceReportOccupantDto>
+            ?? throw new InvalidOperationException("Expected occupant response.");
+        var data = response.Data!;
+
+        Assert.Equal("OCR Test", data.FullName);
+        Assert.Equal("P1234567", data.PassportId);
+        Assert.Single(bookingService.OccupantsByBooking[bookingId]);
+    }
+
+    [Fact]
     public async Task BookingController_UpdateOccupant_UpdatesOccupantAndReturnsOk()
     {
         var bookingId = Guid.NewGuid();
@@ -860,10 +894,10 @@ public class ControllerBehaviorTests
             residenceReportPdfGenerator ?? new ResidenceReportPdfGeneratorStub(),
             residenceReportDocxGenerator ?? new ResidenceReportDocxGeneratorStub(),
             CreateMapper(),
-            new IdentityRecognitionServiceStub());
+            new PassportRecognitionServiceStub());
     }
 
-    private sealed class IdentityRecognitionServiceStub : IFptIdRecognitionService
+    private sealed class PassportRecognitionServiceStub : IFptPassportRecognitionService
     {
         public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
         {
@@ -872,7 +906,8 @@ public class ControllerBehaviorTests
                 Success = true,
                 OverallConfidence = 0.95,
                 FullName = "OCR Test",
-                IdNumber = "ID123",
+                PassportNumber = "P1234567",
+                IdNumber = "P1234567",
                 DateOfBirth = "01/01/1990"
             });
         }

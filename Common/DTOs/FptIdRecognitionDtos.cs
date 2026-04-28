@@ -22,6 +22,14 @@ public class FptIdRecognitionResult
 
     public string? IssueDate { get; set; }
 
+    public string? PassportNumber { get; set; }
+
+    public string? PlaceOfBirth { get; set; }
+
+    public string? Sex { get; set; }
+
+    public string? ExpiryDate { get; set; }
+
     public double OverallConfidence { get; set; }
 
     public Dictionary<string, string> ExtractedFields { get; set; } = new();

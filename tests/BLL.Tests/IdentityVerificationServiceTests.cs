@@ -232,6 +232,77 @@ public class IdentityVerificationServiceTests
     }
 
     [Fact]
+    public async Task AddIdentityDocumentAsync_WhenForeignTenantUploadsPassport_AutoApprovesAndStoresPassportId()
+    {
+        var userId = Guid.NewGuid();
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId, new User
+        {
+            UserId = userId,
+            Role = "tenant",
+            Nationality = "US",
+            IdentityVerified = false,
+            FullName = "Foreign Tenant",
+            Birthday = new DateOnly(1990, 1, 1)
+        });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
+        {
+            TenantId = userId,
+            IdentityVerificationStatus = "pending"
+        });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            new NoOpIdentityDocumentUploadService(),
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()),
+            new NoOpFptPassportRecognitionService(new FptIdRecognitionResult
+            {
+                Success = true,
+                PassportNumber = "P1234567",
+                FullName = "Foreign Tenant",
+                DateOfBirth = "01/01/1990",
+                PlaceOfBirth = "Paris",
+                Sex = "M",
+                IssueDate = "01/01/2020",
+                ExpiryDate = "01/01/2030",
+                OverallConfidence = 0.99
+            }));
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "passport",
+            FrontImage = new TestFormFile("passport.jpg", "image/jpeg", new byte[] { 1, 2, 3 })
+        };
+
+        var documentIds = await sut.AddIdentityDocumentAsync(userId, dto);
+
+        Assert.Single(documentIds);
+
+        var updatedUser = await userRepo.GetByIdAsync(userId);
+        var updatedTenant = await tenantRepo.GetByIdAsync(userId);
+        Assert.NotNull(updatedUser);
+        Assert.True(updatedUser!.IdentityVerified);
+
+        Assert.NotNull(updatedTenant);
+        Assert.Equal("P1234567", updatedTenant!.PassportId);
+        Assert.Equal("verified", updatedTenant.IdentityVerificationStatus);
+        Assert.NotNull(updatedTenant.LastVerifiedAt);
+    }
+
+    [Fact]
     public async Task ReviewIdentityDocumentAsync_WhenRejectedWithoutReason_ThrowsArgumentException()
     {
         var userId = Guid.NewGuid();
@@ -754,5 +825,20 @@ internal sealed class ThrowingFptIdRecognitionService : IFptIdRecognitionService
     public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
     {
         throw new ArgumentException(_message);
+    }
+}
+
+internal sealed class NoOpFptPassportRecognitionService : IFptPassportRecognitionService
+{
+    private readonly FptIdRecognitionResult _result;
+
+    public NoOpFptPassportRecognitionService(FptIdRecognitionResult result)
+    {
+        _result = result;
+    }
+
+    public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_result);
     }
 }

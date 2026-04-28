@@ -24,7 +24,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IMomoService _momoService;
         private readonly IMomoTransactionService _momoTransactionService;
         private readonly IImageService _imageService;
-        private readonly IFptIdRecognitionService _idRecognitionService;
+        private readonly IFptPassportRecognitionService _passportRecognitionService;
         private readonly MomoOptions _momoOptions;
         private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
         private readonly IResidenceReportDocxGenerator _residenceReportDocxGenerator;
@@ -42,7 +42,7 @@ namespace Short_termApartmentAPI.Controllers
             IResidenceReportPdfGenerator residenceReportPdfGenerator,
             IResidenceReportDocxGenerator residenceReportDocxGenerator,
             IMapper mapper,
-            IFptIdRecognitionService idRecognitionService)
+            IFptPassportRecognitionService passportRecognitionService)
         {
             _bookingService = bookingService;
             _paymentService = paymentService;
@@ -55,7 +55,7 @@ namespace Short_termApartmentAPI.Controllers
             _residenceReportPdfGenerator = residenceReportPdfGenerator;
             _residenceReportDocxGenerator = residenceReportDocxGenerator;
             _mapper = mapper;
-            _idRecognitionService = idRecognitionService;
+            _passportRecognitionService = passportRecognitionService;
         }
 
         [HttpGet("{id:guid}")]
@@ -550,10 +550,11 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/occupants/passport-upload")]
         [HttpPost("{id:guid}/occupants/ocr-upload")]
         [Authorize(Roles = "tenant,landlord")]
         [Consumes("multipart/form-data")]
-        public async Task<IActionResult> UploadOccupantByOcr(Guid id, [FromForm] BookingOccupantOcrUploadDto dto)
+        public async Task<IActionResult> UploadOccupantByPassport(Guid id, [FromForm] BookingOccupantOcrUploadDto dto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var requesterUserId))
@@ -571,11 +572,11 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(new ApiResponse<string>("Image is required."));
             }
 
-            // Run OCR first to extract fields
+            // Run passport OCR first to extract fields
             FptIdRecognitionResult recognition;
             try
             {
-                recognition = await _idRecognitionService.RecognizeAsync(dto.Image);
+                recognition = await _passportRecognitionService.RecognizeAsync(dto.Image);
             }
             catch (ArgumentException ex)
             {
@@ -597,10 +598,12 @@ namespace Short_termApartmentAPI.Controllers
             var occupantDto = new AddBookingOccupantDto
             {
                 FullName = string.IsNullOrWhiteSpace(recognition.FullName) ? null : recognition.FullName,
-                NationalIdCardNumber = string.IsNullOrWhiteSpace(recognition.IdNumber) ? null : recognition.IdNumber,
+                PassportId = string.IsNullOrWhiteSpace(recognition.PassportNumber)
+                    ? (string.IsNullOrWhiteSpace(recognition.IdNumber) ? null : recognition.IdNumber)
+                    : recognition.PassportNumber,
                 DateOfBirth = TryParseDateOnly(recognition.DateOfBirth, out var dob) ? dob : null,
                 Nationality = null,
-                PassportId = null,
+                NationalIdCardNumber = null,
                 Sex = null,
                 Phone = null,
                 Email = null,

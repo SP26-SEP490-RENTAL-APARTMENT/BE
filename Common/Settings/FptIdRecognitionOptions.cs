@@ -6,6 +6,8 @@ public class FptIdRecognitionOptions
 
     public string Endpoint { get; set; } = "https://api.fpt.ai/vision/idr/vnm/";
 
+    public string PassportEndpoint { get; set; } = "https://api.fpt.ai/vision/passport/vnm";
+
     public string ApiKey { get; set; } = string.Empty;
 
     public int TimeoutSeconds { get; set; } = 30;
