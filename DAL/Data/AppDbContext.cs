@@ -325,6 +325,10 @@ public partial class AppDbContext : DbContext
 
             entity.Property(e => e.PriceId).HasColumnName("price_id");
             entity.Property(e => e.ApartmentId).HasColumnName("apartment_id");
+            entity.Property(e => e.PricingPolicyId).HasColumnName("pricing_policy_id");
+            entity.Property(e => e.VersionId).HasColumnName("version_id");
+            entity.Property(e => e.VersionNumber)
+                .HasColumnName("version_number");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
                 .HasColumnType("timestamp")
@@ -337,6 +341,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.IsDiscount)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("is_discount");
+            entity.Property(e => e.FixedPricePerNight)
+                .HasPrecision(10, 2)
+                .HasColumnName("fixed_price_per_night");
             entity.Property(e => e.MinNights)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("min_nights");
@@ -1895,7 +1902,10 @@ public partial class AppDbContext : DbContext
     private void ApplySoftDeleteModelConfiguration(ModelBuilder modelBuilder)
     {
         var entityTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(t => !t.IsOwned() && t.ClrType != null && t.ClrType != typeof(Dictionary<string, object>))
+            .Where(t => !t.IsOwned() 
+                    && t.ClrType != null 
+                    && t.ClrType != typeof(Dictionary<string, object>)
+                    && t.ClrType != typeof(ApartmentPriceCalendar))
             .ToList();
 
         foreach (var entityType in entityTypes)

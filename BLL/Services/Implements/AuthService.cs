@@ -23,6 +23,7 @@ namespace BLL.Services.Implements
         private readonly IUserRepository _userRepository;
         private readonly IRepository<Tenant> _tenantRepository;
         private readonly IRepository<Landlord> _landlordRepository;
+        private readonly IRepository<Apartment> _apartmentRepository;
         private readonly JwtSettings _jwtSettings;
         private readonly FrontendSettings _frontendSettings;
         private readonly EmailService _emailService;
@@ -42,6 +43,7 @@ namespace BLL.Services.Implements
             IUserRepository userRepository, 
             IRepository<Tenant> tenantRepository, 
             IRepository<Landlord> landlordRepository,
+            IRepository<Apartment> apartmentRepository,
             IOptions<JwtSettings> jwtSettings,
             IOptions<FrontendSettings> frontendSettings,
             EmailService emailService,
@@ -50,6 +52,7 @@ namespace BLL.Services.Implements
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
             _landlordRepository = landlordRepository;
+            _apartmentRepository = apartmentRepository;
             _jwtSettings = jwtSettings.Value;
             _frontendSettings = frontendSettings.Value;
             _emailService = emailService;
@@ -487,6 +490,17 @@ namespace BLL.Services.Implements
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
             return new ResponseDTO { Success = true, Message = "Password changed successfully." };
+        }
+
+        public async Task<bool> IsUserOwnerOrManager(Guid userId, Guid apartmentId)
+        {
+            var apartment = await _apartmentRepository.GetByIdAsync(apartmentId)
+            ?? throw new ArgumentException("Apartment not found.");
+
+            if (apartment.LandlordId == userId)
+                return true;
+
+            return false;
         }
     }
     

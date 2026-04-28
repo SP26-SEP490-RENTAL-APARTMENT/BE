@@ -3,6 +3,7 @@ using BLL.Services.Implements;
 using BLL.Services.Interfaces;
 using DAL.Repository.Implements;
 using DAL.Repository.Interfaces;
+using StackExchange.Redis;
 
 namespace BLL.DependencyInjection
 {
@@ -54,6 +55,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IAdminAnalyticsService, AdminAnalyticsService>();
             services.AddScoped<IWishlistService, WishlistService>();
             services.AddScoped<EmailService, EmailService>();
+            services.AddScoped<ICacheService, RedisCacheService>();
             return services;
         }
     }
