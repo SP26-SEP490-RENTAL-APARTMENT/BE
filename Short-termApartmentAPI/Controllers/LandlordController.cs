@@ -64,7 +64,8 @@ public sealed class LandlordController : ControllerBase
         [FromQuery] int pageSize = 10,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortOrder = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!Guid.TryParse(userIdClaim, out var userId))
@@ -76,7 +77,7 @@ public sealed class LandlordController : ControllerBase
         if (landlord == null)
             return NotFound(new ApiResponse<string>("Landlord profile not found."));
 
-        var (items, totalCount) = await _landlordService.GetOwnApartmentsAsync(landlord.LandlordId, page, pageSize, sortBy, sortOrder, search);
+        var (items, totalCount) = await _landlordService.GetOwnApartmentsAsync(landlord.LandlordId, page, pageSize, sortBy, sortOrder, search, filters);
         var mapped = _mapper.Map<IEnumerable<ApartmentResponseDto>>(items);
         return Ok(new { Items = mapped, TotalCount = totalCount });
     }

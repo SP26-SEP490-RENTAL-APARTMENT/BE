@@ -158,10 +158,10 @@ public sealed class ApartmentsController : ControllerBase
             [FromQuery] string? search = null,
             [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var effectiveFilters = filters ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        effectiveFilters["status"] = "pending_review";
+        var effectiveFilters = BuildPublicApartmentFilters(filters);
+        var (items, totalCount) = await _apartmentService.GetPendingReviewAsync(
+            page, pageSize, sortBy, sortOrder, search, filters: effectiveFilters);
 
-        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
         var mappedItems = items.Select(apartment =>
         {
             var dto = _mapper.Map<ApartmentResponseDto>(apartment);
@@ -172,7 +172,8 @@ public sealed class ApartmentsController : ControllerBase
                 .Select(i => i.Status)
                 .FirstOrDefault();
             return dto;
-        });
+        }).ToList();
+
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
@@ -190,11 +191,10 @@ public sealed class ApartmentsController : ControllerBase
             [FromQuery] string? search = null,
             [FromQuery] Dictionary<string, string>? filters = null)
     {
-        var effectiveFilters = filters ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        effectiveFilters["status"] = "pending_review";
-        effectiveFilters["landlordId"] = landlordId.ToString();
+        var effectiveFilters = BuildPublicApartmentFilters(filters);
+        var (items, totalCount) = await _apartmentService.GetPendingReviewByLandlordIdAsync(
+            page, pageSize, landlordId, sortBy, sortOrder, search, filters: effectiveFilters);
 
-        var (items, totalCount) = await _apartmentService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, effectiveFilters);
         var mappedItems = items.Select(apartment =>
         {
             var dto = _mapper.Map<ApartmentResponseDto>(apartment);
@@ -205,7 +205,8 @@ public sealed class ApartmentsController : ControllerBase
                 .Select(i => i.Status)
                 .FirstOrDefault();
             return dto;
-        });
+        }).ToList();
+
         return Ok(new { Items = mappedItems, TotalCount = totalCount });
     }
 
@@ -554,7 +555,7 @@ public sealed class ApartmentsController : ControllerBase
             }
 
             var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
-            
+
             // For landlords, verify ownership
             if (userRole == "landlord")
             {

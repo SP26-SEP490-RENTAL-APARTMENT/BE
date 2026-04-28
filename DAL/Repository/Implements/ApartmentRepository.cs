@@ -170,5 +170,109 @@ namespace DAL.Repository.Implements
                     && a.Landlord.LandlordNavigation.FullName != null
                     && a.Landlord.LandlordNavigation.FullName.ToLower().Contains(normalizedSearch)));
         }
+
+        public async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            IEnumerable<string>? allowedColumns = null,
+            Dictionary<string, string>? filters = null)
+        {
+            var query = _dbSet
+                .Include(a => a.Room)
+                .Include(a => a.Amenities)
+                .Include(a => a.ApartmentMedia)
+                .Include(a => a.PropertyInspections)
+                .Include(a => a.Landlord)
+                    .ThenInclude(l => l.LandlordNavigation)
+                .Where(a => a.Status == "pending_review");
+
+            if (filters != null && filters.TryGetValue("inspectionStatus", out var inspectionStatus) &&
+                !string.IsNullOrWhiteSpace(inspectionStatus))
+            {
+                query = query.Where(a =>
+                    a.PropertyInspections
+                        .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
+                        .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
+                        .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                        .Select(i => i.Status)
+                        .FirstOrDefault() == inspectionStatus);
+            }
+
+            query = ApplyFilters(query, filters, allowedColumns);  // your existing filter logic
+            query = ApplyApartmentSearchWithLandlordName(query, search, allowedColumns);
+            query = ApplySorting(query, sortBy, sortOrder);
+
+            // 4. Execute pagination
+            var totalCount = await query.CountAsync();
+            var items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (items, totalCount);
+        }
+
+        public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewByLandlordIdAsync(int page, int pageSize, Guid landlordId, string? sortBy = null, string? sortOrder = null, string? search = null, IEnumerable<string>? allowedColumns = null, Dictionary<string, string>? filters = null)
+        {
+            var query = _dbSet
+                .Include(a => a.Room)
+                .Include(a => a.Amenities)
+                .Include(a => a.ApartmentMedia)
+                .Include(a => a.PropertyInspections)
+                .Include(a => a.Landlord)
+                    .ThenInclude(l => l.LandlordNavigation)
+                .Where(a => a.Status == "pending_review" && a.LandlordId == landlordId);
+
+            if (filters != null && filters.TryGetValue("inspectionStatus", out var inspectionStatus) &&
+                !string.IsNullOrWhiteSpace(inspectionStatus))
+            {
+                query = query.Where(a =>
+                    a.PropertyInspections
+                        .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
+                        .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
+                        .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                        .Select(i => i.Status)
+                        .FirstOrDefault() == inspectionStatus);
+            }
+
+            query = ApplyFilters(query, filters, allowedColumns);  // your existing filter logic
+            query = ApplyApartmentSearchWithLandlordName(query, search, allowedColumns);
+            query = ApplySorting(query, sortBy, sortOrder);
+
+            // 4. Execute pagination
+            var totalCount = query.Count();
+            var items = query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            return Task.FromResult((items.AsEnumerable(), totalCount));
+        }
+
+        public async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetApartmentByLandlordIdAsync(Guid landlordId, int page, int pageSize, string? sortBy, string? sortOrder, string? search, Dictionary<string, string>? filters, string[] allowedColumns)
+        {
+            var query = _dbSet.AsQueryable();
+
+            query = ApplyFilters(query, filters, allowedColumns);
+            query = ApplyApartmentSearchWithLandlordName(query, search, allowedColumns);
+            query = ApplySorting(query, sortBy, sortOrder);
+
+            var items = await query
+                .Where(a => a.LandlordId == landlordId)
+                .Include(a => a.Room)
+                .Include(a => a.Amenities)
+                .Include(a => a.ApartmentMedia)
+                .Include(a => a.PropertyInspections)
+                .Include(a => a.Landlord)
+                    .ThenInclude(l => l.LandlordNavigation)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+            var totalCount = await query.CountAsync(a => a.LandlordId == landlordId);
+            return (items, totalCount);
+        }
     }
 }

@@ -50,16 +50,46 @@ namespace DAL.Repository.Implements
             IEnumerable<string>? allowedColumns
         )
         {
-            if (filters != null && allowedColumns != null)
+            if (filters == null || filters.Count == 0 || allowedColumns == null)
             {
-                foreach (var filter in filters)
+                return query;
+            }
+
+            // Ignore entries like filters="", filters[Status]="", or empty keys.
+            var effectiveFilters = filters
+                .Where(f => !string.IsNullOrWhiteSpace(f.Key) && !string.IsNullOrWhiteSpace(f.Value))
+                .ToList();
+
+            if (effectiveFilters.Count == 0)
+            {
+                return query;
+            }
+
+            foreach (var filter in effectiveFilters)
+            {
+                var allowedCol = allowedColumns!.FirstOrDefault(c =>
+                    string.Equals(c, filter.Key, StringComparison.OrdinalIgnoreCase));
+
+                if (allowedCol == null)
                 {
-                    var allowedCol = allowedColumns.FirstOrDefault(c =>
+                    continue;
+                }
+
+                var property = typeof(T).GetProperty(allowedCol);
+
+                if (property == null)
+                {
+                    continue;
+                }
+
+                if (filters != null && allowedColumns != null)
+                {
+                    allowedCol = allowedColumns.FirstOrDefault(c =>
                         string.Equals(c, filter.Key, StringComparison.OrdinalIgnoreCase)
                     );
                     if (allowedCol != null)
                     {
-                        var property = typeof(T).GetProperty(allowedCol);
+                        property = typeof(T).GetProperty(allowedCol);
                         if (property != null)
                         {
                             var parameter = Expression.Parameter(typeof(T), "e");

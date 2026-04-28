@@ -507,4 +507,42 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         return apartment;
     }
+
+    public async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, IEnumerable<string>? allowedColumns = null, Dictionary<string, string>? filters = null)
+    {
+        var effectiveAllowedColumns = new[]
+        {
+            "ApartmentId",
+            "LandlordId",
+            "Title",
+            "Description",
+            "Address",
+            "District",
+            "City",
+            "Status",
+            "BasePricePerNight",
+            "CreatedAt"
+        };
+
+        return await _apartmentRepository.GetPendingReviewAsync(page, pageSize, sortBy, sortOrder, search, effectiveAllowedColumns, filters);
+    }
+
+    public async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewByLandlordIdAsync(int page, int pageSize, Guid landlordId, string? sortBy = null, string? sortOrder = null, string? search = null, IEnumerable<string>? allowedColumns = null, Dictionary<string, string>? filters = null)
+    {
+        var effectiveAllowedColumns = new[]
+        {
+            "ApartmentId",
+            "LandlordId",
+            "Title",
+            "Description",
+            "Address",
+            "District",
+            "City",
+            "Status",
+            "BasePricePerNight",
+            "CreatedAt"
+        };
+
+        return await _apartmentRepository.GetPendingReviewByLandlordIdAsync(page, pageSize, landlordId, sortBy, sortOrder, search, effectiveAllowedColumns, filters);
+    }
 }

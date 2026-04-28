@@ -19,5 +19,25 @@ namespace DAL.Repository.Interfaces
             IEnumerable<string>? allowedColumns = null,
             DateOnly? checkInDate = null,
             DateOnly? checkOutDate = null);
+        // in IApartmentRepository
+        Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            IEnumerable<string>? allowedColumns = null,
+            Dictionary<string, string>? filters = null);
+        Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewByLandlordIdAsync(
+            int page,
+            int pageSize,
+            Guid landlordId,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            IEnumerable<string>? allowedColumns = null,
+            Dictionary<string, string>? filters = null);
+        
+        Task<(IEnumerable<Apartment> Items, int TotalCount)> GetApartmentByLandlordIdAsync(Guid landlordId, int page, int pageSize, string? sortBy, string? sortOrder, string? search, Dictionary<string, string>? filters, string[] allowedColumns);
     }
 }

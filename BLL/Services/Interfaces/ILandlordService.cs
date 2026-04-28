@@ -13,7 +13,8 @@ public interface ILandlordService : IBaseService<Landlord>
         int pageSize,
         string? sortBy = null,
         string? sortOrder = null,
-        string? search = null);
+        string? search = null,
+        Dictionary<string, string>? filters = null);
 
     Task<SubscriptionPlanDto?> GetCurrentSubscriptionAsync(Guid landlordId);
 
