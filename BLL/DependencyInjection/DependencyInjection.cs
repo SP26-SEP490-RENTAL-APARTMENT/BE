@@ -10,6 +10,7 @@ namespace BLL.DependencyInjection
             services.AddMappingProfileRegistration();
             services.AddRepositoryRegistration();
             services.AddServiceRegistration();
+            services.AddRedisServices(configuration);
 
             return services;
         }

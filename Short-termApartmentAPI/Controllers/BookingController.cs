@@ -85,7 +85,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("quote")]
-        [Authorize(Roles = "tenant")]
+        [Authorize]
         public async Task<IActionResult> Quote([FromBody] BookingQuoteRequestDto dto)
         {
             if (!ModelState.IsValid)
@@ -591,6 +591,7 @@ namespace Short_termApartmentAPI.Controllers
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Error uploading image in UploadOccupantByPassport: {ex}");
                 return BadRequest(new ApiResponse<string>("Failed to upload image."));
             }
 

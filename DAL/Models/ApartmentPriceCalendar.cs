@@ -8,6 +8,9 @@ public partial class ApartmentPriceCalendar
     public Guid PriceId { get; set; }
 
     public Guid ApartmentId { get; set; }
+    public Guid PricingPolicyId { get; set; }
+    public Guid VersionId { get; set; }
+    public int VersionNumber { get; set; }
 
     public DateOnly StartDate { get; set; }
 
@@ -16,6 +19,7 @@ public partial class ApartmentPriceCalendar
     public decimal? DiscountPercentage { get; set; }
 
     public bool? IsDiscount { get; set; }
+    public decimal? FixedPricePerNight { get; set; }
 
     public string? PriceType { get; set; }
 

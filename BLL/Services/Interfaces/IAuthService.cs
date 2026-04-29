@@ -19,5 +19,6 @@ namespace BLL.Services.Interfaces
         Task<ResponseDTO> RequestPasswordResetAsync(PasswordResetRequestDto dto);
         Task<ResponseDTO> ResetPasswordByTokenAsync(string token, ResetPasswordByTokenDto dto);
         Task<ResponseDTO> ChangePasswordAsync(Guid userId, PasswordResetDto dto);
+        Task<bool> IsUserOwnerOrManager(Guid userId, Guid apartmentId);
     }
 }
