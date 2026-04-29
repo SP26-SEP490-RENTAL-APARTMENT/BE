@@ -24,12 +24,12 @@ namespace Common.DTOs
         [Required]
         [StringLength(255)]
         public string Subject { get; set; } = null!;
-        
+
         [Required]
         public string Description { get; set; } = null!;
-        
+
         [Required]
-              
+
         [RegularExpression("^(booking_issue|payment_problem|listing_problem|account_verification|cancellation|dispute|property_quality|other)$", ErrorMessage = "Possible enum: 'booking_issue','payment_problem','listing_problem','account_verification','cancellation','dispute','property_quality','other'")]
         public string Category { get; set; } = null!;
 
@@ -43,10 +43,10 @@ namespace Common.DTOs
         [Required]
         [StringLength(255)]
         public string Subject { get; set; } = null!;
-        
+
         [Required]
         public string Description { get; set; } = null!;
-        
+
         [Required]
         [RegularExpression("^(booking_issue|payment_problem|listing_problem|account_verification|cancellation|dispute|property_quality|other)$", ErrorMessage = "Possible enum: 'booking_issue','payment_problem','listing_problem','account_verification','cancellation','dispute','property_quality','other'")]
         public string Category { get; set; } = null!;
@@ -58,14 +58,32 @@ namespace Common.DTOs
         [Required]
         [RegularExpression("^(open|in_progress|resolved|closed|escalated)$", ErrorMessage = "Must be 'open, in_progress, resolved, closed', 'escalated'")]
         public string? Status { get; set; }
-        
+
         public string? ResolutionNotes { get; set; }
-        
+
         public Guid? ResolvedBy { get; set; }
-        
+
         public DateTime? ResolvedAt { get; set; }
     }
 
+    public class ResolveTicketRequestDto
+    {
+        public Guid TicketId { get; set; }
+        // Resolution notes are mandatory for resolution
+        public string ResolutionNotes { get; set; } = string.Empty;
+        // The ID of the user/staff member performing the resolution
+        public Guid StaffActorUserId { get; set; }
+    }
+
+    public class UserUpdateStatusRequestDto
+    {
+        // Must be "closed" or "escalated"
+        [Required]
+        [RegularExpression("^(closed|escalated)$", ErrorMessage = "Must be 'closed', 'escalated'")]
+        public string NewStatus { get; set; } = string.Empty;
+        // Optional: Message/Notes if the status change requires documentation
+        public string? StatusChangeNotes { get; set; }
+    }
     public class ReportPersistingIssueDto
     {
         [Required]

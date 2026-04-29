@@ -246,5 +246,188 @@ namespace BLL.Services.Implements
 
             return await CreateTicketAsync(followUp);
         }
+
+        public async Task<SupportTicket> ResolveTicketByStaffAsync(
+            Guid ticketId,
+            string resolutionNotes,
+            Guid staffActorUserId)
+        {
+            var ticket = await _supportTicketRepository.GetByIdAsync(ticketId);
+            if (ticket == null)
+            {
+                throw new ArgumentException("Support ticket not found.");
+            }
+
+            // 1. Basic Validation
+            if (string.IsNullOrWhiteSpace(resolutionNotes))
+            {
+                throw new ArgumentException("Resolution notes are required to resolve the ticket.");
+            }
+
+            // Optimization: Check if the ticket is already resolved
+            if (string.Equals(ticket.Status, "resolved", StringComparison.OrdinalIgnoreCase))
+            {
+                // Optionally throw or just return the ticket if already resolved.
+                return ticket;
+            }
+
+            // 2. Update Ticket Status and Details
+
+            // Set the status to resolved
+            ticket.Status = "resolved";
+
+            // Set required resolution metadata
+            ticket.ResolutionNotes = resolutionNotes;
+            ticket.ResolvedAt = Common.Utils.VietnamTime.Now;
+            ticket.ResolvedBy = staffActorUserId;
+            ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
+
+            _supportTicketRepository.Update(ticket);
+            await _supportTicketRepository.SaveChangesAsync();
+
+            // 3. Handle Notifications
+
+            var type = "support_ticket_resolved";
+            var title = "Your support ticket was resolved";
+            var message = $"Ticket '{ticket.Subject}' has been resolved by staff. Please review the resolution notes.";
+
+            // A. Notify the original requester
+            await CreateSupportNotificationAsync(
+                ticket.UserId,
+                type,
+                title,
+                message,
+                ticket.TicketId);
+
+            // B. Notify all staff assigned to the ticket
+            var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
+            foreach (var assignment in assignments)
+            {
+                var staffTitle = "Assigned ticket resolved";
+                var staffMessage = $"Ticket '{ticket.Subject}' has been resolved by {staffActorUserId}.";
+
+                await CreateSupportNotificationAsync(
+                    assignment.StaffId,
+                    type,
+                    staffTitle,
+                    staffMessage,
+                    ticket.TicketId,
+                    saveChanges: false);
+            }
+
+            // 4. Save all pending notifications
+            if (assignments.Any())
+            {
+                await _notificationRepository.SaveChangesAsync();
+            }
+
+            return ticket;
+        }
+
+        public async Task<SupportTicket> UpdateTicketByCreatorStatusAsync(
+            Guid ticketId,
+            Guid requesterUserId,
+            UserUpdateStatusRequestDto updateDto)
+        {
+            var ticket = await _supportTicketRepository.GetByIdAsync(ticketId);
+            if (ticket == null)
+            {
+                throw new ArgumentException("Support ticket not found.");
+            }
+
+            // 1. Authorization Check: Must be the original creator
+            if (ticket.UserId != requesterUserId)
+            {
+                throw new UnauthorizedAccessException("You can only update the status of tickets you created.");
+            }
+
+            // 2. Business Logic Check: Cannot transition if already closed
+            var currentStatus = string.Equals(ticket.Status, "closed", StringComparison.OrdinalIgnoreCase) ? "closed" : ticket.Status;
+            if (string.Equals(currentStatus, "closed", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("This ticket is already closed and cannot be modified.");
+            }
+
+            // 3. Status Validation
+            var newStatus = updateDto.NewStatus.ToLower();
+            if (newStatus != "closed" && newStatus != "escalated")
+            {
+                throw new ArgumentException("Invalid target status. Only 'closed' or 'escalated' changes are allowed from the creator.");
+            }
+
+            // 4. Update Logic
+            var oldStatus = ticket.Status;
+
+            // Update the status and notes
+            ticket.Status = newStatus;
+            ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
+
+            if (string.IsNullOrEmpty(updateDto.StatusChangeNotes))
+            {
+                // If changing to closed, we might want to force resolution notes if none provided
+                ticket.ResolutionNotes = updateDto.StatusChangeNotes ?? $"Creator initiated status change from {oldStatus} to {newStatus}.";
+            }
+            else
+            {
+                ticket.ResolutionNotes = updateDto.StatusChangeNotes;
+            }
+
+            _supportTicketRepository.Update(ticket);
+            await _supportTicketRepository.SaveChangesAsync();
+
+
+            // 5. Notification Handling
+            if (string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase))
+            {
+                // Optionally set resolved dates if closing
+                ticket.ResolvedAt = Common.Utils.VietnamTime.Now;
+                ticket.ResolvedBy = requesterUserId;
+            }
+
+            // Determine notification type and title
+            var type = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                ? "support_ticket_closed_by_user"
+                : "support_ticket_re_escalated_by_user";
+
+            var title = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                ? "Support Ticket Closed"
+                : "Support Ticket Re-escalated";
+
+            var message = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                ? "The ticket has been closed by the creator. Please check the notes."
+                : $"The ticket status was changed to {newStatus}.";
+
+            // Notify the creator themselves
+            await CreateSupportNotificationAsync(
+                requesterUserId,
+                type,
+                title,
+                message,
+                ticket.TicketId);
+
+            // Notify all staff assigned (to make them aware of the major status change)
+            var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
+            foreach (var assignment in assignments)
+            {
+                var staffMessage = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                    ? $"The ticket '{ticket.Subject}' has been manually closed by the creator ({requesterUserId})."
+                    : $"The ticket '{ticket.Subject}' has been re-escalated by the creator ({requesterUserId}).";
+
+                await CreateSupportNotificationAsync(
+                    assignment.StaffId,
+                    type,
+                    "Creator Status Change",
+                    staffMessage,
+                    ticket.TicketId,
+                    saveChanges: false);
+            }
+
+            if (assignments.Any())
+            {
+                await _notificationRepository.SaveChangesAsync();
+            }
+
+            return ticket;
+        }
     }
 }
