@@ -149,6 +149,104 @@ namespace Short_termApartmentAPI.Controllers
             return NoContent();
         }
 
+        /// <summary>
+        /// Resolves a support ticket by an authorized staff member.
+        /// </summary>
+        /// <param name="requestDto">The details including the ticket ID, resolution notes, and acting staff ID.</param>
+        /// <returns>The updated ticket details.</returns>
+        [HttpPost("{ticketId}/resolve")]
+        public async Task<IActionResult> ResolveTicket(
+            [FromRoute] Guid ticketId,
+            [FromBody] string resolutionNotes)
+        {
+            // Basic validation check
+            if (string.IsNullOrEmpty(resolutionNotes))
+            {
+                return BadRequest("Resolution details are required.");
+            }
+
+            var actorClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actorClaim, out var actorUserId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            try
+            {
+                // Use the service layer logic
+                var resolvedTicket = await _supportTicketService.ResolveTicketByStaffAsync(
+                    ticketId,
+                    resolutionNotes,
+                    actorUserId);
+
+                // Map the returned entity to a clean DTO for the client
+                var dto = _mapper.Map<SupportTicketDto>(resolvedTicket);
+
+                return Ok(dto);
+            }
+            catch (ArgumentException ex)
+            {
+                // Handles cases like "Support ticket not found" or "Resolution notes are required"
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                // Catch all other unexpected errors
+                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred: " + ex.Message);
+            }
+        }
+
+        [HttpPatch("{ticketId}/status")]
+        public async Task<IActionResult> UpdateTicketStatusByCreator(
+        [FromRoute] Guid ticketId,
+        [FromBody] UserUpdateStatusRequestDto requestDto)
+        {
+            if (requestDto == null || string.IsNullOrWhiteSpace(requestDto.NewStatus))
+            {
+                return BadRequest("Status change details (NewStatus) are required.");
+            }
+
+            var actorClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actorClaim, out var actorUserId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            try
+            {
+                // The service handles all authorization checks (is creator, status validity, etc.)
+                var updatedTicket = await _supportTicketService.UpdateTicketByCreatorStatusAsync(
+                    ticketId,
+                    actorUserId,
+                    requestDto);
+
+                // Map the returned entity to DTO
+                var dto = _mapper.Map<SupportTicketDto>(updatedTicket);
+
+                return Ok(dto);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Catch explicit authorization failures
+                return Forbid(ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Catch business logic failures (e.g., already closed, invalid transition)
+                return BadRequest(ex.Message);
+            }
+            catch (ArgumentException ex)
+            {
+                // Catch data validation failures
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                // Catch all unexpected errors
+                return StatusCode(StatusCodes.Status500InternalServerError, "An unexpected error occurred: " + ex.Message);
+            }
+        }
+
         [HttpPost("{id:guid}/report-persisting")]
         public async Task<IActionResult> ReportPersisting(Guid id, [FromBody] ReportPersistingIssueDto dto)
         {
