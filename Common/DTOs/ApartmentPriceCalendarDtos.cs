@@ -7,12 +7,6 @@ public class ManualPriceRangeDto
 
     // The absolute price that overrides everything else
     public decimal FixedPricePerNight { get; set; } 
-
-    // The source of the pricing (Landlord, System, etc.)
-    public string? RuleSource { get; set; } 
-
-    // Optional business rules
-    public int? MinNights { get; set; }
     public string? PriceType { get; set; } = "manual_override"; 
 }
 
@@ -36,8 +30,6 @@ public class BulkPriceUpdateDto
 {
     public DateOnly FromDate { get; set; }
     public DateOnly ToDate { get; set; }
-    // Example: ["Mon", "Tue", "Wed"]
-    public List<string> DaysOfWeek { get; set; } = new List<string>();
     public decimal FixedPricePerNight { get; set; }
 }
 

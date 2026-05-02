@@ -1049,7 +1049,7 @@ internal sealed class LandlordServiceStub : BaseServiceStub<Landlord>, ILandlord
 
     public Task<Landlord?> GetByUserIdAsync(Guid userId) => Task.FromResult(LandlordByUserId);
 
-    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetOwnApartmentsAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null)
+    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetOwnApartmentsAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null)
         => Task.FromResult((Enumerable.Empty<Apartment>(), 0));
 
     public Task<SubscriptionPlanDto?> GetCurrentSubscriptionAsync(Guid landlordId) => Task.FromResult<SubscriptionPlanDto?>(null);
@@ -1378,6 +1378,12 @@ internal sealed class SupportTicketServiceStub : BaseServiceStub<SupportTicket>,
         => Task.FromResult(new SupportTicket());
 
     public Task<SupportTicket> CreateFollowUpTicketAsync(Guid originalTicketId, Guid requesterUserId, string details)
+        => Task.FromResult(new SupportTicket());
+
+    public Task<SupportTicket> ResolveTicketByStaffAsync(Guid ticketId, string resolutionNotes, Guid staffUserId)
+        => Task.FromResult(new SupportTicket());
+
+    public Task<SupportTicket> UpdateTicketByCreatorStatusAsync(Guid ticketId, Guid requesterUserId, UserUpdateStatusRequestDto updateDto)
         => Task.FromResult(new SupportTicket());
 }
 

@@ -18,17 +18,20 @@ namespace Short_termApartmentAPI.Controllers
     public class IdentityRecognitionController : ControllerBase
     {
         private readonly IFptIdRecognitionService _idRecognitionService;
+        private readonly IFptPassportRecognitionService _passportRecognitionService;
         private readonly IUserService _userService;
         private readonly IMapper _mapper;
         private readonly decimal _autoApproveConfidenceThreshold;
 
         public IdentityRecognitionController(
             IFptIdRecognitionService idRecognitionService,
+            IFptPassportRecognitionService passportRecognitionService,
             IUserService userService,
             IMapper mapper,
             IOptions<FptIdRecognitionOptions> options)
         {
             _idRecognitionService = idRecognitionService;
+            _passportRecognitionService = passportRecognitionService;
             _userService = userService;
             _mapper = mapper;
             _autoApproveConfidenceThreshold = (decimal)options.Value.AutoApproveConfidenceThreshold;
@@ -70,7 +73,7 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(new ApiResponse<string>(validationError));
             }
 
-            user.IdentityVerified = recognition.OverallConfidence >= (double)_autoApproveConfidenceThreshold;
+            user.IdentityVerified = recognition.OverallConfidence >= 0.75d;
             await _userService.UpdateAsync(user);
 
             return Ok(new ApiResponse<object>(new
@@ -142,6 +145,97 @@ namespace Short_termApartmentAPI.Controllers
 
             date = default;
             return false;
+        }
+
+        [HttpPost("passport")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadPassport([FromForm] IdentityRecognitionUploadDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var user = await _userService.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return NotFound(new ApiResponse<string>("User not found."));
+            }
+
+            FptIdRecognitionResult recognition;
+            try
+            {
+                recognition = await _passportRecognitionService.RecognizeAsync(dto.Image);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+
+            if (!TryApplyPassportRecognitionToUser(user, recognition, out var validationError))
+            {
+                return BadRequest(new ApiResponse<string>(validationError));
+            }
+
+            user.IdentityVerified = recognition.OverallConfidence >= 0.75d;
+            await _userService.UpdateAsync(user);
+
+            return Ok(new ApiResponse<object>(new
+            {
+                Recognition = recognition,
+                Profile = _mapper.Map<UserDto>(user)
+            }, "Passport recognition completed and profile updated."));
+        }
+
+        private static bool TryApplyPassportRecognitionToUser(User user, FptIdRecognitionResult recognition, out string errorMessage)
+        {
+            if (recognition.OverallConfidence <= 0)
+            {
+                errorMessage = "Passport recognition did not return confidence scores.";
+                return false;
+            }
+
+            if (recognition.OverallConfidence < 0.75d)
+            {
+                errorMessage = "Passport recognition confidence is too low. Please upload a clearer image.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(recognition.PassportNumber))
+            {
+                errorMessage = "Passport recognition did not return a passport number.";
+                return false;
+            }
+
+            if (user.Tenant == null)
+            {
+                user.Tenant = new Tenant { TenantId = Guid.NewGuid(), PassportId = recognition.PassportNumber.Trim() };
+            }
+            else
+            {
+                user.Tenant.PassportId = recognition.PassportNumber.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(recognition.FullName))
+            {
+                user.FullName = recognition.FullName.Trim();
+            }
+
+            if (TryParseDateOnly(recognition.DateOfBirth, out var birthday))
+            {
+                user.Birthday = birthday;
+            }
+
+            user.Nationality = string.IsNullOrWhiteSpace(user.Nationality) ? null : user.Nationality;
+
+            errorMessage = string.Empty;
+            return true;
         }
     }
 }

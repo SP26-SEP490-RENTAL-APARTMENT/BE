@@ -104,6 +104,29 @@ public class ApartmentsControllerPublicAvailabilityTests
         public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllPublicAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, DateOnly? checkInDate = null, DateOnly? checkOutDate = null)
             => Task.FromResult((Enumerable.Empty<Apartment>(), 0));
 
+        public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            IEnumerable<string>? allowedColumns = null,
+            Dictionary<string, string>? filters = null)
+            => Task.FromResult((Enumerable.Empty<Apartment>(), 0));
+
+        public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewByLandlordIdAsync(
+            int page,
+            int pageSize,
+            Guid landlordId,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            IEnumerable<string>? allowedColumns = null,
+            Dictionary<string, string>? filters = null)
+            => Task.FromResult((Enumerable.Empty<Apartment>(), 0));
+
+        // Intentionally rely on the implementation below that captures filters and dates
+
         public Task<(IEnumerable<ApartmentResponseDto> Items, int TotalCount)> GetAllPublicResponseAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, Guid? tenantId = null, DateOnly? checkInDate = null, DateOnly? checkOutDate = null)
         {
             LastFilters = filters;
