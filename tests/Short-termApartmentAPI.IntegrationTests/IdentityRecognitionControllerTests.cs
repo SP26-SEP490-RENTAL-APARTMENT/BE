@@ -40,7 +40,7 @@ public class IdentityRecognitionControllerTests
         var controller = CreateController(new IdentityRecognitionServiceStub
         {
             ExceptionToThrow = new ArgumentException("ID card not detected or image quality is too low.")
-        }, new UserServiceStub(new User
+        }, null, new UserServiceStub(new User
         {
             UserId = userId,
             Email = "user@example.com"
@@ -80,7 +80,7 @@ public class IdentityRecognitionControllerTests
         var controller = CreateController(new IdentityRecognitionServiceStub
         {
             RecognitionResult = recognition
-        }, userService);
+        }, null, userService);
         SetUser(controller, new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
 
         var result = await controller.UploadAndUpdateProfile(new IdentityRecognitionUploadDto
@@ -101,16 +101,56 @@ public class IdentityRecognitionControllerTests
 
     private static IdentityRecognitionController CreateController(
         IFptIdRecognitionService? recognitionService = null,
+        IFptPassportRecognitionService? passportRecognitionService = null,
         IUserService? userService = null)
     {
         return new IdentityRecognitionController(
             recognitionService ?? new IdentityRecognitionServiceStub(),
+            passportRecognitionService ?? new FptPassportRecognitionServiceStub(),
             userService ?? new UserServiceStub(new User { UserId = Guid.NewGuid(), Email = "user@example.com" }),
             CreateMapper(),
             Options.Create(new FptIdRecognitionOptions
             {
                 AutoApproveConfidenceThreshold = 0.9
             }));
+    }
+
+    [Fact]
+    public async Task UploadPassport_UpdatesProfile_WhenRecognitionSucceeds()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            UserId = userId,
+            Email = "foreign@example.com"
+        };
+
+        var recognition = new FptIdRecognitionResult
+        {
+            Success = true,
+            OverallConfidence = 0.85,
+            PassportNumber = "P1234567",
+            FullName = "John Doe",
+            DateOfBirth = "1990-01-15"
+        };
+
+        var userService = new UserServiceStub(user);
+        var controller = CreateController(new IdentityRecognitionServiceStub(), new FptPassportRecognitionServiceStub { RecognitionResult = recognition }, userService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
+
+        var result = await controller.UploadPassport(new IdentityRecognitionUploadDto
+        {
+            Image = CreateImageFile()
+        });
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<ApiResponse<object>>(ok.Value);
+        Assert.Equal("Passport recognition completed and profile updated.", response.Message);
+
+        Assert.Equal("P1234567", user.Tenant?.PassportId);
+        Assert.Equal("John Doe", user.FullName);
+        Assert.Equal(DateOnly.ParseExact("1990-01-15", "yyyy-MM-dd", CultureInfo.InvariantCulture), user.Birthday);
+        Assert.True(user.IdentityVerified);
     }
 
     private static IMapper CreateMapper()
@@ -158,6 +198,30 @@ public class IdentityRecognitionControllerTests
                 FullName = "Nguyen Van A",
                 DateOfBirth = "01/02/1995",
                 IdNumber = "012345678901"
+            });
+        }
+    }
+
+    private sealed class FptPassportRecognitionServiceStub : IFptPassportRecognitionService
+    {
+        public FptIdRecognitionResult? RecognitionResult { get; init; }
+
+        public Exception? ExceptionToThrow { get; init; }
+
+        public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+        {
+            if (ExceptionToThrow != null)
+            {
+                throw ExceptionToThrow;
+            }
+
+            return Task.FromResult(RecognitionResult ?? new FptIdRecognitionResult
+            {
+                Success = true,
+                OverallConfidence = 0.85,
+                PassportNumber = "P000000",
+                FullName = "Default Passport",
+                DateOfBirth = "1990-01-01"
             });
         }
     }

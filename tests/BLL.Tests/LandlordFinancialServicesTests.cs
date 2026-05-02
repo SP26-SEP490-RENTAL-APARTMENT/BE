@@ -792,6 +792,8 @@ internal sealed class InMemoryBookingRepository : IBookingRepository
     {
         return Task.FromResult(1);
     }
+    
+    
 
     public Task<(IEnumerable<Booking> Items, int TotalCount)> GetByLandlordAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null, IEnumerable<string>? allowedColumns = null)
     {
@@ -799,6 +801,7 @@ internal sealed class InMemoryBookingRepository : IBookingRepository
     }
 }
 
+    
 internal sealed class InMemoryBookingOfferRepository : IBookingOfferRepository
 {
     private readonly List<BookingOffer> _items = new();
@@ -899,6 +902,41 @@ internal sealed class InMemoryApartmentPriceCalendarRepository : IApartmentPrice
     {
         return Task.FromResult(1);
     }
+    
+    public void AddRange(IEnumerable<ApartmentPriceCalendar> newRecords)
+    {
+        _items.AddRange(newRecords);
+    }
+
+    public void DeleteRange(IEnumerable<ApartmentPriceCalendar> recordsToDelete)
+    {
+        var ids = new HashSet<Guid>(recordsToDelete.Select(r => r.PriceId));
+        _items.RemoveAll(i => ids.Contains(i.PriceId));
+    }
+
+    public Task<IReadOnlyList<ApartmentPriceCalendar>> GetExistingManualRecords(Guid apartmentId, DateOnly start, DateOnly end)
+    {
+        var items = _items.Where(x => x.ApartmentId == apartmentId && x.StartDate >= start && x.StartDate <= end).ToList().AsReadOnly();
+        return Task.FromResult((IReadOnlyList<ApartmentPriceCalendar>)items);
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> GetExistingPriceCalendarRecordsAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate)
+    {
+        var items = _items.Where(x => x.ApartmentId == apartmentId && x.StartDate >= startDate && x.StartDate <= endDate);
+        return Task.FromResult(items);
+    }
+
+    public Task<IReadOnlyList<ApartmentPriceCalendar>> GetExistingStandardRecords(Guid apartmentId, DateOnly start, DateOnly end)
+    {
+        var result = _items.Where(x => x.ApartmentId == apartmentId && x.StartDate <= end && x.EndDate >= start).ToList().AsReadOnly();
+        return Task.FromResult((IReadOnlyList<ApartmentPriceCalendar>)result);
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> GetPriceCalendarRecordsForDeletionAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate)
+    {
+        var result = _items.Where(x => x.ApartmentId == apartmentId && x.StartDate <= endDate && x.EndDate >= startDate);
+        return Task.FromResult((IEnumerable<ApartmentPriceCalendar>)result);
+    }
 }
 
 internal sealed class NoOpIdentityVerificationService : IIdentityVerificationService
@@ -931,71 +969,6 @@ internal sealed class NoOpIdentityVerificationService : IIdentityVerificationSer
     public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null)
     {
         return Task.FromResult((Items: Enumerable.Empty<IdentityDocumentDto>(), TotalCount: 0));
-    }
-}
-
-internal sealed class InMemoryRepository<T> : IRepository<T>
-    where T : class
-{
-    private readonly Func<T, Guid>? _idSelector;
-
-    public InMemoryRepository(Func<T, Guid>? idSelector = null, params T[] seed)
-    {
-        _idSelector = idSelector;
-        Items = seed.ToList();
-    }
-
-    public List<T> Items { get; }
-
-    public Task AddAsync(T entity)
-    {
-        Items.Add(entity);
-        return Task.CompletedTask;
-    }
-
-    public Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
-    {
-        var compiled = predicate.Compile();
-        IEnumerable<T> result = Items.Where(compiled);
-        return Task.FromResult(result);
-    }
-
-    public Task<(IEnumerable<T> Items, int TotalCount)> GetAllAsync(
-        int page,
-        int pageSize,
-        string? sortBy = null,
-        string? sortOrder = null,
-        string? search = null,
-        Dictionary<string, string>? filters = null,
-        IEnumerable<string>? allowedColumns = null)
-    {
-        return Task.FromResult((Items.AsEnumerable(), Items.Count));
-    }
-
-    public Task<T?> GetByIdAsync(Guid id)
-    {
-        if (_idSelector == null)
-        {
-            return Task.FromResult<T?>(null);
-        }
-
-        var entity = Items.FirstOrDefault(x => _idSelector(x) == id);
-        return Task.FromResult(entity);
-    }
-
-    public void Remove(T entity)
-    {
-        Items.Remove(entity);
-    }
-
-    public void Update(T entity)
-    {
-        // No-op for in-memory reference updates.
-    }
-
-    public Task<int> SaveChangesAsync()
-    {
-        return Task.FromResult(1);
     }
 }
 

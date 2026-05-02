@@ -198,7 +198,12 @@ internal sealed class InMemorySmartPricingHistoryRepository : IRepository<SmartP
     {
         return Task.FromResult(1);
     }
+    
+    
+    
 }
+
+// (Duplicate in-memory apartment repository removed; single implementation remains later in file.)
 
 internal sealed class InMemoryApartmentRepository : IApartmentRepository
 {
@@ -281,6 +286,38 @@ internal sealed class InMemoryApartmentRepository : IApartmentRepository
     public void Update(Apartment entity)
     {
         // No special handling needed for in-memory list
+    }
+
+    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        IEnumerable<string>? allowedColumns = null,
+        Dictionary<string, string>? filters = null)
+    {
+        return Task.FromResult((_apartments.AsEnumerable(), _apartments.Count));
+    }
+
+    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetPendingReviewByLandlordIdAsync(
+        int page,
+        int pageSize,
+        Guid landlordId,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        IEnumerable<string>? allowedColumns = null,
+        Dictionary<string, string>? filters = null)
+    {
+        var items = _apartments.Where(a => a.LandlordId == landlordId);
+        return Task.FromResult((items, items.Count()));
+    }
+
+    public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetApartmentByLandlordIdAsync(Guid landlordId, int page, int pageSize, string? sortBy, string? sortOrder, string? search, Dictionary<string, string>? filters, string[] allowedColumns)
+    {
+        var items = _apartments.Where(a => a.LandlordId == landlordId);
+        return Task.FromResult((items, items.Count()));
     }
 
     public Task<int> SaveChangesAsync()
