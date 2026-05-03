@@ -11,7 +11,8 @@ public interface IPaymentService : IBaseService<Payment>
 		string? sortBy = null,
 		string? sortOrder = null,
 		DateTime? fromDate = null,
-		DateTime? toDate = null);
+		DateTime? toDate = null,
+		Dictionary<string, string>? filters = null);
 
 	Task<(IEnumerable<Payment> Items, int TotalCount)> GetTenantPaymentsAsync(
 		Guid tenantId,
@@ -20,5 +21,6 @@ public interface IPaymentService : IBaseService<Payment>
 		string? sortBy = null,
 		string? sortOrder = null,
 		DateTime? fromDate = null,
-		DateTime? toDate = null);
+		DateTime? toDate = null,
+		Dictionary<string, string>? filters = null);
 }
