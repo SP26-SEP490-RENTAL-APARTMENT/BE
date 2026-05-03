@@ -83,7 +83,8 @@ public sealed class TenantController : ControllerBase
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortOrder = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] Dictionary<string, string>? filters = null)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (!Guid.TryParse(userIdClaim, out var userId))
@@ -98,7 +99,8 @@ public sealed class TenantController : ControllerBase
             sortBy,
             sortOrder,
             fromDate,
-            toDate);
+            toDate,
+            filters);
 
         var dtos = _mapper.Map<IEnumerable<PaymentHistoryDto>>(items);
         return Ok(new { Items = dtos, TotalCount = totalCount });

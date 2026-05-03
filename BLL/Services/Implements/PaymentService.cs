@@ -20,9 +20,11 @@ public sealed class PaymentService : BaseService<Payment>, IPaymentService
         string? sortBy = null,
         string? sortOrder = null,
         DateTime? fromDate = null,
-        DateTime? toDate = null)
+        DateTime? toDate = null,
+        Dictionary<string, string>? filters = null)
     {
-        return _paymentRepository.GetByLandlordAsync(landlordId, page, pageSize, sortBy, sortOrder, fromDate, toDate);
+        var allowedColumns = new[] { "PaymentId", "RelatedEntityId", "Amount", "PaymentType", "PaymentPurpose", "RelatedEntityType", "LandlordId", "LandlordAmount", "PlatformFee", "SettlementStatus", "Method", "Status", "TransactionId", "PaidAt" };
+        return _paymentRepository.GetByLandlordAsync(landlordId, page, pageSize, sortBy, sortOrder, fromDate, toDate, filters, allowedColumns);
     }
 
     public Task<(IEnumerable<Payment> Items, int TotalCount)> GetTenantPaymentsAsync(
@@ -32,8 +34,10 @@ public sealed class PaymentService : BaseService<Payment>, IPaymentService
         string? sortBy = null,
         string? sortOrder = null,
         DateTime? fromDate = null,
-        DateTime? toDate = null)
+        DateTime? toDate = null,
+        Dictionary<string, string>? filters = null)
     {
-        return _paymentRepository.GetByTenantAsync(tenantId, page, pageSize, sortBy, sortOrder, fromDate, toDate);
+        var allowedColumns = new[] { "PaymentId", "RelatedEntityId", "Amount", "PaymentType", "PaymentPurpose", "RelatedEntityType", "LandlordId", "LandlordAmount", "PlatformFee", "SettlementStatus", "Method", "Status", "TransactionId", "PaidAt" };
+        return _paymentRepository.GetByTenantAsync(tenantId, page, pageSize, sortBy, sortOrder, fromDate, toDate, filters, allowedColumns);
     }
 }

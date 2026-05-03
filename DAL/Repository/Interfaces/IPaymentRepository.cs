@@ -12,7 +12,9 @@ namespace DAL.Repository.Interfaces
             string? sortBy = null,
             string? sortOrder = null,
             DateTime? fromDate = null,
-            DateTime? toDate = null);
+            DateTime? toDate = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null);
 
         Task<(IEnumerable<Payment> Items, int TotalCount)> GetByTenantAsync(
             Guid tenantId,
@@ -21,6 +23,8 @@ namespace DAL.Repository.Interfaces
             string? sortBy = null,
             string? sortOrder = null,
             DateTime? fromDate = null,
-            DateTime? toDate = null);
+            DateTime? toDate = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null);
     }
 }

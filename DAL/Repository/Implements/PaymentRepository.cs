@@ -18,7 +18,9 @@ namespace DAL.Repository.Implements
             string? sortBy = null,
             string? sortOrder = null,
             DateTime? fromDate = null,
-            DateTime? toDate = null)
+            DateTime? toDate = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null)
         {
             var query = _context.Payments.AsQueryable();
 
@@ -49,6 +51,7 @@ namespace DAL.Repository.Implements
                 query = query.Where(p => p.PaidAt <= toDate.Value);
             }
 
+            query = ApplyFilters(query, filters, allowedColumns);
             query = ApplySorting(query, sortBy, sortOrder);
 
             var totalCount = await query.CountAsync();
@@ -67,7 +70,9 @@ namespace DAL.Repository.Implements
             string? sortBy = null,
             string? sortOrder = null,
             DateTime? fromDate = null,
-            DateTime? toDate = null)
+            DateTime? toDate = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null)
         {
             var query =
                 from p in _context.Payments
@@ -85,6 +90,7 @@ namespace DAL.Repository.Implements
                 query = query.Where(p => p.PaidAt <= toDate.Value);
             }
 
+            query = ApplyFilters(query, filters, allowedColumns);
             query = ApplySorting(query, sortBy, sortOrder);
 
             var totalCount = await query.CountAsync();
