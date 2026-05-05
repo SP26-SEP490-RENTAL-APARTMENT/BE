@@ -36,6 +36,7 @@ public class ReportComparisonRequestDto
 {
     public string Mode { get; set; } = "custom";
     public ReportRunRequestDto RunRequest { get; set; } = new();
+    public ReportRunRequestDto? PreviousRunRequest { get; set; }
 }
 
 public class ReportExportRequestDto
