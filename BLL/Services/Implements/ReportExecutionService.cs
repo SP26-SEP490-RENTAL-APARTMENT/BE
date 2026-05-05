@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using BLL.Services.Interfaces;
 using Common.DTOs;
@@ -94,9 +95,9 @@ public class ReportExecutionService : IReportExecutionService
             ?? throw new ArgumentException("Report definition not found.");
 
         var currentRequest = request.RunRequest;
-        var previousRequest = BuildPreviousRequest(currentRequest, request.Mode);
+    var previousRequest = request.PreviousRunRequest ?? BuildPreviousRequest(currentRequest, request.Mode);
 
-        var currentResult = await BuildReportAsync(definition, reportId, currentRequest, requestedByUserId, persistGenerated: true);
+        var currentResult = await BuildReportAsync(definition, reportId, currentRequest, requestedByUserId, persistGenerated: false);
         var previousResult = await BuildReportAsync(definition, reportId, previousRequest, requestedByUserId, persistGenerated: false);
 
         var currentMap = currentResult.Rows.ToDictionary(BuildDimensionKeyFromRow, StringComparer.OrdinalIgnoreCase);
@@ -173,7 +174,7 @@ public class ReportExecutionService : IReportExecutionService
             }
         }
 
-        return new ReportComparisonResultDto
+        var result = new ReportComparisonResultDto
         {
             ReportId = reportId,
             Name = definition.Name,
@@ -188,6 +189,14 @@ public class ReportExecutionService : IReportExecutionService
             TotalDeltaMetrics = totalDeltaMetrics,
             TotalDeltaPercentMetrics = totalDeltaPercentMetrics
         };
+
+        await SaveGeneratedReportAsync(
+            reportId,
+            requestedByUserId,
+            JsonSerializer.Serialize(result),
+            $"{{\"rowCount\":{rows.Count},\"mode\":\"{result.Mode}\"}}");
+
+        return result;
     }
 
     private async Task<ReportResultDto> BuildReportAsync(
@@ -260,23 +269,36 @@ public class ReportExecutionService : IReportExecutionService
 
         if (persistGenerated)
         {
-            var generated = new GeneratedReport
-            {
-                GeneratedReportId = Guid.NewGuid(),
-                ReportId = reportId,
-                RequestedBy = requestedByUserId,
-                RequestedAt = Common.Utils.VietnamTime.Now,
-                Status = "completed",
-                ResultSummaryJson = $"{{\"rowCount\":{grouped.Count}}}",
-                ResultJson = null,
-                RetentionUntil = Common.Utils.VietnamTime.Now.AddDays(30)
-            };
-
-            await _generatedReportRepository.AddAsync(generated);
-            await _generatedReportRepository.SaveChangesAsync();
+            await SaveGeneratedReportAsync(
+                reportId,
+                requestedByUserId,
+                JsonSerializer.Serialize(result),
+                $"{{\"rowCount\":{grouped.Count}}}");
         }
 
         return result;
+    }
+
+    private async Task SaveGeneratedReportAsync(
+        Guid reportId,
+        Guid requestedByUserId,
+        string resultJson,
+        string resultSummaryJson)
+    {
+        var generated = new GeneratedReport
+        {
+            GeneratedReportId = Guid.NewGuid(),
+            ReportId = reportId,
+            RequestedBy = requestedByUserId,
+            RequestedAt = Common.Utils.VietnamTime.Now,
+            Status = "completed",
+            ResultSummaryJson = resultSummaryJson,
+            ResultJson = resultJson,
+            RetentionUntil = Common.Utils.VietnamTime.Now.AddDays(30)
+        };
+
+        await _generatedReportRepository.AddAsync(generated);
+        await _generatedReportRepository.SaveChangesAsync();
     }
 
     private static ReportRunRequestDto BuildPreviousRequest(ReportRunRequestDto current, string? mode)

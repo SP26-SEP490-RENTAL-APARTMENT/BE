@@ -13,6 +13,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IImageService _imageService;
     private readonly IApartmentMediumService _apartmentMediumService;
     private readonly IMapper _mapper;
+    private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
 
     private readonly IApartmentRepository _apartmentRepository;
     private readonly ITenantWishlistRepository _tenantWishlistRepository;
@@ -30,7 +31,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IMapper mapper,
         IUserRepository userRepository,
         IRepository<Notification> notificationRepository,
-        IRepository<PropertyInspection> propertyInspectionRepository)
+        IRepository<PropertyInspection> propertyInspectionRepository,
+        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository)
         : base(repository)
     {
         _apartmentRepository = repository;
@@ -42,6 +44,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _userRepository = userRepository;
         _notificationRepository = notificationRepository;
         _propertyInspectionRepository = propertyInspectionRepository;
+        _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
     }
 
     public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
@@ -111,8 +114,94 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         var (items, totalCount) = await GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, checkInDate, checkOutDate);
         var mappedItems = _mapper.Map<List<ApartmentResponseDto>>(items);
 
+        await ApplyPriceChangeHistoryAsync(mappedItems);
         await ApplyWishlistMetadataAsync(mappedItems, tenantId);
         return (mappedItems, totalCount);
+    }
+
+    private async Task ApplyPriceChangeHistoryAsync(List<ApartmentResponseDto> apartments)
+    {
+        if (apartments.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var apartment in apartments)
+        {
+            var priceCalendars = await _apartmentPriceCalendarRepository.FindAsync(record => record.ApartmentId == apartment.ApartmentId);
+            apartment.PriceChanges = BuildPriceChanges(apartment, priceCalendars);
+        }
+    }
+
+    private static List<ApartmentPriceChangeDto> BuildPriceChanges(
+        ApartmentResponseDto apartment,
+        IEnumerable<ApartmentPriceCalendar> priceCalendars)
+    {
+        var sortedCalendars = priceCalendars
+            .OrderBy(record => record.StartDate)
+            .ThenBy(record => record.EndDate)
+            .ThenBy(record => record.CreatedAt ?? DateTime.MinValue)
+            .ToList();
+
+        var priceChanges = new List<ApartmentPriceChangeDto>();
+        var previousPrice = apartment.BasePricePerNight;
+
+        foreach (var calendar in sortedCalendars)
+        {
+            var newPrice = ResolveCalendarPrice(apartment.BasePricePerNight, calendar);
+
+            // Check if we can extend the last entry (consolidation)
+            if (priceChanges.Count > 0)
+            {
+                var lastEntry = priceChanges[priceChanges.Count - 1];
+                if (lastEntry.NewPricePerNight == newPrice &&
+                    lastEntry.EndDate >= calendar.StartDate.AddDays(-1))
+                {
+                    // Extend the last entry to include this consecutive period
+                    lastEntry.EndDate = calendar.EndDate;
+                    previousPrice = newPrice;
+                    continue;
+                }
+            }
+
+            // If price hasn't changed, skip
+            if (newPrice == previousPrice)
+            {
+                continue;
+            }
+
+            // New price change - add entry
+            priceChanges.Add(new ApartmentPriceChangeDto
+            {
+                OldPricePerNight = previousPrice,
+                NewPricePerNight = newPrice,
+                Reason = string.IsNullOrWhiteSpace(calendar.PriceType)
+                    ? null
+                    : calendar.PriceType.Replace('_', ' '),
+                StartDate = calendar.StartDate,
+                EndDate = calendar.EndDate
+            });
+
+            previousPrice = newPrice;
+        }
+
+        return priceChanges;
+    }
+
+    private static decimal ResolveCalendarPrice(decimal basePricePerNight, ApartmentPriceCalendar calendar)
+    {
+        if (calendar.FixedPricePerNight.HasValue)
+        {
+            return calendar.FixedPricePerNight.Value;
+        }
+
+        if (calendar.DiscountPercentage.HasValue && calendar.DiscountPercentage.Value > 0)
+        {
+            var discountedPrice = basePricePerNight * (1 - (calendar.DiscountPercentage.Value / 100m));
+            return Math.Round(discountedPrice, 2, MidpointRounding.AwayFromZero);
+        }
+
+        return basePricePerNight;
     }
 
     public async Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds)

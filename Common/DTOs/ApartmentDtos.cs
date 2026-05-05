@@ -157,9 +157,19 @@ public class ApartmentResponseDto
     public bool IsFavorite { get; set; }
     public Guid? CollectionId { get; set; }
     public string? InspectionStatus { get; set; }
+    public List<ApartmentPriceChangeDto> PriceChanges { get; set; } = new List<ApartmentPriceChangeDto>();
     public List<string> Photos { get; set; } = new List<string>();
     public RoomResponseDto? Room { get; set; }
     public List<AmenityResponseDto> Amenities { get; set; } = new List<AmenityResponseDto>();
+}
+
+public class ApartmentPriceChangeDto
+{
+    public decimal OldPricePerNight { get; set; }
+    public decimal NewPricePerNight { get; set; }
+    public string? Reason { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
 }
 
 /// <summary>
