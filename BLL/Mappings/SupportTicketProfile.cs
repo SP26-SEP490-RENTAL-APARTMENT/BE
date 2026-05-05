@@ -8,9 +8,12 @@ namespace BLL.Mappings
     {
         public SupportTicketProfile()
         {
-            CreateMap<SupportTicket, SupportTicketDto>().ReverseMap();
+            CreateMap<SupportTicket, SupportTicketDto>()
+                .ForMember(dest => dest.Attachments, opt => opt.MapFrom(src => src.SupportTicketAttachments))
+                .ReverseMap();
             CreateMap<CreateSupportTicketDto, SupportTicket>();
             CreateMap<UpdateSupportTicketDto, SupportTicket>();
+            CreateMap<SupportTicketAttachment, SupportTicketAttachmentDto>().ReverseMap();
         }
     }
 }

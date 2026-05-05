@@ -33,5 +33,7 @@ public partial class SupportTicket
 
     public virtual ICollection<SupportTicketAssignment> SupportTicketAssignments { get; set; } = new List<SupportTicketAssignment>();
 
+    public virtual ICollection<SupportTicketAttachment> SupportTicketAttachments { get; set; } = new List<SupportTicketAttachment>();
+
     public virtual User User { get; set; } = null!;
 }

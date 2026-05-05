@@ -685,19 +685,13 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             if (apartment != null)
             {
-                var creditedAmount = paymentMode == BookingPaymentMode.full
-                    ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
-                    : Math.Round(GetUpfrontPaymentAmount(booking) * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
-
-                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, creditedAmount);
-
                 var paymentDescriptor = paymentMode == BookingPaymentMode.full ? "full payment" : "partial payment";
 
                 await CreateBookingNotificationAsync(
                     apartment.LandlordId,
                     NotificationType.booking_confirmed.ToString(),
                     "New booking confirmed",
-                    $"A booking for apartment '{apartment.Title}' has been confirmed with {paymentDescriptor}.",
+                    $"A booking for apartment '{apartment.Title}' has been confirmed with {paymentDescriptor}. Payment will be credited to your wallet after guest checkout.",
                     booking.BookingId);
 
                 await CreateBookingNotificationAsync(
@@ -740,13 +734,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
         {
-            var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
-            if (remainingAmount > 0)
-            {
-                var landlordShareAmount = Math.Round(remainingAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
-                await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, landlordShareAmount);
-            }
-
             await CreateBookingNotificationAsync(
                 booking.TenantId,
                 NotificationType.payment_success.ToString(),
@@ -758,7 +745,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                 apartment.LandlordId,
                 NotificationType.payment_success.ToString(),
                 "Booking payment received",
-                $"Payment for booking at '{apartment.Title}' has been completed.",
+                $"Payment for booking at '{apartment.Title}' has been completed. Funds will be credited to your wallet after guest checkout.",
                 booking.BookingId);
         }
 
@@ -1757,6 +1744,25 @@ public class BookingService : BaseService<Booking>, IBookingService
         await _bookingRepository.SaveChangesAsync();
         await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
+        // Credit landlord wallet after successful checkout
+        var paymentMode = GetBookingPaymentMode(booking);
+        var totalCreditAmount = paymentMode == BookingPaymentMode.full
+            ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
+            : Math.Round(GetUpfrontPaymentAmount(booking) * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+
+        // Add remaining balance if not full payment
+        if (paymentMode != BookingPaymentMode.full)
+        {
+            var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
+            if (remainingAmount > 0)
+            {
+                var remainingLandlordShare = Math.Round(remainingAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+                totalCreditAmount += remainingLandlordShare;
+            }
+        }
+
+        await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, totalCreditAmount);
+
         // Notify landlord
         var checkOutMessage = isLateCheckOut
             ? $"Guest checked out late at {dto.ActualCheckOut:yyyy-MM-dd HH:mm}. Late check-out fee: ${lateCheckOutFee}"
@@ -1766,7 +1772,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             apartment.LandlordId,
             NotificationType.check_out_recorded.ToString(),
             "Check-out Recorded",
-            checkOutMessage,
+            $"{checkOutMessage} Payment of {totalCreditAmount:0.00} has been credited to your wallet.",
             bookingId);
 
         // Notify tenant

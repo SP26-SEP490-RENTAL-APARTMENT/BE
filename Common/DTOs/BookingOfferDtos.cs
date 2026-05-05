@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Common.DTOs;
 
@@ -27,6 +28,8 @@ public class ReportOccupiedIncidentRequestDto
     [Required]
     [MaxLength(2000)]
     public string Details { get; set; } = null!;
+
+    public List<IFormFile> EvidencePhotos { get; set; } = new();
 }
 
 public class BookingOfferResponseDto

@@ -10,5 +10,6 @@ namespace BLL.Services.Interfaces
         Task<SupportTicket> CreateFollowUpTicketAsync(Guid originalTicketId, Guid requesterUserId, string details);
         Task<SupportTicket> ResolveTicketByStaffAsync(Guid ticketId, string resolutionNotes, Guid staffUserId);
         Task<SupportTicket> UpdateTicketByCreatorStatusAsync(Guid ticketId, Guid requesterUserId, UserUpdateStatusRequestDto updateDto);
+        Task<IEnumerable<SupportTicketAttachment>> UploadTicketAttachmentsAsync(Guid ticketId, UploadSupportTicketAttachmentDto dto, Guid uploadedByUserId);
     }
 }

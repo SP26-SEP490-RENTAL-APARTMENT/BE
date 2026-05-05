@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 
 namespace Common.DTOs
 {
@@ -17,7 +19,33 @@ namespace Common.DTOs
         public DateTime? ResolvedAt { get; set; }
         public Guid? ResolvedBy { get; set; }
         public string? ResolutionNotes { get; set; }
+        public ICollection<SupportTicketAttachmentDto> Attachments { get; set; } = new List<SupportTicketAttachmentDto>();
     }
+
+    public class SupportTicketAttachmentDto
+    {
+        public Guid AttachmentId { get; set; }
+        public Guid TicketId { get; set; }
+        public string FileUrl { get; set; } = null!;
+        public string? MimeType { get; set; }
+        public long? FileSize { get; set; }
+        public DateTime? UploadedAt { get; set; }
+        public Guid UploadedBy { get; set; }
+        public string? Caption { get; set; }
+        public bool IsEvidence { get; set; }
+    }
+
+    public class UploadSupportTicketAttachmentDto
+    {
+        [Required]
+        public List<IFormFile> Files { get; set; } = new();
+
+        public string? Caption { get; set; }
+
+        [Required]
+        public bool IsEvidence { get; set; } = true;
+    }
+
 
     public class CreateSupportTicketDto
     {
@@ -36,6 +64,7 @@ namespace Common.DTOs
         [Required]
         [RegularExpression("^(low|medium|high|urgent)$", ErrorMessage = "Role must be 'low, medium, high, urgent'")]
         public string? Priority { get; set; }
+        public List<IFormFile> Files { get; set; } = new();
     }
 
     public class UpdateSupportTicketDto

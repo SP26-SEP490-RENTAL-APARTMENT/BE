@@ -937,7 +937,8 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpPost("{id:guid}/occupied-incident")]
         [Authorize(Roles = "tenant")]
-        public async Task<IActionResult> ReportOccupiedIncident(Guid id, [FromBody] ReportOccupiedIncidentRequestDto dto)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ReportOccupiedIncident(Guid id, [FromForm] ReportOccupiedIncidentRequestDto dto)
         {
             if (!ModelState.IsValid)
             {
@@ -970,6 +971,18 @@ namespace Short_termApartmentAPI.Controllers
             };
 
             var created = await _supportTicketService.CreateTicketAsync(supportTicket);
+
+            if (dto.EvidencePhotos != null && dto.EvidencePhotos.Any())
+            {
+                var uploadDto = new UploadSupportTicketAttachmentDto
+                {
+                    Files = dto.EvidencePhotos,
+                    Caption = "Occupied room incident evidence",
+                    IsEvidence = true
+                };
+
+                await _supportTicketService.UploadTicketAttachmentsAsync(created.TicketId, uploadDto, tenantId);
+            }
 
             try
             {

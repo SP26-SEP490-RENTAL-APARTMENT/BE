@@ -339,6 +339,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             return null;
         }
 
+        await ApplyPriceChangeHistoryAsync(new List<ApartmentResponseDto> { apartment });
         await ApplyWishlistMetadataAsync(apartment, tenantId);
         return apartment;
     }

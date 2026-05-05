@@ -83,6 +83,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<SupportTicketAssignment> SupportTicketAssignments { get; set; }
 
+    public virtual DbSet<SupportTicketAttachment> SupportTicketAttachments { get; set; }
+
     public virtual DbSet<TemporaryResidenceReport> TemporaryResidenceReports { get; set; }
 
     public virtual DbSet<Tenant> Tenants { get; set; }
@@ -1851,6 +1853,43 @@ public partial class AppDbContext : DbContext
                 .HasConstraintName("landlord_wallets_ibfk_1");
         });
 
+        modelBuilder.Entity<SupportTicketAttachment>(entity =>
+        {
+            entity.HasKey(e => e.AttachmentId).HasName("PRIMARY");
+
+            entity.ToTable("support_ticket_attachments");
+
+            entity.Property(e => e.AttachmentId)
+                .HasColumnName("attachment_id")
+                .HasColumnType("char(36)");
+
+            entity.Property(e => e.TicketId)
+                .HasColumnName("ticket_id")
+                .HasColumnType("char(36)");
+
+            entity.Property(e => e.FileUrl)
+                .HasMaxLength(1000)
+                .HasColumnName("file_url");
+
+            entity.Property(e => e.MimeType).HasColumnName("mime_type");
+            entity.Property(e => e.FileSize).HasColumnName("file_size");
+            entity.Property(e => e.UploadedAt).HasColumnName("uploaded_at");
+            entity.Property(e => e.UploadedBy)
+                .HasColumnName("uploaded_by")
+                .HasColumnType("char(36)");
+            entity.Property(e => e.Caption).HasMaxLength(500).HasColumnName("caption");
+            entity.Property(e => e.IsEvidence).HasDefaultValueSql("'1'").HasColumnName("is_evidence");
+
+            entity.HasOne(d => d.Ticket)
+                .WithMany(p => p.SupportTicketAttachments)
+                .HasForeignKey(d => d.TicketId)
+                .HasConstraintName("support_ticket_attachments_ibfk_1");
+
+            entity.HasOne(d => d.UploadedByUser)
+                .WithMany()
+                .HasForeignKey(d => d.UploadedBy)
+                .HasConstraintName("support_ticket_attachments_ibfk_2");
+        });
         ApplySoftDeleteModelConfiguration(modelBuilder);
         OnModelCreatingPartial(modelBuilder);
     }

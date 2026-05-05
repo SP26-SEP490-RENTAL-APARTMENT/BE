@@ -12,17 +12,23 @@ namespace BLL.Services.Implements
         private readonly IUserRepository _userRepository;
         private readonly IRepository<SupportTicketAssignment> _assignmentRepository;
         private readonly IRepository<Notification> _notificationRepository;
+        private readonly IRepository<SupportTicketAttachment> _attachmentRepository;
+        private readonly IImageService _imageService;
 
         public SupportTicketService(
             ISupportTicketRepository repository,
             IUserRepository userRepository,
             IRepository<SupportTicketAssignment> assignmentRepository,
-            IRepository<Notification> notificationRepository) : base(repository)
+            IRepository<Notification> notificationRepository,
+            IRepository<SupportTicketAttachment> attachmentRepository,
+            IImageService imageService) : base(repository)
         {
             _supportTicketRepository = repository;
             _userRepository = userRepository;
             _assignmentRepository = assignmentRepository;
             _notificationRepository = notificationRepository;
+            _attachmentRepository = attachmentRepository;
+            _imageService = imageService;
         }
 
         private async Task CreateSupportNotificationAsync(
@@ -428,6 +434,90 @@ namespace BLL.Services.Implements
             }
 
             return ticket;
+        }
+
+        public async Task<IEnumerable<SupportTicketAttachment>> UploadTicketAttachmentsAsync(
+            Guid ticketId,
+            UploadSupportTicketAttachmentDto dto,
+            Guid uploadedByUserId)
+        {
+            // 1. Validate ticket exists
+            var ticket = await _supportTicketRepository.GetByIdAsync(ticketId);
+            if (ticket == null)
+            {
+                throw new ArgumentException("Support ticket not found.");
+            }
+
+            // 2. Validate files
+            if (dto.Files == null || dto.Files.Count == 0)
+            {
+                throw new ArgumentException("At least one file is required for upload.");
+            }
+
+            var uploadedAttachments = new List<SupportTicketAttachment>();
+
+            // 3. Upload each file
+            foreach (var file in dto.Files)
+            {
+                if (file.Length == 0)
+                {
+                    continue; // Skip empty files
+                }
+
+                try
+                {
+                    // Upload image to Cloudinary
+                    var fileUrl = await _imageService.UploadImageAsync(file);
+
+                    // Create attachment record
+                    var attachment = new SupportTicketAttachment
+                    {
+                        AttachmentId = Guid.NewGuid(),
+                        TicketId = ticketId,
+                        FileUrl = fileUrl,
+                        MimeType = file.ContentType,
+                        FileSize = file.Length,
+                        UploadedAt = Common.Utils.VietnamTime.Now,
+                        UploadedBy = uploadedByUserId,
+                        Caption = dto.Caption,
+                        IsEvidence = dto.IsEvidence
+                    };
+
+                    await _attachmentRepository.AddAsync(attachment);
+                    uploadedAttachments.Add(attachment);
+                }
+                catch (Exception ex)
+                {
+                    // Log the error but continue with other files
+                    throw new InvalidOperationException($"Failed to upload file '{file.FileName}': {ex.Message}");
+                }
+            }
+
+            // 4. Save all attachments
+            if (uploadedAttachments.Count > 0)
+            {
+                await _attachmentRepository.SaveChangesAsync();
+
+                // Notify staff that evidence has been uploaded
+                var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
+                foreach (var assignment in assignments)
+                {
+                    await CreateSupportNotificationAsync(
+                        assignment.StaffId,
+                        "support_ticket_evidence_uploaded",
+                        "Evidence uploaded to ticket",
+                        $"New evidence ({uploadedAttachments.Count} file(s)) has been uploaded to ticket '{ticket.Subject}'.",
+                        ticketId,
+                        saveChanges: false);
+                }
+
+                if (assignments.Any())
+                {
+                    await _notificationRepository.SaveChangesAsync();
+                }
+            }
+
+            return uploadedAttachments;
         }
     }
 }

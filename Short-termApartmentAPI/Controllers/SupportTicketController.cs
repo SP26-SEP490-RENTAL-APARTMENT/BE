@@ -92,7 +92,8 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] CreateSupportTicketDto ticketDto)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> Create([FromForm] CreateSupportTicketDto ticketDto)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var userId))
@@ -112,6 +113,22 @@ namespace Short_termApartmentAPI.Controllers
             ticket.UpdatedAt = Common.Utils.VietnamTime.Now;
 
             var created = await _supportTicketService.CreateTicketAsync(ticket);
+
+            if (ticketDto.Files != null && ticketDto.Files.Any())
+            {
+                var uploadDto = new UploadSupportTicketAttachmentDto
+                {
+                    Files = ticketDto.Files,
+                    Caption = null,
+                    IsEvidence = true
+                };
+
+                await _supportTicketService.UploadTicketAttachmentsAsync(created.TicketId, uploadDto, userId);
+
+                // optionally reload created ticket so response includes attachments:
+                created = await _supportTicketService.GetByIdAsync(created.TicketId);
+            }
+            
             return CreatedAtAction(nameof(GetById), new { id = created.TicketId }, _mapper.Map<SupportTicketDto>(created));
         }
 
@@ -283,6 +300,52 @@ namespace Short_termApartmentAPI.Controllers
         {
             await _supportTicketService.DeleteAsync(id);
             return NoContent();
+        }
+
+        /// <summary>
+        /// Upload evidence images/attachments to a support ticket.
+        /// </summary>
+        /// <param name="ticketId">The ticket ID to attach evidence to.</param>
+        /// <param name="dto">The attachment upload request with files.</param>
+        /// <returns>The uploaded attachments.</returns>
+        [HttpPost("{ticketId:guid}/attachments")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadAttachments(
+            [FromRoute] Guid ticketId,
+            [FromForm] UploadSupportTicketAttachmentDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var attachments = await _supportTicketService.UploadTicketAttachmentsAsync(ticketId, dto, userId);
+                var attachmentDtos = _mapper.Map<IEnumerable<SupportTicketAttachmentDto>>(attachments);
+                return Ok(new ApiResponse<IEnumerable<SupportTicketAttachmentDto>>(
+                    attachmentDtos,
+                    $"{attachments.Count()} file(s) uploaded successfully."));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new ApiResponse<string>($"An error occurred during upload: {ex.Message}"));
+            }
         }
     }
 }

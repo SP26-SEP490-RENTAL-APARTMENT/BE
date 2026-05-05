@@ -1385,6 +1385,9 @@ internal sealed class SupportTicketServiceStub : BaseServiceStub<SupportTicket>,
 
     public Task<SupportTicket> UpdateTicketByCreatorStatusAsync(Guid ticketId, Guid requesterUserId, UserUpdateStatusRequestDto updateDto)
         => Task.FromResult(new SupportTicket());
+
+    public Task<IEnumerable<SupportTicketAttachment>> UploadTicketAttachmentsAsync(Guid ticketId, UploadSupportTicketAttachmentDto dto, Guid uploadedByUserId)
+        => Task.FromResult(Enumerable.Empty<SupportTicketAttachment>());
 }
 
 internal sealed class StripeServiceStub : IStripeService
