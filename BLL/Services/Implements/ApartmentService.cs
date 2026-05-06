@@ -159,6 +159,16 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 {
                     // Extend the last entry to include this consecutive period
                     lastEntry.EndDate = calendar.EndDate;
+
+                    // Update reason to reflect the latest calendar row's price type
+                    var reasonText = string.IsNullOrWhiteSpace(calendar.PriceType)
+                        ? null
+                        : calendar.PriceType.Replace('_', ' ');
+                    if (!string.Equals(lastEntry.Reason, reasonText, StringComparison.OrdinalIgnoreCase))
+                    {
+                        lastEntry.Reason = reasonText;
+                    }
+
                     previousPrice = newPrice;
                     continue;
                 }

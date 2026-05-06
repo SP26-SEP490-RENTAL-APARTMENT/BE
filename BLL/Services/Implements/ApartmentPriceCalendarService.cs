@@ -297,7 +297,7 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
         var manualOverrides = await _apartmentPriceCalendarRepository.GetExistingManualRecords(apartmentId, start, end);
         var calendarPeriods = await _apartmentPriceCalendarRepository.GetExistingStandardRecords(apartmentId, start, end);
 
-        // 2. Initialize list and   iterator
+        // 2. Initialize list and iterator
         var dailyResolutions = new List<DailyPriceResolutionDto>();
         var currentDate = start;
 

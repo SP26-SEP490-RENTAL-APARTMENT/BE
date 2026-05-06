@@ -93,7 +93,7 @@ public class ApartmentServicePublicPriceChangesTests
 
         var apartmentRepository = new InMemoryApartmentRepository(apartment);
         // Simulate multiple calendar records for May with same price (e.g., May 1-1, May 2-7, May 8-31)
-        // All should consolidate into a single price change from May 1-31
+        // All should consolidate into a single price change from May 1-31 with the LATEST reason
         var calendarRepository = new InMemoryApartmentPriceCalendarRepository(new[]
         {
             new ApartmentPriceCalendar
@@ -113,7 +113,7 @@ public class ApartmentServicePublicPriceChangesTests
                 StartDate = new DateOnly(2026, 5, 2),
                 EndDate = new DateOnly(2026, 5, 31),
                 FixedPricePerNight = 135m,
-                PriceType = "manual_override",
+                PriceType = "low_season",  // Different type but same price
                 CreatedAt = DateTime.UtcNow.AddDays(-1)
             }
         });
@@ -128,6 +128,8 @@ public class ApartmentServicePublicPriceChangesTests
         Assert.Single(response.PriceChanges);
         Assert.Equal(100m, response.PriceChanges[0].OldPricePerNight);
         Assert.Equal(135m, response.PriceChanges[0].NewPricePerNight);
+        // Reason should reflect the LATEST calendar record's type
+        Assert.Equal("low season", response.PriceChanges[0].Reason);
         Assert.Equal(new DateOnly(2026, 5, 1), response.PriceChanges[0].StartDate);
         Assert.Equal(new DateOnly(2026, 5, 31), response.PriceChanges[0].EndDate);
     }

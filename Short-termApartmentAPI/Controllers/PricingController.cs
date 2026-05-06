@@ -23,24 +23,12 @@ public class PricingController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize]
     public async Task<ActionResult<IEnumerable<DailyPriceResolutionDto>>> GetCalendarPrices(
         [FromRoute] Guid apartmentId,
         [FromQuery] DateOnly startDate,
         [FromQuery] DateOnly endDate)
     {
-
-        // 1. Security Check: Does the acting user own the apartment?
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdClaim, out var userId))
-        {
-            return Unauthorized(new { message = "Invalid user token." });
-        }
-
-        if (!await _authService.IsUserOwnerOrManager(userId, apartmentId))
-        {
-            return Forbid("You do not have permission to view pricing for this apartment.");
-        }
-
         if (startDate > endDate)
         {
             return BadRequest("Start date cannot be after end date.");
