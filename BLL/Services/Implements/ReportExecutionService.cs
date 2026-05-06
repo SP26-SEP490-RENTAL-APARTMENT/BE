@@ -19,7 +19,9 @@ public class ReportExecutionService : IReportExecutionService
         "status",
         "payment_mode",
         "apartment_id",
+        "apartment_name",
         "tenant_id",
+        "tenant_name",
         "nights"
     ];
 
@@ -65,15 +67,21 @@ public class ReportExecutionService : IReportExecutionService
     private readonly IRepository<ReportDefinition> _reportDefinitionRepository;
     private readonly IRepository<GeneratedReport> _generatedReportRepository;
     private readonly IRepository<Booking> _bookingRepository;
+    private readonly IRepository<Apartment> _apartmentRepository;
+    private readonly IRepository<User> _userRepository;
 
     public ReportExecutionService(
         IRepository<ReportDefinition> reportDefinitionRepository,
         IRepository<GeneratedReport> generatedReportRepository,
-        IRepository<Booking> bookingRepository)
+        IRepository<Booking> bookingRepository,
+        IRepository<Apartment> apartmentRepository,
+        IRepository<User> userRepository)
     {
         _reportDefinitionRepository = reportDefinitionRepository;
         _generatedReportRepository = generatedReportRepository;
         _bookingRepository = bookingRepository;
+        _apartmentRepository = apartmentRepository;
+        _userRepository = userRepository;
     }
 
     public async Task<ReportResultDto> RunReportAsync(Guid reportId, ReportRunRequestDto request, Guid requestedByUserId)
@@ -221,16 +229,17 @@ public class ReportExecutionService : IReportExecutionService
         var dimensions = ResolveDimensions(request);
         var metrics = ResolveMetrics(request);
         var filters = request.Filters ?? Array.Empty<ReportFilterRequestDto>();
+        var lookupContext = await BuildDimensionLookupContextAsync(filteredBookings: bookings, dimensions: dimensions);
 
         ValidateFilters(filters, dimensions, metrics);
 
         var filteredBookings = bookings
-            .Where(b => MatchAllDimensionFilters(b, filters, dimensions))
+            .Where(b => MatchAllDimensionFilters(b, filters, dimensions, lookupContext))
             .ToList();
 
         var grouped = filteredBookings
-            .GroupBy(b => BuildDimensionKey(b, dimensions))
-            .Select(g => BuildRow(g.ToList(), dimensions, metrics))
+            .GroupBy(b => BuildDimensionKey(b, dimensions, lookupContext))
+            .Select(g => BuildRow(g.ToList(), dimensions, metrics, lookupContext))
             .Where(r => MatchAllMetricFilters(r, filters, metrics))
             .ToList();
 
@@ -475,11 +484,12 @@ public class ReportExecutionService : IReportExecutionService
     private static bool MatchAllDimensionFilters(
         Booking booking,
         IReadOnlyList<ReportFilterRequestDto> filters,
-        IReadOnlyList<ReportDimensionRequestDto> dimensions)
+        IReadOnlyList<ReportDimensionRequestDto> dimensions,
+        DimensionLookupContext lookupContext)
     {
         var dimensionMap = dimensions.ToDictionary(
             d => NormalizeKey(d.Alias ?? d.Field),
-            d => GetDimensionValue(booking, d.Field),
+            d => GetDimensionValue(booking, d.Field, lookupContext),
             StringComparer.OrdinalIgnoreCase);
 
         foreach (var filter in filters)
@@ -540,22 +550,23 @@ public class ReportExecutionService : IReportExecutionService
         return true;
     }
 
-    private static string BuildDimensionKey(Booking booking, IReadOnlyList<ReportDimensionRequestDto> dimensions)
+    private static string BuildDimensionKey(Booking booking, IReadOnlyList<ReportDimensionRequestDto> dimensions, DimensionLookupContext lookupContext)
     {
-        return string.Join("|", dimensions.Select(d => GetDimensionValue(booking, d.Field)?.ToString() ?? "null"));
+        return string.Join("|", dimensions.Select(d => GetDimensionValue(booking, d.Field, lookupContext)?.ToString() ?? "null"));
     }
 
     private static ReportResultRowDto BuildRow(
         IReadOnlyList<Booking> bookingGroup,
         IReadOnlyList<ReportDimensionRequestDto> dimensions,
-        IReadOnlyList<ReportMetricRequestDto> metrics)
+        IReadOnlyList<ReportMetricRequestDto> metrics,
+        DimensionLookupContext lookupContext)
     {
         var first = bookingGroup[0];
         var row = new ReportResultRowDto();
 
         foreach (var dim in dimensions)
         {
-            row.Dimensions[dim.Alias ?? dim.Field] = GetDimensionValue(first, dim.Field);
+            row.Dimensions[dim.Alias ?? dim.Field] = GetDimensionValue(first, dim.Field, lookupContext);
         }
 
         foreach (var metric in metrics)
@@ -567,7 +578,7 @@ public class ReportExecutionService : IReportExecutionService
         return row;
     }
 
-    private static object? GetDimensionValue(Booking booking, string dimensionField)
+    private static object? GetDimensionValue(Booking booking, string dimensionField, DimensionLookupContext lookupContext)
     {
         return NormalizeKey(dimensionField) switch
         {
@@ -575,10 +586,81 @@ public class ReportExecutionService : IReportExecutionService
             "status" => booking.Status,
             "payment_mode" => booking.PaymentMode,
             "apartment_id" => booking.ApartmentId,
+            "apartment_name" => lookupContext.GetApartmentName(booking.ApartmentId),
             "tenant_id" => booking.TenantId,
+            "tenant_name" => lookupContext.GetTenantName(booking.TenantId),
             "nights" => booking.Nights,
             _ => throw new ArgumentException($"Unsupported dimension field '{dimensionField}'.")
         };
+    }
+
+    private async Task<DimensionLookupContext> BuildDimensionLookupContextAsync(
+        IEnumerable<Booking> filteredBookings,
+        IReadOnlyList<ReportDimensionRequestDto> dimensions)
+    {
+        var needsApartmentName = dimensions.Any(d => NormalizeKey(d.Field) == "apartment_name");
+        var needsTenantName = dimensions.Any(d => NormalizeKey(d.Field) == "tenant_name");
+
+        var apartmentNames = new Dictionary<Guid, string>();
+        var tenantNames = new Dictionary<Guid, string>();
+
+        if (needsApartmentName)
+        {
+            var apartmentIds = filteredBookings.Select(b => b.ApartmentId).Distinct().ToList();
+            if (apartmentIds.Count > 0)
+            {
+                var apartments = await _apartmentRepository.FindAsync(a => apartmentIds.Contains(a.ApartmentId));
+                apartmentNames = apartments
+                    .GroupBy(a => a.ApartmentId)
+                    .ToDictionary(g => g.Key, g => g.First().Title ?? string.Empty);
+            }
+        }
+
+        if (needsTenantName)
+        {
+            var tenantIds = filteredBookings.Select(b => b.TenantId).Distinct().ToList();
+            if (tenantIds.Count > 0)
+            {
+                var users = await _userRepository.FindAsync(u => tenantIds.Contains(u.UserId));
+                tenantNames = users
+                    .GroupBy(u => u.UserId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g => string.IsNullOrWhiteSpace(g.First().FullName)
+                            ? (g.First().Email ?? g.Key.ToString())
+                            : g.First().FullName!);
+            }
+        }
+
+        return new DimensionLookupContext(apartmentNames, tenantNames);
+    }
+
+    private sealed class DimensionLookupContext
+    {
+        private readonly IReadOnlyDictionary<Guid, string> _apartmentNames;
+        private readonly IReadOnlyDictionary<Guid, string> _tenantNames;
+
+        public DimensionLookupContext(
+            IReadOnlyDictionary<Guid, string> apartmentNames,
+            IReadOnlyDictionary<Guid, string> tenantNames)
+        {
+            _apartmentNames = apartmentNames;
+            _tenantNames = tenantNames;
+        }
+
+        public string GetApartmentName(Guid apartmentId)
+        {
+            return _apartmentNames.TryGetValue(apartmentId, out var value)
+                ? value
+                : apartmentId.ToString();
+        }
+
+        public string GetTenantName(Guid tenantId)
+        {
+            return _tenantNames.TryGetValue(tenantId, out var value)
+                ? value
+                : tenantId.ToString();
+        }
     }
 
     private static decimal CalculateMetric(IReadOnlyList<Booking> bookings, string metricField, string aggregation)

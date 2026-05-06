@@ -172,6 +172,7 @@ namespace Short_termApartmentAPI.Controllers
         /// <param name="requestDto">The details including the ticket ID, resolution notes, and acting staff ID.</param>
         /// <returns>The updated ticket details.</returns>
         [HttpPost("{ticketId}/resolve")]
+        [Authorize(Roles = "staff,admin")]
         public async Task<IActionResult> ResolveTicket(
             [FromRoute] Guid ticketId,
             [FromBody] string resolutionNotes)
