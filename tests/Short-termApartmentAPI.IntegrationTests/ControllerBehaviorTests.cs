@@ -1126,8 +1126,10 @@ internal sealed class PaymentServiceStub : BaseServiceStub<Payment>, IPaymentSer
     public override Task<Payment?> GetByIdAsync(Guid id)
         => Task.FromResult(PaymentsById.TryGetValue(id, out var payment) ? payment : null);
 
+
     public Task<(IEnumerable<Payment> Items, int TotalCount)> GetLandlordPaymentsAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, DateTime? fromDate = null, DateTime? toDate = null, Dictionary<string, string>? filters = null)
         => Task.FromResult((LandlordPayments.AsEnumerable(), LandlordPayments.Count));
+
 
     public Task<(IEnumerable<Payment> Items, int TotalCount)> GetTenantPaymentsAsync(Guid tenantId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, DateTime? fromDate = null, DateTime? toDate = null, Dictionary<string, string>? filters = null)
         => Task.FromResult((TenantPayments.AsEnumerable(), TenantPayments.Count));
