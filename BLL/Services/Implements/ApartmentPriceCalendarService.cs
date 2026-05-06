@@ -191,7 +191,7 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
     // 🔑 CORE METHOD 2: Bulk Weekday Upsert
     // ============================================================================
 
-    public async Task<PricingResultDto> BulkUpsertAsync(
+    public async Task<PricingResultDto> BulkUpsertWeekdayAsync(
         Guid apartmentId,
         BulkPriceUpdateDto updateDto,
         Guid landlordId)
@@ -201,6 +201,9 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
         {
             throw new UnauthorizedAccessException("User does not have permission to manage pricing for this apartment.");
         }
+
+        // 2. Preparation: Determine which days of the week to process
+        var targetDayNames = updateDto.DaysOfWeek.Select(d => d.ToLower()).ToList();
 
         // 3. Iteration and Record Collection
         var singleDayRecordsToUpsert = new List<(DateOnly Date, ManualPriceRangeDto Dto)>();
@@ -213,15 +216,18 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
             var currentDayOfWeek = DateHelper.GetDayOfWeekFromDate(currentDate);
             var dayName = currentDayOfWeek.ToString().ToLower();
 
-            // This is a matching day, so we create a single-day override record
-            var singleDayDto = new ManualPriceRangeDto
+            // Check if the current date's day name matches the target list
+            if (targetDayNames.Contains(dayName))
             {
-                StartDate = currentDate,
-                EndDate = currentDate, // Crucial: Single day override
-                FixedPricePerNight = updateDto.FixedPricePerNight,
-            };
-            singleDayRecordsToUpsert.Add((currentDate, singleDayDto));
-
+                // This is a matching day, so we create a single-day override record
+                var singleDayDto = new ManualPriceRangeDto
+                {
+                    StartDate = currentDate,
+                    EndDate = currentDate, // Crucial: Single day override
+                    FixedPricePerNight = updateDto.FixedPricePerNight
+                };
+                singleDayRecordsToUpsert.Add((currentDate, singleDayDto));
+            }
 
             // Move to the next day
             currentDate = currentDate.AddDays(1);

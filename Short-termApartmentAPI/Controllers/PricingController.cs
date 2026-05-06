@@ -172,16 +172,16 @@ public class PricingController : ControllerBase
     }
 
     // ========================================================
-    // 🔁 WRITE PATH 3: Bulk Upsert
-    // POST /api/landlord/apartments/{id}/pricing/manual/bulk
+    // 🔁 WRITE PATH 3: Bulk Weekday Upsert
+    // POST /api/landlord/apartments/{id}/pricing/manual/bulk-weekdays
     // ========================================================
-    [HttpPost("manual/bulk")]
-    public async Task<ActionResult<PricingResultDto>> BulkSetPrice(
+    [HttpPost("manual/bulk-weekdays")]
+    public async Task<ActionResult<PricingResultDto>> BulkSetWeekdayPrice(
         [FromRoute] Guid apartmentId,
         [FromBody] BulkPriceUpdateDto updateDto)
     {
         // 1. Basic Input Validation
-        if (updateDto == null)
+        if (updateDto == null || updateDto.DaysOfWeek == null || !updateDto.DaysOfWeek.Any())
         {
             return BadRequest("Bulk update requires valid date range and list of days.");
         }
@@ -200,7 +200,7 @@ public class PricingController : ControllerBase
 
         try
         {
-            var result = await _pricingService.BulkUpsertAsync(
+            var result = await _pricingService.BulkUpsertWeekdayAsync(
                 apartmentId, updateDto, userId);
 
             return Ok(result);
@@ -211,7 +211,7 @@ public class PricingController : ControllerBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error in BulkSetPrice: {ex}");
+            Console.WriteLine($"Error in BulkSetWeekdayPrice: {ex}");
             return StatusCode(500, "Failed to process bulk pricing updates.");
         }
     }

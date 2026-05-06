@@ -6,8 +6,8 @@ public class ManualPriceRangeDto
     public DateOnly EndDate { get; set; }
 
     // The absolute price that overrides everything else
-    public decimal FixedPricePerNight { get; set; } 
-    public string? PriceType { get; set; } = "manual_override"; 
+    public decimal FixedPricePerNight { get; set; }
+    public string? PriceType { get; set; } = "manual_override";
 }
 
 // DTO for the API response
@@ -30,6 +30,8 @@ public class BulkPriceUpdateDto
 {
     public DateOnly FromDate { get; set; }
     public DateOnly ToDate { get; set; }
+    // Example: ["Mon", "Tue", "Wed"]
+    public List<string> DaysOfWeek { get; set; } = new List<string>();
     public decimal FixedPricePerNight { get; set; }
 }
 

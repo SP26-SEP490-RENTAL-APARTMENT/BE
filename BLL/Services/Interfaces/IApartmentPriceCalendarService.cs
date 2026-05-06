@@ -13,7 +13,7 @@ public interface IApartmentPriceCalendarService : IBaseService<ApartmentPriceCal
     /// <summary>
     /// Bulk upserts prices for repeating days (e.g., every Tuesday).
     /// </summary>
-    Task<PricingResultDto> BulkUpsertAsync(Guid apartmentId, BulkPriceUpdateDto updateDto, Guid landlordId);
+    Task<PricingResultDto> BulkUpsertWeekdayAsync(Guid apartmentId, BulkPriceUpdateDto updateDto, Guid landlordId);
 
     /// <summary>
     /// Deletes manual overrides for a specific date range.
