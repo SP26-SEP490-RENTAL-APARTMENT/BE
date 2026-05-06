@@ -62,7 +62,7 @@ namespace BLL.Services.Implements
             }
 
             var primaryDetails = CreateDetailsForOccupant(details, occupants[0]);
-            var docxBytes = GenerateSingleDocx(primaryDetails, isVietnameseTemplate ? null : occupants);
+            var docxBytes = GenerateSingleDocx(primaryDetails, isVietnameseTemplate ? null : occupants, isVietnameseTemplate);
             return Task.FromResult(docxBytes);
         }
 
@@ -74,7 +74,7 @@ namespace BLL.Services.Implements
                 foreach (var occupant in occupants)
                 {
                     var occupantDetails = CreateDetailsForOccupant(baseDetails, occupant);
-                    var docxBytes = GenerateSingleDocx(occupantDetails, null);
+                    var docxBytes = GenerateSingleDocx(occupantDetails, null, isVietnameseTemplate: true);
                     var entryName = $"residence-report-{baseDetails.BookingId}-occupant-{occupant.Order:00}.docx";
                     var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
                     using var entryStream = entry.Open();
@@ -86,7 +86,7 @@ namespace BLL.Services.Implements
             return zipStream.ToArray();
         }
 
-        private static byte[] GenerateSingleDocx(TemporaryResidenceReportDetailsDto details, IReadOnlyList<ResidenceReportOccupantDto>? occupants)
+        private static byte[] GenerateSingleDocx(TemporaryResidenceReportDetailsDto details, IReadOnlyList<ResidenceReportOccupantDto>? occupants, bool isVietnameseTemplate = false)
         {
             var templatePath = ResolveTemplatePath(details.TenantNationality);
 
@@ -97,7 +97,7 @@ namespace BLL.Services.Implements
 
             using (var document = WordprocessingDocument.Open(outputStream, true))
             {
-                ApplyTemplate(document, details);
+                ApplyTemplate(document, details, isVietnameseTemplate);
                 if (occupants != null && occupants.Count > 1)
                 {
                     PopulateForeignOccupantRows(document, occupants);
@@ -190,7 +190,7 @@ namespace BLL.Services.Implements
             throw new FileNotFoundException($"Template file '{fileName}' was not found in the DocumentForm folder.");
         }
 
-        private static void ApplyTemplate(WordprocessingDocument document, TemporaryResidenceReportDetailsDto details)
+        private static void ApplyTemplate(WordprocessingDocument document, TemporaryResidenceReportDetailsDto details, bool isVietnameseTemplate = false)
         {
             var body = document.MainDocumentPart?.Document.Body;
             if (body == null)
@@ -198,7 +198,7 @@ namespace BLL.Services.Implements
                 throw new InvalidOperationException("DOCX template is missing a document body.");
             }
 
-            var placeholderValues = BuildPlaceholderValues(details);
+            var placeholderValues = BuildPlaceholderValues(details, isVietnameseTemplate);
             ReplacePlaceholders(body, placeholderValues);
             PopulateNationalIdTablesIfAvailable(document, details);
         }
@@ -228,10 +228,11 @@ namespace BLL.Services.Implements
             PopulateTableRowWithString(tableB, normalizedPartB);
         }
 
-        private static Dictionary<string, string> BuildPlaceholderValues(TemporaryResidenceReportDetailsDto details)
+        private static Dictionary<string, string> BuildPlaceholderValues(TemporaryResidenceReportDetailsDto details, bool isVietnameseTemplate = false)
         {
             var reportDate = details.ReportDate ?? DateOnly.FromDateTime(DateTime.Now);
             var tenantDobValue = FormatDate(details.TenantDateOfBirth);
+            var tenantSex = isVietnameseTemplate ? ConvertSexToVietnamese(details.TenantSex) : details.TenantSex;
 
             return new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -246,7 +247,7 @@ namespace BLL.Services.Implements
                 ["TenantDateOfBirth"] = tenantDobValue,
                 ["TenantDOB"] = tenantDobValue,
                 [PlaceholderTags.TenantNationalID] = details.TenantNationalIdCardNumber ?? string.Empty,
-                [PlaceholderTags.TenantSex] = details.TenantSex ?? string.Empty,
+                [PlaceholderTags.TenantSex] = tenantSex ?? string.Empty,
                 [PlaceholderTags.TenantNationality] = details.TenantNationality ?? string.Empty,
                 [PlaceholderTags.TenantPassportId] = details.TenantPassportId ?? string.Empty,
                 [PlaceholderTags.TenantPhone] = details.TenantPhone ?? string.Empty,
@@ -257,6 +258,21 @@ namespace BLL.Services.Implements
                 [PlaceholderTags.Day] = reportDate.Day.ToString("00"),
                 [PlaceholderTags.Month] = reportDate.Month.ToString("00"),
                 [PlaceholderTags.Year] = reportDate.Year.ToString(),
+            };
+        }
+
+        private static string ConvertSexToVietnamese(string? sex)
+        {
+            if (string.IsNullOrWhiteSpace(sex))
+            {
+                return string.Empty;
+            }
+
+            return sex.ToLower() switch
+            {
+                "male" or "m" => "Nam",
+                "female" or "f" => "Nữ",
+                _ => sex  // Return original if no match
             };
         }
 
@@ -314,7 +330,7 @@ namespace BLL.Services.Implements
             FillOccupantRow(templateRow, occupants[0]);
         }
 
-        private static void FillOccupantRow(TableRow row, ResidenceReportOccupantDto occupant)
+        private static void FillOccupantRow(TableRow row, ResidenceReportOccupantDto occupant, bool isVietnameseTemplate = false)
         {
             var cells = row.Elements<TableCell>().ToList();
             if (cells.Count == 0)
@@ -322,12 +338,14 @@ namespace BLL.Services.Implements
                 return;
             }
 
+            var occupantSex = isVietnameseTemplate ? ConvertSexToVietnamese(occupant.Sex) : occupant.Sex;
+
             SetCell(cells, 0, occupant.Order.ToString("00"));
             SetCell(cells, 1, occupant.FullName ?? string.Empty);
             SetCell(cells, 2, occupant.Nationality ?? string.Empty);
             SetCell(cells, 3, occupant.PassportId ?? string.Empty);
             SetCell(cells, 4, occupant.NationalIdCardNumber ?? string.Empty);
-            SetCell(cells, 5, occupant.Sex ?? string.Empty);
+            SetCell(cells, 5, occupantSex ?? string.Empty);  // Use converted value
             SetCell(cells, 6, occupant.Phone ?? string.Empty);
         }
 
@@ -426,12 +444,25 @@ namespace BLL.Services.Implements
 
         private static void SetParagraphText(Paragraph paragraph, string text)
         {
+            // Get the first run to copy its formatting properties
+            var firstRun = paragraph.Elements<Run>().FirstOrDefault();
+            var runProperties = firstRun?.RunProperties != null
+                ? (RunProperties)firstRun.RunProperties.CloneNode(true)
+                : new RunProperties();
+
+            // Remove all runs
             paragraph.RemoveAllChildren<Run>();
 
-            paragraph.AppendChild(new Run(new Text(text ?? string.Empty)
+            // Create new run with preserved formatting
+            var newRun = new Run();
+            newRun.AppendChild(runProperties);
+            newRun.AppendChild(new Text(text ?? string.Empty)
             {
                 Space = SpaceProcessingModeValues.Preserve
-            }));
+            });
+
+
+            paragraph.AppendChild(newRun);
         }
 
         private static string BuildApartmentAddress(TemporaryResidenceReportDetailsDto details)
