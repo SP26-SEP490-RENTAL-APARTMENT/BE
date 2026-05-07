@@ -1198,14 +1198,20 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var booking = await EnsureBookingOwnedByTenantOrLandlordAsync(bookingId, tenantUserId);
-        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
-            ?? throw new ArgumentException("Apartment not found for this booking.");
+        var occupantCap = ResolveBookingOccupantCap(booking);
 
         var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
-        if (apartment.MaxOccupants.HasValue && existing.Count >= apartment.MaxOccupants.Value)
+        if (existing.Count >= occupantCap)
         {
-            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} occupant(s).");
+            throw new InvalidOperationException($"This booking allows at most {occupantCap} occupant(s) based on the requested headcount.");
         }
+
+        EnsureNoDuplicateOccupantIdentity(
+            existing,
+            dto.PassportId,
+            dto.NationalIdCardNumber,
+            dto.FullName,
+            dto.DateOfBirth);
 
         var nextOrder = existing.Count == 0
             ? 1
@@ -1247,6 +1253,19 @@ public class BookingService : BaseService<Booking>, IBookingService
         var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
         var occupant = existing.FirstOrDefault(o => o.OccupantOrder == occupantOrder)
             ?? throw new ArgumentException("Occupant not found for this booking.");
+
+        var nextPassportId = dto.PassportId ?? occupant.PassportId;
+        var nextNationalIdCardNumber = dto.NationalIdCardNumber ?? occupant.NationalIdCardNumber;
+        var nextFullName = dto.FullName ?? occupant.FullName;
+        var nextDateOfBirth = dto.DateOfBirth ?? occupant.DateOfBirth;
+
+        EnsureNoDuplicateOccupantIdentity(
+            existing,
+            nextPassportId,
+            nextNationalIdCardNumber,
+            nextFullName,
+            nextDateOfBirth,
+            occupant.OccupantId);
 
         if (dto.IsPrimary == true)
         {
@@ -1334,13 +1353,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var booking = await EnsureBookingOwnedByLandlordAsync(bookingId, tenantUserId);
+        var occupantCap = ResolveBookingOccupantCap(booking);
 
-        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
-            ?? throw new ArgumentException("Apartment not found for this booking.");
-
-        if (apartment.MaxOccupants.HasValue && dto.Occupants.Count > apartment.MaxOccupants.Value)
+        if (dto.Occupants.Count > occupantCap)
         {
-            throw new InvalidOperationException($"This apartment allows at most {apartment.MaxOccupants.Value} occupant(s).");
+            throw new InvalidOperationException($"This booking allows at most {occupantCap} occupant(s) based on the requested headcount.");
         }
 
         var duplicateOrder = dto.Occupants
@@ -1373,6 +1390,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             normalized[0].IsPrimary = true;
         }
+
+        EnsureNoDuplicateOccupantsInPayload(normalized);
 
         var existing = (await _bookingOccupantRepository.FindAsync(o => o.BookingId == bookingId)).ToList();
         foreach (var item in existing)
@@ -1540,6 +1559,89 @@ public class BookingService : BaseService<Booking>, IBookingService
             Email = occupant.Email,
             ProofPhotoUrl = occupant.ProofPhotoUrl
         };
+    }
+
+    private static int ResolveBookingOccupantCap(Booking booking)
+    {
+        return Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0) + (booking.NoOfInfants ?? 0));
+    }
+
+    private static void EnsureNoDuplicateOccupantIdentity(
+        IEnumerable<BookingOccupant> existing,
+        string? passportId,
+        string? nationalIdCardNumber,
+        string? fullName,
+        DateOnly? dateOfBirth,
+        Guid? excludedOccupantId = null)
+    {
+        var normalizedPassportId = NormalizeIdentityValue(passportId);
+        var normalizedNationalIdCardNumber = NormalizeIdentityValue(nationalIdCardNumber);
+        var normalizedFullName = NormalizeIdentityValue(fullName);
+
+        var hasNameAndBirthDate = normalizedFullName != null && dateOfBirth.HasValue;
+
+        var duplicate = existing.FirstOrDefault(o =>
+            (!excludedOccupantId.HasValue || o.OccupantId != excludedOccupantId.Value)
+            &&
+            (
+                (normalizedPassportId != null
+                    && NormalizeIdentityValue(o.PassportId) == normalizedPassportId)
+                ||
+                (normalizedNationalIdCardNumber != null
+                    && NormalizeIdentityValue(o.NationalIdCardNumber) == normalizedNationalIdCardNumber)
+                ||
+                (hasNameAndBirthDate
+                    && NormalizeIdentityValue(o.FullName) == normalizedFullName
+                    && o.DateOfBirth.HasValue
+                    && o.DateOfBirth.Value == dateOfBirth!.Value)
+            ));
+
+        if (duplicate != null)
+        {
+            throw new InvalidOperationException("An occupant with the same identity already exists for this booking.");
+        }
+    }
+
+    private static void EnsureNoDuplicateOccupantsInPayload(IReadOnlyCollection<FillBookingOccupantItemDto> occupants)
+    {
+        var passportIds = new HashSet<string>(StringComparer.Ordinal);
+        var nationalIdCardNumbers = new HashSet<string>(StringComparer.Ordinal);
+        var fullNameAndBirthDates = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var occupant in occupants)
+        {
+            var normalizedPassportId = NormalizeIdentityValue(occupant.PassportId);
+            if (normalizedPassportId != null && !passportIds.Add(normalizedPassportId))
+            {
+                throw new InvalidOperationException("Duplicate passport ID found in submitted occupants.");
+            }
+
+            var normalizedNationalIdCardNumber = NormalizeIdentityValue(occupant.NationalIdCardNumber);
+            if (normalizedNationalIdCardNumber != null && !nationalIdCardNumbers.Add(normalizedNationalIdCardNumber))
+            {
+                throw new InvalidOperationException("Duplicate national ID card number found in submitted occupants.");
+            }
+
+            var normalizedFullName = NormalizeIdentityValue(occupant.FullName);
+            if (normalizedFullName != null && occupant.DateOfBirth.HasValue)
+            {
+                var key = $"{normalizedFullName}|{occupant.DateOfBirth.Value:yyyy-MM-dd}";
+                if (!fullNameAndBirthDates.Add(key))
+                {
+                    throw new InvalidOperationException("Duplicate full name and date of birth found in submitted occupants.");
+                }
+            }
+        }
+    }
+
+    private static string? NormalizeIdentityValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToUpperInvariant();
     }
 
     private async Task EnsureNoConflictingBookingsAsync(Guid apartmentId, DateOnly checkInDate, DateOnly checkOutDate)

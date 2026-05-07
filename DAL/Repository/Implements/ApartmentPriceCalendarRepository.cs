@@ -25,7 +25,7 @@ namespace DAL.Repository.Implements
         {
             var standardRecords = await _context.Set<ApartmentPriceCalendar>()
                 .Where(p =>
-                    p.PriceType == "manual_override" &&
+                    p.ApartmentId == apartmentId &&
                     p.StartDate <= end &&
                     p.EndDate >= start)
                 .AsNoTracking()
@@ -54,6 +54,7 @@ namespace DAL.Repository.Implements
         {
             var standardRecords = await _context.Set<ApartmentPriceCalendar>()
             .Where(p =>
+                p.ApartmentId == apartmentId &&
                 p.PriceType == "base" &&
                 p.StartDate <= end &&
                 p.EndDate >= start)

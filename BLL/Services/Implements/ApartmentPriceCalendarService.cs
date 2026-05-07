@@ -2,6 +2,7 @@ using BLL.Services.Interfaces;
 using DAL.Data;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace BLL.Services.Implements;
 
@@ -330,7 +331,7 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
         IReadOnlyList<ApartmentPriceCalendar> manualOverrides,
         IReadOnlyList<ApartmentPriceCalendar> calendarPeriods)
     {
-        decimal nightlyRate = 0;
+        decimal nightlyRate = GetBaseRate(apartmentId);
         string source = "BaseRate";
 
         // --- 1. Check for Manual Override (Highest Priority) ---
@@ -340,7 +341,9 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
             if (manualMatch.FixedPricePerNight.HasValue)
             {
                 nightlyRate = manualMatch.FixedPricePerNight.Value;
-                source = "ManualOverride";
+                source = string.IsNullOrWhiteSpace(manualMatch.PriceType)
+                    ? "ManualOverride"
+                    : manualMatch.PriceType.Replace('_', ' ');
             }
             // --- 2. Check for Calendar Override (Medium Priority) ---
             else
@@ -348,25 +351,24 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
                 var calendarMatch = calendarPeriods.FirstOrDefault(r => date >= r.StartDate && date <= r.EndDate);
                 if (calendarMatch != null)
                 {
-                    // Apply the calendar rule logic (e.g., discount or multiplier)
-                    // NOTE: This requires detailed re-implementing of the discount logic from Phase 1
                     if (calendarMatch.DiscountPercentage.HasValue && calendarMatch.DiscountPercentage > 0)
                     {
                         nightlyRate = GetBaseRate(apartmentId) * (1 - calendarMatch.DiscountPercentage.Value / 100m);
-                        source = "CalendarDiscount";
+                        source = string.IsNullOrWhiteSpace(calendarMatch.PriceType)
+                            ? "CalendarDiscount"
+                            : calendarMatch.PriceType.Replace('_', ' ');
                     }
                     else
                     {
-                        // If no discount, assume the calendar sets the rate.
-                        nightlyRate = GetBaseRate(apartmentId);
-                        source = "CalendarPeriod";
+                        if (calendarMatch.FixedPricePerNight.HasValue)
+                        {
+                            nightlyRate = calendarMatch.FixedPricePerNight.Value;
+                        }
+
+                        source = string.IsNullOrWhiteSpace(calendarMatch.PriceType)
+                            ? "CalendarPeriod"
+                            : calendarMatch.PriceType.Replace('_', ' ');
                     }
-                }
-                // --- 3. Fallback to Base Rate ---
-                else
-                {
-                    nightlyRate = GetBaseRate(apartmentId);
-                    source = "BaseRate";
                 }
             }
         }
@@ -386,6 +388,14 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
         };
     }
 
-    // Dummy methods (Must be implemented in the UnitOfWork/Repository)
-    private decimal GetBaseRate(Guid apartmentId) { /* Fetches rate from Apartment table */ return 100m; }
+    private decimal GetBaseRate(Guid apartmentId)
+    {
+        var baseRate = _dbContext.Set<Apartment>()
+            .AsNoTracking()
+            .Where(apartment => apartment.ApartmentId == apartmentId)
+            .Select(apartment => (decimal?)apartment.BasePricePerNight)
+            .FirstOrDefault();
+
+        return baseRate ?? 0m;
+    }
 }
