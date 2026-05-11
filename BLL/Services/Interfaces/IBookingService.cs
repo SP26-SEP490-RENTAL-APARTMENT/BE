@@ -111,4 +111,18 @@ public interface IBookingService : IBaseService<Booking>
 		Guid confirmedBy,
 		Guid? ticketId = null,
 		string? notes = null);
+
+	/// <summary>
+	/// Lists all outstanding check-time fees for a user across multiple bookings.
+	/// Staff/admin can query any user; tenants can only query their own fees.
+	/// Returns all bookings with non-zero fees that haven't been fully settled.
+	/// </summary>
+	Task<OutstandingCheckTimeFeesResponseDto> GetOutstandingCheckTimeFeesAsync(Guid userId, Guid? requesterId = null, string? requesterRole = null);
+
+	/// <summary>
+	/// Lists all outstanding check-time fees for a landlord across all their properties.
+	/// Staff/admin can query any landlord; landlords can only query their own fees.
+	/// Returns all bookings with non-zero fees that haven't been fully settled, aggregated by tenant.
+	/// </summary>
+	Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null);
 }

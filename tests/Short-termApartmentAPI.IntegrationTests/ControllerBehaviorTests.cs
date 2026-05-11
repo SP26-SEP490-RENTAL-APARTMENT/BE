@@ -894,7 +894,8 @@ public class ControllerBehaviorTests
             residenceReportPdfGenerator ?? new ResidenceReportPdfGeneratorStub(),
             residenceReportDocxGenerator ?? new ResidenceReportDocxGeneratorStub(),
             CreateMapper(),
-            new PassportRecognitionServiceStub());
+            new PassportRecognitionServiceStub(),
+            new IdRecognitionServiceStub());
     }
 
     private sealed class PassportRecognitionServiceStub : IFptPassportRecognitionService
@@ -908,6 +909,22 @@ public class ControllerBehaviorTests
                 FullName = "OCR Test",
                 PassportNumber = "P1234567",
                 IdNumber = "P1234567",
+                DateOfBirth = "01/01/1990"
+            });
+        }
+    }
+
+    private sealed class IdRecognitionServiceStub : IFptIdRecognitionService
+    {
+        public Task<FptIdRecognitionResult> RecognizeAsync(IFormFile file, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new FptIdRecognitionResult
+            {
+                Success = true,
+                OverallConfidence = 0.95,
+                FullName = "OCR Test",
+                PassportNumber = "ID1234567",
+                IdNumber = "ID1234567",
                 DateOfBirth = "01/01/1990"
             });
         }
@@ -1273,6 +1290,8 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<IReadOnlyList<BookingOfferResponseDto>> GetTenantActiveOffersAsync(Guid tenantId) => Task.FromResult<IReadOnlyList<BookingOfferResponseDto>>(Array.Empty<BookingOfferResponseDto>());
     public Task<BookingOfferResponseDto> RespondToAlternativeOfferAsync(Guid offerId, Guid tenantId, bool accepted, string? notes = null) => Task.FromResult(new BookingOfferResponseDto());
     public Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(Guid bookingId, Guid confirmedBy, Guid? ticketId = null, string? notes = null) => Task.FromResult(new ConfirmOccupiedIncidentPenaltyResponseDto());
+    public Task<OutstandingCheckTimeFeesResponseDto> GetOutstandingCheckTimeFeesAsync(Guid userId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new OutstandingCheckTimeFeesResponseDto { UserId = userId });
+    public Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new LandlordOutstandingCheckTimeFeesResponseDto { LandlordId = landlordId });
 }
 
 internal sealed class MomoTransactionServiceStub : BaseServiceStub<MomoTransaction>, IMomoTransactionService

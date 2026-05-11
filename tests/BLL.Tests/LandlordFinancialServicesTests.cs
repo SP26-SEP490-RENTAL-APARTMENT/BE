@@ -432,6 +432,41 @@ public class BookingServiceQuoteValidationTests
 
         Assert.Contains("Selected package is invalid for this apartment", ex.Message);
     }
+
+    [Fact]
+    public async Task GetQuoteAsync_UsesFixedPriceFromManualOverrideCalendar()
+    {
+        var apartmentId = Guid.NewGuid();
+        var calendar = new ApartmentPriceCalendar
+        {
+            PriceId = Guid.NewGuid(),
+            ApartmentId = apartmentId,
+            StartDate = new DateOnly(2026, 5, 10),
+            EndDate = new DateOnly(2026, 5, 12),
+            FixedPricePerNight = 800000m,
+            PriceType = "manual_override",
+            IsDiscount = false
+        };
+
+        var sut = FinancialTestHelpers.CreateBookingService(
+            apartment: FinancialTestHelpers.CreateApartment(apartmentId),
+            calendars: [calendar]);
+
+        var dto = FinancialTestHelpers.CreateValidQuoteRequest(apartmentId);
+
+        var quote = await sut.GetQuoteAsync(dto);
+
+        Assert.Equal(2, quote.Nights);
+        Assert.Equal(1000000m, quote.BasePricePerNight);
+        Assert.Equal(800000m, quote.ResolvedPricePerNight);
+        Assert.Equal(1600000m, quote.BaseAmount);
+        Assert.Equal(1600000m, quote.TotalPrice);
+        Assert.Equal(2, quote.PriceCalendar.Count);
+        Assert.Equal(new DateOnly(2026, 5, 10), quote.PriceCalendar[0].Date);
+        Assert.Equal(800000m, quote.PriceCalendar[0].FinalPricePerNight);
+        Assert.Equal(new DateOnly(2026, 5, 11), quote.PriceCalendar[1].Date);
+        Assert.Equal(800000m, quote.PriceCalendar[1].FinalPricePerNight);
+    }
 }
 
 public class BookingServiceResidenceReportTests

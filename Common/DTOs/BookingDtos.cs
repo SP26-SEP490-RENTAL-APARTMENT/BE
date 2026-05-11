@@ -354,6 +354,7 @@ public class BookingQuoteResponseDto
     public Guid? PackageId { get; set; }
     public int Nights { get; set; }
     public decimal BasePricePerNight { get; set; }
+    public decimal ResolvedPricePerNight { get; set; }
     public decimal BaseAmount { get; set; }
     public decimal PackageAmount { get; set; }
     public decimal TotalPrice { get; set; }
@@ -361,6 +362,7 @@ public class BookingQuoteResponseDto
     public decimal RemainingBalance { get; set; }
     public decimal FullUpfrontPaymentAmount { get; set; }
     public decimal FullUpfrontLandlordShareAmount { get; set; }
+    public List<DailyPriceResolutionDto> PriceCalendar { get; set; } = new();
 }
 
 public class SubmitResidenceReportDto

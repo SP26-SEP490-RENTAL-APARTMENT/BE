@@ -215,3 +215,94 @@ public class LandlordPaymentConfirmationDto : IValidatableObject
         }
     }
 }
+
+/// <summary>
+/// DTO representing a single booking's outstanding check-time fees.
+/// </summary>
+public class OutstandingCheckTimeFeeItemDto
+{
+    public Guid BookingId { get; set; }
+    public Guid ApartmentId { get; set; }
+    public string? ApartmentAddress { get; set; }
+    
+    public DateTime ScheduledCheckIn { get; set; }
+    public DateTime ScheduledCheckOut { get; set; }
+    
+    public decimal EarlyCheckInFee { get; set; }
+    public decimal LateCheckOutFee { get; set; }
+    public decimal TotalFee { get; set; }
+    
+    /// <summary>
+    /// Settlement status: none, due, disputed, paid, waived, payment_submitted_pending_verification
+    /// </summary>
+    public string FeeSettlementStatus { get; set; } = "none";
+    
+    public DateTime? FeeDueAt { get; set; }
+    public DateTime? FeeSettledAt { get; set; }
+    public bool IsOverdue { get; set; }
+    
+    public string? TenantDisputeReason { get; set; }
+    public string? DisputeResolutionStatus { get; set; }
+}
+
+/// <summary>
+/// DTO for listing all outstanding check-time fees for a user across multiple bookings.
+/// </summary>
+public class OutstandingCheckTimeFeesResponseDto
+{
+    public Guid UserId { get; set; }
+    public decimal TotalOutstandingFees { get; set; }
+    public int TotalOutstandingCount { get; set; }
+    public int OverdueCount { get; set; }
+    public int DisputedCount { get; set; }
+    
+    public List<OutstandingCheckTimeFeeItemDto> OutstandingFees { get; set; } = new();
+}
+
+/// <summary>
+/// DTO representing a tenant's outstanding check-time fees for a landlord's property.
+/// </summary>
+public class OutstandingCheckTimeFeeByTenantDto
+{
+    public Guid BookingId { get; set; }
+    public Guid ApartmentId { get; set; }
+    public string? ApartmentAddress { get; set; }
+    
+    public Guid TenantId { get; set; }
+    public string? TenantName { get; set; }
+    
+    public DateTime ScheduledCheckIn { get; set; }
+    public DateTime ScheduledCheckOut { get; set; }
+    
+    public decimal EarlyCheckInFee { get; set; }
+    public decimal LateCheckOutFee { get; set; }
+    public decimal TotalFee { get; set; }
+    
+    /// <summary>
+    /// Settlement status: none, due, disputed, paid, waived, payment_submitted_pending_verification
+    /// </summary>
+    public string FeeSettlementStatus { get; set; } = "none";
+    
+    public DateTime? FeeDueAt { get; set; }
+    public DateTime? FeeSettledAt { get; set; }
+    public bool IsOverdue { get; set; }
+    
+    public string? TenantDisputeReason { get; set; }
+    public string? DisputeResolutionStatus { get; set; }
+}
+
+/// <summary>
+/// DTO for listing all outstanding check-time fees for a landlord across all their properties.
+/// Aggregates fees by tenant.
+/// </summary>
+public class LandlordOutstandingCheckTimeFeesResponseDto
+{
+    public Guid LandlordId { get; set; }
+    public decimal TotalOutstandingFees { get; set; }
+    public int TotalOutstandingCount { get; set; }
+    public int OverdueCount { get; set; }
+    public int DisputedCount { get; set; }
+    public int UniqueTenantCount { get; set; }
+    
+    public List<OutstandingCheckTimeFeeByTenantDto> OutstandingFees { get; set; } = new();
+}

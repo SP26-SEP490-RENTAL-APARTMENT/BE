@@ -25,6 +25,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IMomoTransactionService _momoTransactionService;
         private readonly IImageService _imageService;
         private readonly IFptPassportRecognitionService _passportRecognitionService;
+        private readonly IFptIdRecognitionService _idRecognitionService;
         private readonly MomoOptions _momoOptions;
         private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
         private readonly IResidenceReportDocxGenerator _residenceReportDocxGenerator;
@@ -42,7 +43,8 @@ namespace Short_termApartmentAPI.Controllers
             IResidenceReportPdfGenerator residenceReportPdfGenerator,
             IResidenceReportDocxGenerator residenceReportDocxGenerator,
             IMapper mapper,
-            IFptPassportRecognitionService passportRecognitionService)
+            IFptPassportRecognitionService passportRecognitionService,
+            IFptIdRecognitionService idRecognitionService)
         {
             _bookingService = bookingService;
             _paymentService = paymentService;
@@ -56,6 +58,7 @@ namespace Short_termApartmentAPI.Controllers
             _residenceReportDocxGenerator = residenceReportDocxGenerator;
             _mapper = mapper;
             _passportRecognitionService = passportRecognitionService;
+            _idRecognitionService = idRecognitionService;
         }
 
         [HttpGet("{id:guid}")]
@@ -550,8 +553,77 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
-        [HttpPost("{id:guid}/occupants/passport-upload")]
         [HttpPost("{id:guid}/occupants/ocr-upload")]
+        [Authorize(Roles = "tenant,landlord")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadOccupantByIdRecognition(Guid id, [FromForm] BookingOccupantOcrUploadDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterUserId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (dto.Image == null || dto.Image.Length == 0)
+            {
+                return BadRequest(new ApiResponse<string>("Image is required."));
+            }
+
+            FptIdRecognitionResult recognition;
+            try
+            {
+                recognition = await _idRecognitionService.RecognizeAsync(dto.Image);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+
+            string proofPhotoUrl;
+            try
+            {
+                proofPhotoUrl = await _imageService.UploadImageAsync(dto.Image);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error uploading image in UploadOccupantByIdRecognition: {ex}");
+                return BadRequest(new ApiResponse<string>("Failed to upload image."));
+            }
+
+            var occupantDto = new AddBookingOccupantDto
+            {
+                FullName = string.IsNullOrWhiteSpace(recognition.FullName) ? null : recognition.FullName,
+                PassportId = string.IsNullOrWhiteSpace(recognition.PassportNumber) ? null : recognition.PassportNumber,
+                DateOfBirth = TryParseDateOnly(recognition.DateOfBirth, out var dob) ? dob : null,
+                NationalIdCardNumber = string.IsNullOrWhiteSpace(recognition.IdNumber) ? null : recognition.IdNumber,
+                Nationality = null,
+                Sex = string.IsNullOrWhiteSpace(recognition.Sex) ? null : recognition.Sex,
+                Phone = null,
+                Email = null,
+                ProofPhotoUrl = proofPhotoUrl
+            };
+
+            try
+            {
+                var occupant = await _bookingService.AddOccupantAsync(id, requesterUserId, occupantDto);
+                return Ok(new ApiResponse<ResidenceReportOccupantDto>(occupant, "Occupant added from OCR upload."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (ArgumentException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpPost("{id:guid}/occupants/passport-upload")]
         [Authorize(Roles = "tenant,landlord")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> UploadOccupantByPassport(Guid id, [FromForm] BookingOccupantOcrUploadDto dto)
@@ -895,6 +967,60 @@ namespace Short_termApartmentAPI.Controllers
                 return NotFound(new ApiResponse<string>(ex.Message));
             }
             catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpGet("outstanding-fees/{userId:guid}")]
+        [Authorize(Roles = "tenant,staff,admin")]
+        public async Task<IActionResult> GetOutstandingCheckTimeFees(Guid userId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            try
+            {
+                var outstandingFees = await _bookingService.GetOutstandingCheckTimeFeesAsync(userId, requesterId, userRole);
+                return Ok(new ApiResponse<OutstandingCheckTimeFeesResponseDto>(outstandingFees));
+            }
+            catch (InvalidOperationException)
+            {
+                return Forbid();
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpGet("outstanding-fees/landlord/{landlordId:guid}")]
+        [Authorize(Roles = "landlord,staff,admin")]
+        public async Task<IActionResult> GetLandlordOutstandingCheckTimeFees(Guid landlordId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var userRole = User.FindFirst(ClaimTypes.Role)?.Value;
+
+            try
+            {
+                var outstandingFees = await _bookingService.GetLandlordOutstandingCheckTimeFeesAsync(landlordId, requesterId, userRole);
+                return Ok(new ApiResponse<LandlordOutstandingCheckTimeFeesResponseDto>(outstandingFees));
+            }
+            catch (InvalidOperationException)
+            {
+                return Forbid();
+            }
+            catch (Exception ex)
             {
                 return BadRequest(new ApiResponse<string>(ex.Message));
             }

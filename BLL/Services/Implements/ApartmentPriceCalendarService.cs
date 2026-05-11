@@ -87,7 +87,7 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
     }
 
     /// <summary>
-    /// Upserts a single manual price range, ensuring conflict resolution and normalization.
+    /// Upsert a manual price range for an apartment (create or replace overlapping ranges)
     /// </summary>
     public async Task<PricingResultDto> UpsertManualRangeAsync(
         Guid apartmentId,

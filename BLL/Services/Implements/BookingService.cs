@@ -335,21 +335,28 @@ public class BookingService : BaseService<Booking>, IBookingService
             c.ApartmentId == dto.ApartmentId &&
             c.StartDate <= checkOutDate &&
             c.EndDate >= checkInDate);
+        var priceCalendars = calendars.ToList();
 
-        if (calendars.Any())
+        if (priceCalendars.Any())
         {
-            var minRequiredNights = calendars.Max(c => c.MinNights ?? 1);
+            var minRequiredNights = priceCalendars.Max(c => c.MinNights ?? 1);
             if (nights < minRequiredNights)
             {
                 throw new InvalidOperationException($"Booking must be at least {minRequiredNights} night(s) for the selected dates.");
             }
         }
 
+        var priceCalendar = BuildPriceCalendarBreakdown(
+            checkInDate,
+            checkOutDate,
+            apartment.BasePricePerNight,
+            priceCalendars);
+
         var baseAmount = CalculateBaseAmountForRange(
             checkInDate,
             checkOutDate,
             apartment.BasePricePerNight,
-            calendars.ToList());
+            priceCalendars);
 
         decimal packageAmount = 0m;
         if (dto.PackageId.HasValue)
@@ -371,13 +378,15 @@ public class BookingService : BaseService<Booking>, IBookingService
             PackageId = dto.PackageId,
             Nights = nights,
             BasePricePerNight = apartment.BasePricePerNight,
+            ResolvedPricePerNight = Math.Round(baseAmount / nights, 2, MidpointRounding.AwayFromZero),
             BaseAmount = baseAmount,
             PackageAmount = packageAmount,
             TotalPrice = total,
             SuggestedDeposit = suggestedDeposit,
             RemainingBalance = remaining,
             FullUpfrontPaymentAmount = total,
-            FullUpfrontLandlordShareAmount = Math.Round(total * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
+            FullUpfrontLandlordShareAmount = Math.Round(total * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero),
+            PriceCalendar = priceCalendar
         };
     }
 
@@ -2579,8 +2588,8 @@ public class BookingService : BaseService<Booking>, IBookingService
     {
         // Find price calendars that overlap with this range
         var overlappingCalendars = priceCalendars.Where(c =>
-            c.StartDate < DateOnly.FromDateTime(rangeEnd) &&
-            c.EndDate > DateOnly.FromDateTime(rangeStart)).ToList();
+            c.StartDate <= DateOnly.FromDateTime(rangeEnd) &&
+            c.EndDate >= DateOnly.FromDateTime(rangeStart)).ToList();
 
         if (!overlappingCalendars.Any())
             return null;
@@ -2588,14 +2597,13 @@ public class BookingService : BaseService<Booking>, IBookingService
         var manualOverride = overlappingCalendars
             .Where(c =>
                 c.PriceType != null &&
-                c.PriceType.Equals("manual_override", StringComparison.OrdinalIgnoreCase) &&
-                c.DiscountPercentage.HasValue)
+                c.FixedPricePerNight.HasValue)
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
             .FirstOrDefault();
 
         if (manualOverride != null)
         {
-            return manualOverride.DiscountPercentage;
+            return manualOverride.FixedPricePerNight!.Value;
         }
 
         var firstCalendar = overlappingCalendars
@@ -2629,29 +2637,67 @@ public class BookingService : BaseService<Booking>, IBookingService
         return total;
     }
 
+    private List<DailyPriceResolutionDto> BuildPriceCalendarBreakdown(
+        DateOnly checkInDate,
+        DateOnly checkOutDate,
+        decimal defaultPrice,
+        List<DAL.Models.ApartmentPriceCalendar> calendars)
+    {
+        var priceCalendar = new List<DailyPriceResolutionDto>();
+        var cursor = checkInDate;
+
+        while (cursor < checkOutDate)
+        {
+            var (nightlyRate, source) = ResolveNightlyPriceDetails(cursor, defaultPrice, calendars);
+            priceCalendar.Add(new DailyPriceResolutionDto
+            {
+                Date = cursor,
+                FinalPricePerNight = Math.Round(nightlyRate, 2, MidpointRounding.AwayFromZero),
+                TotalNightlyCost = Math.Round(nightlyRate, 2, MidpointRounding.AwayFromZero),
+                Source = source,
+                Notes = $"Rate calculated based on {source} rule."
+            });
+
+            cursor = cursor.AddDays(1);
+        }
+
+        return priceCalendar;
+    }
+
     private decimal ResolveNightlyPrice(
         DateOnly date,
         decimal defaultPrice,
         List<DAL.Models.ApartmentPriceCalendar> calendars)
     {
-        var matching = calendars.Where(c => c.StartDate <= date && c.EndDate > date).ToList();
+        return ResolveNightlyPriceDetails(date, defaultPrice, calendars).Price;
+    }
+
+    private (decimal Price, string Source) ResolveNightlyPriceDetails(
+        DateOnly date,
+        decimal defaultPrice,
+        List<DAL.Models.ApartmentPriceCalendar> calendars)
+    {
+        var matching = calendars.Where(c => c.StartDate <= date && c.EndDate >= date).ToList();
 
         if (!matching.Any())
         {
-            return defaultPrice;
+            return (defaultPrice, "BaseRate");
         }
 
         var manualOverride = matching
             .Where(c =>
                 c.PriceType != null &&
-                c.PriceType.Equals("manual_override", StringComparison.OrdinalIgnoreCase) &&
-                c.DiscountPercentage.HasValue)
+                c.FixedPricePerNight.HasValue)
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
             .FirstOrDefault();
 
         if (manualOverride != null)
         {
-            return manualOverride.DiscountPercentage!.Value;
+            return (
+                manualOverride.FixedPricePerNight!.Value,
+                string.IsNullOrWhiteSpace(manualOverride.PriceType)
+                    ? "ManualOverride"
+                    : manualOverride.PriceType.Replace('_', ' '));
         }
 
         var discountCalendar = matching
@@ -2661,10 +2707,27 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (discountCalendar != null)
         {
-            return defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m);
+            return (
+                defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m),
+                string.IsNullOrWhiteSpace(discountCalendar.PriceType)
+                    ? "CalendarDiscount"
+                    : discountCalendar.PriceType.Replace('_', ' '));
         }
 
-        return defaultPrice;
+        var fallbackCalendar = matching
+            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (fallbackCalendar?.FixedPricePerNight.HasValue == true)
+        {
+            return (
+                fallbackCalendar.FixedPricePerNight.Value,
+                string.IsNullOrWhiteSpace(fallbackCalendar.PriceType)
+                    ? "CalendarPeriod"
+                    : fallbackCalendar.PriceType.Replace('_', ' '));
+        }
+
+        return (defaultPrice, "BaseRate");
     }
 
     public async Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(
@@ -3381,5 +3444,219 @@ public class BookingService : BaseService<Booking>, IBookingService
             _apartmentRepository.Update(apartment);
             await _apartmentRepository.SaveChangesAsync();
         }
+    }
+
+    public async Task<OutstandingCheckTimeFeesResponseDto> GetOutstandingCheckTimeFeesAsync(Guid userId, Guid? requesterId = null, string? requesterRole = null)
+    {
+        // Authorization: tenants can only see their own fees; staff/admin can see any user's fees
+        if (!string.Equals(requesterRole, "staff", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(requesterRole, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!requesterId.HasValue || requesterId.Value != userId)
+            {
+                throw new InvalidOperationException("You are not authorized to view outstanding fees for this user.");
+            }
+        }
+
+        // Get all bookings for the user
+        var userBookings = await _bookingRepository.FindAsync(b => b.TenantId == userId);
+        var bookingIds = userBookings.Select(b => b.BookingId).ToList();
+
+        if (!bookingIds.Any())
+        {
+            return new OutstandingCheckTimeFeesResponseDto
+            {
+                UserId = userId,
+                TotalOutstandingFees = 0m,
+                TotalOutstandingCount = 0,
+                OverdueCount = 0,
+                DisputedCount = 0,
+                OutstandingFees = new()
+            };
+        }
+
+        // Get all check-time records for these bookings
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct => bookingIds.Contains(ct.BookingId));
+        var now = Common.Utils.VietnamTime.Now;
+
+        var outstandingFees = new List<OutstandingCheckTimeFeeItemDto>();
+        decimal totalOutstanding = 0m;
+        int overdueCount = 0;
+        int disputedCount = 0;
+
+        foreach (var checkTime in checkTimes)
+        {
+            var feeTotal = GetCheckTimeFeeTotal(checkTime);
+            var status = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+            
+            // Include if: not paid, not waived, and has fees
+            if (feeTotal > 0m && status != FeeSettlementStatusPaid && status != FeeSettlementStatusWaived)
+            {
+                var booking = userBookings.FirstOrDefault(b => b.BookingId == checkTime.BookingId);
+                if (booking == null) continue;
+
+                var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+                var isOverdue = IsFeeSettlementRequired(checkTime, now);
+                
+                if (isOverdue) overdueCount++;
+                if (string.Equals(status, FeeSettlementStatusDisputed, StringComparison.OrdinalIgnoreCase)) disputedCount++;
+
+                var feeItem = new OutstandingCheckTimeFeeItemDto
+                {
+                    BookingId = checkTime.BookingId,
+                    ApartmentId = booking.ApartmentId,
+                    ApartmentAddress = apartment?.Address,
+                    ScheduledCheckIn = checkTime.ScheduledCheckIn,
+                    ScheduledCheckOut = checkTime.ScheduledCheckOut,
+                    EarlyCheckInFee = checkTime.EarlyCheckInFee ?? 0m,
+                    LateCheckOutFee = checkTime.LateCheckOutFee ?? 0m,
+                    TotalFee = feeTotal,
+                    FeeSettlementStatus = status,
+                    FeeDueAt = checkTime.FeeDueAt,
+                    FeeSettledAt = checkTime.FeeSettledAt,
+                    IsOverdue = isOverdue,
+                    TenantDisputeReason = checkTime.TenantDisputeReason,
+                    DisputeResolutionStatus = checkTime.DisputeResolutionStatus
+                };
+
+                outstandingFees.Add(feeItem);
+                totalOutstanding += feeTotal;
+            }
+        }
+
+        // Sort by FeeDueAt (earliest first), nulls last
+        outstandingFees = outstandingFees
+            .OrderBy(f => f.FeeDueAt ?? DateTime.MaxValue)
+            .ToList();
+
+        return new OutstandingCheckTimeFeesResponseDto
+        {
+            UserId = userId,
+            TotalOutstandingFees = Math.Round(totalOutstanding, 2, MidpointRounding.AwayFromZero),
+            TotalOutstandingCount = outstandingFees.Count,
+            OverdueCount = overdueCount,
+            DisputedCount = disputedCount,
+            OutstandingFees = outstandingFees
+        };
+    }
+
+    public async Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null)
+    {
+        // Authorization: landlords can only see their own fees; staff/admin can see any landlord's fees
+        if (!string.Equals(requesterRole, "staff", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(requesterRole, "admin", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!requesterId.HasValue || requesterId.Value != landlordId)
+            {
+                throw new InvalidOperationException("You are not authorized to view outstanding fees for this landlord.");
+            }
+        }
+
+        // Get all apartments for the landlord
+        var apartments = await _apartmentRepository.FindAsync(a => a.LandlordId == landlordId);
+        var apartmentIds = apartments.Select(a => a.ApartmentId).ToList();
+
+        if (!apartmentIds.Any())
+        {
+            return new LandlordOutstandingCheckTimeFeesResponseDto
+            {
+                LandlordId = landlordId,
+                TotalOutstandingFees = 0m,
+                TotalOutstandingCount = 0,
+                OverdueCount = 0,
+                DisputedCount = 0,
+                UniqueTenantCount = 0,
+                OutstandingFees = new()
+            };
+        }
+
+        // Get all bookings for these apartments
+        var bookings = await _bookingRepository.FindAsync(b => apartmentIds.Contains(b.ApartmentId));
+        var bookingIds = bookings.Select(b => b.BookingId).ToList();
+
+        if (!bookingIds.Any())
+        {
+            return new LandlordOutstandingCheckTimeFeesResponseDto
+            {
+                LandlordId = landlordId,
+                TotalOutstandingFees = 0m,
+                TotalOutstandingCount = 0,
+                OverdueCount = 0,
+                DisputedCount = 0,
+                UniqueTenantCount = 0,
+                OutstandingFees = new()
+            };
+        }
+
+        // Get all check-time records for these bookings
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct => bookingIds.Contains(ct.BookingId));
+        var now = Common.Utils.VietnamTime.Now;
+
+        var outstandingFees = new List<OutstandingCheckTimeFeeByTenantDto>();
+        decimal totalOutstanding = 0m;
+        int overdueCount = 0;
+        int disputedCount = 0;
+        var uniqueTenants = new HashSet<Guid>();
+
+        foreach (var checkTime in checkTimes)
+        {
+            var feeTotal = GetCheckTimeFeeTotal(checkTime);
+            var status = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+            
+            // Include if: not paid, not waived, and has fees
+            if (feeTotal > 0m && status != FeeSettlementStatusPaid && status != FeeSettlementStatusWaived)
+            {
+                var booking = bookings.FirstOrDefault(b => b.BookingId == checkTime.BookingId);
+                if (booking == null) continue;
+
+                var apartment = apartments.FirstOrDefault(a => a.ApartmentId == booking.ApartmentId);
+                var tenant = await _userRepository.GetByIdAsync(booking.TenantId);
+                var isOverdue = IsFeeSettlementRequired(checkTime, now);
+                
+                if (isOverdue) overdueCount++;
+                if (string.Equals(status, FeeSettlementStatusDisputed, StringComparison.OrdinalIgnoreCase)) disputedCount++;
+
+                uniqueTenants.Add(booking.TenantId);
+
+                var feeItem = new OutstandingCheckTimeFeeByTenantDto
+                {
+                    BookingId = checkTime.BookingId,
+                    ApartmentId = booking.ApartmentId,
+                    ApartmentAddress = apartment?.Address,
+                    TenantId = booking.TenantId,
+                    TenantName = tenant?.FullName,
+                    ScheduledCheckIn = checkTime.ScheduledCheckIn,
+                    ScheduledCheckOut = checkTime.ScheduledCheckOut,
+                    EarlyCheckInFee = checkTime.EarlyCheckInFee ?? 0m,
+                    LateCheckOutFee = checkTime.LateCheckOutFee ?? 0m,
+                    TotalFee = feeTotal,
+                    FeeSettlementStatus = status,
+                    FeeDueAt = checkTime.FeeDueAt,
+                    FeeSettledAt = checkTime.FeeSettledAt,
+                    IsOverdue = isOverdue,
+                    TenantDisputeReason = checkTime.TenantDisputeReason,
+                    DisputeResolutionStatus = checkTime.DisputeResolutionStatus
+                };
+
+                outstandingFees.Add(feeItem);
+                totalOutstanding += feeTotal;
+            }
+        }
+
+        // Sort by FeeDueAt (earliest first), nulls last
+        outstandingFees = outstandingFees
+            .OrderBy(f => f.FeeDueAt ?? DateTime.MaxValue)
+            .ToList();
+
+        return new LandlordOutstandingCheckTimeFeesResponseDto
+        {
+            LandlordId = landlordId,
+            TotalOutstandingFees = Math.Round(totalOutstanding, 2, MidpointRounding.AwayFromZero),
+            TotalOutstandingCount = outstandingFees.Count,
+            OverdueCount = overdueCount,
+            DisputedCount = disputedCount,
+            UniqueTenantCount = uniqueTenants.Count,
+            OutstandingFees = outstandingFees
+        };
     }
 }

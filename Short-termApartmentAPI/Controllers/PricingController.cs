@@ -1,4 +1,5 @@
 using BLL.Services.Interfaces;
+using Common.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -12,16 +13,19 @@ using System.Threading.Tasks;
 public class PricingController : ControllerBase
 {
     private readonly IApartmentPriceCalendarService _pricingService;
+    private readonly IApartmentService _apartmentService;
     private readonly IAuthService _authService; // Used for dependency injection and checks
 
     public PricingController(
         IApartmentPriceCalendarService pricingService,
+        IApartmentService apartmentService,
         IAuthService authService)
     {
         _pricingService = pricingService;
+        _apartmentService = apartmentService;
         _authService = authService;
     }
-
+    
     [HttpGet]
     [Authorize]
     public async Task<ActionResult<IEnumerable<DailyPriceResolutionDto>>> GetCalendarPrices(
@@ -48,6 +52,31 @@ public class PricingController : ControllerBase
             Console.WriteLine($"Error in GetCalendarPrices: {ex}");
             return StatusCode(500, "An internal error occurred while resolving prices.");
         }
+    }
+
+    [HttpGet("price-changes")]
+    [Authorize]
+    public async Task<ActionResult<IEnumerable<ApartmentPriceChangeDto>>> GetPriceChanges(
+        [FromRoute] Guid apartmentId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new { message = "Invalid user token." });
+        }
+
+        if (!await _authService.IsUserOwnerOrManager(userId, apartmentId))
+        {
+            return Forbid("You do not have permission to view pricing for this apartment.");
+        }
+
+        var apartment = await _apartmentService.GetApartmentWithDetailsResponseAsync(apartmentId);
+        if (apartment == null)
+        {
+            return NotFound(new { message = "Apartment not found." });
+        }
+
+        return Ok(apartment.PriceChanges);
     }
 
     // ========================================================
