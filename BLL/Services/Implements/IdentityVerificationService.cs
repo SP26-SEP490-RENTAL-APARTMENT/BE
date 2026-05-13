@@ -275,6 +275,47 @@ namespace BLL.Services.Implements
                         ? (upload.Ocr.PassportNumber ?? upload.Ocr.IdNumber)
                         : upload.Ocr.IdNumber;
 
+                    if (!string.IsNullOrWhiteSpace(ocrIdNumber))
+                    {
+                        if (string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var normalizedPassport = NormalizePassportNumber(ocrIdNumber);
+                            if (!string.IsNullOrWhiteSpace(normalizedPassport))
+                            {
+                                var tenantsWithPassport = await _tenantRepository.FindAsync(t => !string.IsNullOrWhiteSpace(t.PassportId));
+                                if (tenantsWithPassport.Any(t => string.Equals(NormalizePassportNumber(t.PassportId), normalizedPassport, StringComparison.Ordinal) && t.TenantId != userId))
+                                {
+                                    throw new ArgumentException("Passport number is already in use by another account.");
+                                }
+
+                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
+                                if (existingOcrs.Any(r => string.Equals(NormalizePassportNumber(r.IdNumber), normalizedPassport, StringComparison.Ordinal)))
+                                {
+                                    // If OCR record exists, reject to avoid duplicate identity across accounts.
+                                    throw new ArgumentException("Passport number is already in use by another account.");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var normalizedId = NormalizeIdNumber(ocrIdNumber);
+                            if (!string.IsNullOrWhiteSpace(normalizedId))
+                            {
+                                var usersWithId = await _userRepository.FindAsync(u => !string.IsNullOrWhiteSpace(u.NationalIdCardNumber));
+                                if (usersWithId.Any(u => string.Equals(NormalizeIdNumber(u.NationalIdCardNumber), normalizedId, StringComparison.Ordinal) && u.UserId != userId))
+                                {
+                                    throw new ArgumentException("National ID number is already in use by another account.");
+                                }
+
+                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
+                                if (existingOcrs.Any(r => string.Equals(NormalizeIdNumber(r.IdNumber), normalizedId, StringComparison.Ordinal)))
+                                {
+                                    throw new ArgumentException("National ID number is already in use by another account.");
+                                }
+                            }
+                        }
+                    }
+
                     var ocrResult = new IdentityDocumentOcrResult
                     {
                         OcrResultId = Guid.NewGuid(),
@@ -388,6 +429,27 @@ namespace BLL.Services.Implements
 
             if (dto.Approved)
             {
+                // Prevent approving identity for users under 18 based on profile or OCR data.
+                DateOnly? effectiveDob = null;
+                if (user.Birthday != null)
+                {
+                    effectiveDob = user.Birthday.Value;
+                }
+                else
+                {
+                    var ocrResults = await _identityDocumentOcrResultRepository.FindAsync(r => r.DocumentId == document.DocumentId);
+                    var latest = ocrResults.OrderByDescending(x => x.ProcessedAt ?? DateTime.MinValue).FirstOrDefault();
+                    if (latest != null && !string.IsNullOrWhiteSpace(latest.DateOfBirthRaw))
+                    {
+                        effectiveDob = TryParseDateOnly(latest.DateOfBirthRaw);
+                    }
+                }
+
+                if (effectiveDob.HasValue && IsUnderage(effectiveDob.Value))
+                {
+                    throw new InvalidOperationException("Users under 18 cannot be identity verified.");
+                }
+
                 document.VerificationStatus = "verified";
                 document.VerifiedAt = Common.Utils.VietnamTime.Now;
                 document.RejectionReason = null;
@@ -642,6 +704,11 @@ namespace BLL.Services.Implements
                 return "Date of birth on ID does not match your profile.";
             }
 
+            if (IsUnderage(ocrBirthday.Value))
+            {
+                return "User must be at least 18 years old to verify identity.";
+            }
+
             if (front.OverallConfidence < _fptIdRecognitionOptions.AutoApproveConfidenceThreshold)
             {
                 return $"OCR confidence is below required threshold {_fptIdRecognitionOptions.AutoApproveConfidenceThreshold:0.00}.";
@@ -712,6 +779,11 @@ namespace BLL.Services.Implements
                 {
                     return "Date of birth on passport does not match your profile.";
                 }
+            }
+
+            if (passportBirthday.HasValue && IsUnderage(passportBirthday.Value))
+            {
+                return "User must be at least 18 years old to verify identity.";
             }
 
             if (passport.OverallConfidence < _fptIdRecognitionOptions.AutoApproveConfidenceThreshold)
@@ -900,6 +972,13 @@ namespace BLL.Services.Implements
             return DateOnly.TryParse(normalized, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
                 ? date
                 : null;
+        }
+
+        private static bool IsUnderage(DateOnly birthDate)
+        {
+            var today = Common.Utils.VietnamTime.Today;
+            var cutoff = today.AddYears(-18);
+            return birthDate > cutoff;
         }
 
         private sealed class IdentityUploadCandidate

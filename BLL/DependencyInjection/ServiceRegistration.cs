@@ -39,6 +39,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<IRoomService, RoomService>();
             services.AddScoped<ISmartPricingHistoryService, SmartPricingHistoryService>();
+            services.AddScoped<IPricingPolicyService, PricingPolicyService>();
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<ISupportTicketService, SupportTicketService>();
             services.AddScoped<ISubscriptionPlanService, SubscriptionPlanService>();

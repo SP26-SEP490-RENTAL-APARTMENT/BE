@@ -37,6 +37,8 @@ public partial class AppDbContext : DbContext
 
     public virtual DbSet<ApartmentPriceCalendar> ApartmentPriceCalendars { get; set; }
 
+    public virtual DbSet<ApartmentPricingPolicyApplication> ApartmentPricingPolicyApplications { get; set; }
+
     public virtual DbSet<Booking> Bookings { get; set; }
 
     public virtual DbSet<BookingOffer> BookingOffers { get; set; }
@@ -66,6 +68,10 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<PackageItem> PackageItems { get; set; }
 
     public virtual DbSet<PackagePackage> PackagePackages { get; set; }
+
+    public virtual DbSet<PricingRuleTemplate> PricingRuleTemplates { get; set; }
+
+    public virtual DbSet<PricingRuleTemplateParameter> PricingRuleTemplateParameters { get; set; }
 
     public virtual DbSet<Payment> Payments { get; set; }
 
@@ -351,7 +357,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnName("min_nights");
             entity.Property(e => e.PriceType)
                 .HasDefaultValueSql("'base'")
-                .HasColumnType("enum('base','weekend','holiday','peak_season','low_season','special_event','manual_override')")
+                .HasColumnType("enum('base','weekend','holiday','peak_season','low_season','special_event','manual_override','pricing_policy')")
                 .HasColumnName("price_type");
             entity.Property(e => e.StartDate).HasColumnName("start_date");
             entity.Property(e => e.UpdatedAt)
@@ -362,6 +368,115 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Apartment).WithMany(p => p.ApartmentPriceCalendars)
                 .HasForeignKey(d => d.ApartmentId)
                 .HasConstraintName("apartment_price_calendar_ibfk_1");
+        });
+
+        modelBuilder.Entity<ApartmentPricingPolicyApplication>(entity =>
+        {
+            entity.HasKey(e => e.ApplicationId).HasName("PRIMARY");
+
+            entity.ToTable("apartment_pricing_policy_applications");
+
+            entity.HasIndex(e => new { e.ApartmentId, e.TemplateId, e.StartDate, e.EndDate }, "uk_apartment_policy_range").IsUnique();
+
+            entity.HasIndex(e => e.TemplateId, "idx_template");
+
+            entity.Property(e => e.ApplicationId).HasColumnName("application_id");
+            entity.Property(e => e.ApartmentId).HasColumnName("apartment_id");
+            entity.Property(e => e.TemplateId).HasColumnName("template_id");
+            entity.Property(e => e.StartDate).HasColumnName("start_date");
+            entity.Property(e => e.EndDate).HasColumnName("end_date");
+            entity.Property(e => e.IsEnabled)
+                .HasDefaultValueSql("'1'")
+                .HasColumnName("is_enabled");
+            entity.Property(e => e.OverridesJson)
+                .HasColumnType("json")
+                .HasColumnName("overrides_json");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Apartment).WithMany()
+                .HasForeignKey(d => d.ApartmentId)
+                .HasConstraintName("apartment_pricing_policy_applications_ibfk_1");
+
+            entity.HasOne(d => d.Template).WithMany()
+                .HasForeignKey(d => d.TemplateId)
+                .HasConstraintName("apartment_pricing_policy_applications_ibfk_2");
+        });
+
+        modelBuilder.Entity<PricingRuleTemplate>(entity =>
+        {
+            entity.HasKey(e => e.TemplateId).HasName("PRIMARY");
+
+            entity.ToTable("pricing_rule_templates");
+
+            entity.HasIndex(e => e.Code, "uk_code").IsUnique();
+
+            entity.Property(e => e.TemplateId).HasColumnName("template_id");
+            entity.Property(e => e.CreatedByAdminId).HasColumnName("created_by_admin_id");
+            entity.Property(e => e.Name)
+                .HasMaxLength(200)
+                .HasColumnName("name");
+            entity.Property(e => e.Code)
+                .HasMaxLength(100)
+                .HasColumnName("code");
+            entity.Property(e => e.Description)
+                .HasColumnType("text")
+                .HasColumnName("description");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValueSql("'1'")
+                .HasColumnName("is_active");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<PricingRuleTemplateParameter>(entity =>
+        {
+            entity.HasKey(e => e.ParameterId).HasName("PRIMARY");
+
+            entity.ToTable("pricing_rule_template_parameters");
+
+            entity.HasIndex(e => new { e.TemplateId, e.ParameterKey }, "uk_template_parameter").IsUnique();
+
+            entity.Property(e => e.ParameterId).HasColumnName("parameter_id");
+            entity.Property(e => e.TemplateId).HasColumnName("template_id");
+            entity.Property(e => e.ParameterKey)
+                .HasMaxLength(100)
+                .HasColumnName("parameter_key");
+            entity.Property(e => e.DisplayName)
+                .HasMaxLength(200)
+                .HasColumnName("display_name");
+            entity.Property(e => e.DefaultValue)
+                .HasPrecision(12, 4)
+                .HasColumnName("default_value");
+            entity.Property(e => e.MinValue)
+                .HasPrecision(12, 4)
+                .HasColumnName("min_value");
+            entity.Property(e => e.MaxValue)
+                .HasPrecision(12, 4)
+                .HasColumnName("max_value");
+            entity.Property(e => e.IsAdjustable)
+                .HasDefaultValueSql("'1'")
+                .HasColumnName("is_adjustable");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Template).WithMany(p => p.Parameters)
+                .HasForeignKey(d => d.TemplateId)
+                .HasConstraintName("pricing_rule_template_parameters_ibfk_1");
         });
 
         modelBuilder.Entity<Booking>(entity =>
