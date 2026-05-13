@@ -12,15 +12,23 @@ public partial class LandlordPayout
 
     public long NetAmount { get; set; }
 
-    public string Channel { get; set; } = null!;
+    public string? Channel { get; set; } 
 
-    public string Status { get; set; } = null!;
+    public string? Status { get; set; } 
 
-    public string MomoOrderId { get; set; } = null!;
+    public string? MomoOrderId { get; set; } 
 
-    public string MomoRequestId { get; set; } = null!;
+    public string? MomoRequestId { get; set; } 
 
     public string? MomoTransId { get; set; }
+
+    // Provider-neutral fields for multi-provider support
+    public string? ProviderName { get; set; }
+    public string? ProviderPayoutId { get; set; }
+    public string? ProviderRequestId { get; set; }
+    public string? ProviderTransId { get; set; }
+    public string? ProviderRequestBody { get; set; }
+    public string? ProviderResponseBody { get; set; }
 
     public int? ResultCode { get; set; }
 

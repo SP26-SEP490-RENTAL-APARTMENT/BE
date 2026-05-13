@@ -24,6 +24,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IHolidaysEventService, HolidaysEventService>();
             services.AddScoped<IInspectionPhotoService, InspectionPhotoService>();
             services.AddScoped<ILandlordService, LandlordService>();
+            services.AddScoped<IPayOSPayoutService, PayOSPayoutService>();
             services.AddScoped<ILandlordSubscriptionService, LandlordSubscriptionService>();
             services.AddScoped<IImageService, ImageService>();
             services.AddScoped<IIdentityDocumentUploadService, IdentityDocumentUploadService>();

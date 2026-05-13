@@ -12,6 +12,7 @@ using MoMoApi;
 using Short_termApartmentAPI.Services;
 using Short_termApartmentAPI.Hubs;
 using Short_termApartmentAPI.Middlewares;
+using PayOS;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -118,6 +119,44 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddBLLDependencies(builder.Configuration);
 
+// Register PayOS client for payouts (used by BLL PayOS payout service)
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+
+    var clientIdFromConfig = config["PayOS:PayoutClientId"];
+    var apiKeyFromConfig = config["PayOS:PayoutApiKey"];
+    var checksumFromConfig = config["PayOS:PayoutChecksumKey"];
+
+    var clientId = clientIdFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_PAYOUT_CLIENT_ID");
+    var apiKey = apiKeyFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_PAYOUT_API_KEY");
+    var checksumKey = checksumFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_PAYOUT_CHECKSUM_KEY");
+
+    static string Mask(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "<empty>";
+        if (value.Length <= 8) return new string('*', value.Length);
+        return $"{value[..4]}...{value[^4..]}";
+    }
+
+    logger.LogInformation(
+        "PayOS payout credentials loaded. Source: ClientId={ClientIdSource}, ApiKey={ApiKeySource}, ChecksumKey={ChecksumSource}. Values: ClientId={ClientId}, ApiKey={ApiKey}, ChecksumKey={ChecksumKey}",
+        clientIdFromConfig != null ? "appsettings" : "env",
+        apiKeyFromConfig != null ? "appsettings" : "env",
+        checksumFromConfig != null ? "appsettings" : "env",
+        Mask(clientId),
+        Mask(apiKey),
+        Mask(checksumKey));
+
+    return new PayOSClient(new PayOSOptions
+    {
+        ClientId = clientId,
+        ApiKey = apiKey,
+        ChecksumKey = checksumKey,
+        LogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
+    });
+});
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy", policy =>

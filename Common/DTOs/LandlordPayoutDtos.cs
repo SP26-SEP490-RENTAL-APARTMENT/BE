@@ -80,7 +80,15 @@ public class CreateLandlordPayoutRequestDto
 
     [Required]
     [MaxLength(20)]
-    public string Channel { get; set; } = "wallet"; // wallet|bank
+    public string Channel { get; set; } = "bank"; // bank
+
+    [Required]
+    [MaxLength(10)]
+    public string ToBin { get; set; } = string.Empty; // Bank code or wallet code
+
+    [Required]
+    [MaxLength(50)]
+    public string ToAccountNumber { get; set; } = string.Empty; // Bank account, card, or wallet number
 
     [MaxLength(200)]
     public string? OrderInfo { get; set; }
@@ -90,14 +98,7 @@ public class LandlordPayoutResponseDto
 {
     public Guid PayoutId { get; set; }
     public long Amount { get; set; }
-    public long FeeAmount { get; set; }
-    public long NetAmount { get; set; }
-    public string Channel { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
-    public string MomoOrderId { get; set; } = string.Empty;
-    public string MomoRequestId { get; set; } = string.Empty;
-    public string? MomoTransId { get; set; }
-    public int? ResultCode { get; set; }
     public string? Message { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

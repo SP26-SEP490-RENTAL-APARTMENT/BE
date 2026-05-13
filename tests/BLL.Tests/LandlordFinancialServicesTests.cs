@@ -30,26 +30,31 @@ public class LandlordPayoutServiceTests
         });
 
         var payoutRepo = new InMemoryRepository<LandlordPayout>(p => p.PayoutId);
-        var momoService = new FakeMomoService
+        var payosService = new FakePayOSPayoutService
         {
-            CreateDisbursementResult = new MomoDisbursementResponse
-            {
-                ResultCode = 0,
-                Message = "Success",
-                OrderId = "ORD-1",
-                RequestId = "REQ-1",
-                TransId = "TRX-1",
-                Amount = 1500,
-                RequestRaw = "{}",
-                ResponseRaw = "{}"
-            }
+            CreateBankPayoutResult = new PayOSPayoutResult(
+                ResultCode: 0,
+                PayoutId: "PAYOUT-1",
+                Message: "Success",
+                RequestRaw: "{}",
+                ResponseRaw: "{}",
+                TransId: "TRX-1"
+            )
         };
 
         var walletService = new RecordingWalletService();
         var momoTransactionService = new InMemoryMomoTransactionService();
+        var momoService = new FakeMomoService();
 
-        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService);
-        var request = new CreateLandlordPayoutRequestDto { Amount = 1500, Channel = "wallet", OrderInfo = "payout" };
+        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
+        var request = new CreateLandlordPayoutRequestDto 
+        { 
+            Amount = 1500, 
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = "1234567890",
+            OrderInfo = "payout" 
+        };
 
         var result = await sut.CreatePayoutAsync(landlordId, request, CancellationToken.None);
 
@@ -59,8 +64,6 @@ public class LandlordPayoutServiceTests
         Assert.Single(walletService.FinalizedAmounts);
         Assert.Empty(walletService.RolledBackAmounts);
         Assert.Single(payoutRepo.Items);
-        Assert.Single(momoTransactionService.Items);
-        Assert.Equal("success", momoTransactionService.Items[0].Status);
     }
 
     [Fact]
@@ -75,25 +78,31 @@ public class LandlordPayoutServiceTests
         });
 
         var payoutRepo = new InMemoryRepository<LandlordPayout>(p => p.PayoutId);
-        var momoService = new FakeMomoService
+        var payosService = new FakePayOSPayoutService
         {
-            CreateDisbursementResult = new MomoDisbursementResponse
-            {
-                ResultCode = 42,
-                Message = "Failure",
-                OrderId = "ORD-2",
-                RequestId = "REQ-2",
-                Amount = 1500,
-                RequestRaw = "{}",
-                ResponseRaw = "{}"
-            }
+            CreateBankPayoutResult = new PayOSPayoutResult(
+                ResultCode: 42,
+                PayoutId: null,
+                Message: "Failure",
+                RequestRaw: "{}",
+                ResponseRaw: "{}",
+                TransId: null
+            )
         };
 
         var walletService = new RecordingWalletService();
         var momoTransactionService = new InMemoryMomoTransactionService();
+        var momoService = new FakeMomoService();
 
-        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService);
-        var request = new CreateLandlordPayoutRequestDto { Amount = 1500, Channel = "wallet", OrderInfo = "payout" };
+        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
+        var request = new CreateLandlordPayoutRequestDto 
+        { 
+            Amount = 1500, 
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = "1234567890",
+            OrderInfo = "payout" 
+        };
 
         var result = await sut.CreatePayoutAsync(landlordId, request, CancellationToken.None);
 
@@ -102,8 +111,6 @@ public class LandlordPayoutServiceTests
         Assert.Empty(walletService.FinalizedAmounts);
         Assert.Single(walletService.RolledBackAmounts);
         Assert.Single(payoutRepo.Items);
-        Assert.Single(momoTransactionService.Items);
-        Assert.Equal("failed", momoTransactionService.Items[0].Status);
     }
 
     [Fact]
@@ -144,7 +151,7 @@ public class LandlordPayoutServiceTests
         var walletService = new RecordingWalletService();
         var momoTransactionService = new InMemoryMomoTransactionService();
 
-        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService);
+        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, new BLL.Services.Implements.PayOSPayoutService());
 
         var updated = await sut.SyncProcessingPayoutsAsync(CancellationToken.None);
 
@@ -193,7 +200,7 @@ public class LandlordPayoutServiceTests
         var walletService = new RecordingWalletService();
         var momoTransactionService = new InMemoryMomoTransactionService();
 
-        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService);
+        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, new BLL.Services.Implements.PayOSPayoutService());
 
         var updated = await sut.SyncProcessingPayoutsAsync(CancellationToken.None);
 
@@ -628,19 +635,20 @@ public class LandlordPayoutValidationTests
             landlord: new Landlord
             {
                 LandlordId = landlordId,
-                PayoutReceiverName = "Landlord",
-                MomoWalletPhone = "0900000001"
+                PayoutReceiverName = "Landlord"
             });
 
         var request = new CreateLandlordPayoutRequestDto
         {
             Amount = 0,
-            Channel = "wallet"
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = "1234567890"
         };
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
 
-        Assert.Contains("Amount must be greater than zero", ex.Message);
+        Assert.Contains("Amount must be between 1000 and 200,000,000", ex.Message);
     }
 
     [Fact]
@@ -651,7 +659,9 @@ public class LandlordPayoutValidationTests
         var request = new CreateLandlordPayoutRequestDto
         {
             Amount = 1500,
-            Channel = "wallet"
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = "1234567890"
         };
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(Guid.NewGuid(), request, CancellationToken.None));
@@ -660,28 +670,51 @@ public class LandlordPayoutValidationTests
     }
 
     [Fact]
-    public async Task CreatePayoutAsync_ThrowsWhenBankProfileIsIncomplete()
+    public async Task CreatePayoutAsync_ThrowsWhenToBinIsMissing()
     {
         var landlordId = Guid.NewGuid();
         var sut = FinancialTestHelpers.CreatePayoutService(
             landlord: new Landlord
             {
                 LandlordId = landlordId,
-                PayoutReceiverName = "Landlord",
-                PayoutBankAccountNo = null,
-                PayoutBankCardNo = null,
-                PayoutBankCode = null
+                PayoutReceiverName = "Landlord"
             });
 
         var request = new CreateLandlordPayoutRequestDto
         {
             Amount = 10000,
-            Channel = "bank"
+            Channel = "bank",
+            ToBin = string.Empty,
+            ToAccountNumber = "1234567890"
         };
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
 
-        Assert.Contains("Bank payout profile is incomplete", ex.Message);
+        Assert.Contains("ToBin (bank code) is required", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreatePayoutAsync_ThrowsWhenToAccountNumberIsMissing()
+    {
+        var landlordId = Guid.NewGuid();
+        var sut = FinancialTestHelpers.CreatePayoutService(
+            landlord: new Landlord
+            {
+                LandlordId = landlordId,
+                PayoutReceiverName = "Landlord"
+            });
+
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 10000,
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = string.Empty
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
+
+        Assert.Contains("ToAccountNumber is required", ex.Message);
     }
 }
 
@@ -748,8 +781,9 @@ internal static class FinancialTestHelpers
         var momoService = new FakeMomoService();
         var walletService = new RecordingWalletService();
         var momoTransactionService = new InMemoryMomoTransactionService();
+        var payosService = new FakePayOSPayoutService();
 
-        return new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService);
+        return new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
     }
 
     public static Apartment CreateApartment(Guid apartmentId, string status = "posted", string? bookingStatus = null)
@@ -1046,6 +1080,37 @@ internal sealed class FakeMomoService : IMomoService
     public bool ValidateDisbursementIpnSignature(string requestBody)
     {
         throw new NotImplementedException();
+    }
+}
+
+internal sealed class FakePayOSPayoutService : IPayOSPayoutService
+{
+    public PayOSPayoutResult CreateBankPayoutResult { get; set; } = new(
+        ResultCode: 0,
+        PayoutId: "PAYOUT-1",
+        Message: "Success",
+        RequestRaw: "{}",
+        ResponseRaw: "{}",
+        TransId: "TRX-1"
+    );
+
+    public PayOSPayoutResult QueryBankPayoutResult { get; set; } = new(
+        ResultCode: 0,
+        PayoutId: "PAYOUT-1",
+        Message: "Success",
+        RequestRaw: "{}",
+        ResponseRaw: "{}",
+        TransId: "TRX-1"
+    );
+
+    public Task<PayOSPayoutResult> CreateBankPayoutAsync(string receiverName, string accountOrCard, string bankCode, long amount, string reference, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(CreateBankPayoutResult);
+    }
+
+    public Task<PayOSPayoutResult> QueryBankPayoutStatusAsync(string payoutId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(QueryBankPayoutResult);
     }
 }
 

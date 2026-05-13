@@ -966,6 +966,20 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.MomoTransId)
                 .HasMaxLength(120)
                 .HasColumnName("momo_trans_id");
+            entity.Property(e => e.ProviderName)
+                .HasMaxLength(80)
+                .HasColumnName("provider_name");
+            entity.Property(e => e.ProviderPayoutId)
+                .HasMaxLength(120)
+                .HasColumnName("provider_payout_id");
+            entity.Property(e => e.ProviderRequestId)
+                .HasMaxLength(120)
+                .HasColumnName("provider_request_id");
+            entity.Property(e => e.ProviderTransId)
+                .HasMaxLength(120)
+                .HasColumnName("provider_trans_id");
+            entity.Property(e => e.ProviderRequestBody).HasColumnName("provider_request_body");
+            entity.Property(e => e.ProviderResponseBody).HasColumnName("provider_response_body");
             entity.Property(e => e.NetAmount).HasColumnName("net_amount");
             entity.Property(e => e.RequestBody).HasColumnName("request_body");
             entity.Property(e => e.ResponseBody).HasColumnName("response_body");
