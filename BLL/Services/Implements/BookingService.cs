@@ -47,6 +47,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
     private readonly IMapper _mapper;
+    private readonly ICheckTimeRequestRepository? _checkTimeRequestRepository;
 
     public BookingService(
         IBookingRepository repository,
@@ -68,7 +69,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         ILandlordWalletService landlordWalletService,
         IConfiguration configuration,
         IMapper mapper,
-            IRepository<BookingOccupant>? bookingOccupantRepository = null) : base(repository)
+        IRepository<BookingOccupant>? bookingOccupantRepository = null,
+        ICheckTimeRequestRepository? checkTimeRequestRepository = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -90,6 +92,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _configuration = configuration;
         _mapper = mapper;
         _bookingOccupantRepository = bookingOccupantRepository;
+        _checkTimeRequestRepository = checkTimeRequestRepository;
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -394,6 +397,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     {
         await _identityVerificationService.EnsureUserVerifiedForBookingAsync(tenantId);
         await EnsureTenantHasNoOutstandingCheckTimeFeesAsync(tenantId);
+        await EnsureTenantHasNoPendingCheckTimeRequestsAsync(tenantId);
 
         var (checkInDate, checkOutDate, checkInDateTime, checkOutDateTime, nights) = ResolveBookingWindow(
             requestDto.CheckInDate,
@@ -1083,7 +1087,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             : tenant.PassportId!;
 
         var existingReport = (await _temporaryResidenceReportRepository.FindAsync(r => r.BookingId == bookingId)).FirstOrDefault();
-        
+
         if (existingReport != null)
             throw new InvalidOperationException("Residence report has already been submitted for this booking.");
 
@@ -2215,6 +2219,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException($"Fee settlement status must be 'due' to submit payment confirmation. Current status: {currentStatus}");
         }
 
+        var now = Common.Utils.VietnamTime.Now;
         // Store payment evidence in FeeSettlementNotes
         var paymentEvidence = $"[LANDLORD SUBMITTED PAYMENT] Amount: Date: {dto.PaymentDate:yyyy-MM-dd HH:mm:ss}";
 
@@ -2223,9 +2228,12 @@ public class BookingService : BaseService<Booking>, IBookingService
             paymentEvidence += $", Notes: {dto.Notes}";
         }
 
-        checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
+        checkTime.FeeSettlementStatus = FeeSettlementStatusPaid;
+        checkTime.FeeSettledAt = now;
+        checkTime.FeeDueAt = null;
         checkTime.FeeSettlementNotes = paymentEvidence;
-        checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
+        checkTime.TenantResponseStatus = "confirmed";
+        checkTime.UpdatedAt = now;
 
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
@@ -2235,7 +2243,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             apartment.LandlordId,
             NotificationType.system_announcement.ToString(),
             "Payment Confirmation Submitted",
-            $"Your payment confirmation for booking {booking.BookingId} has been submitted and is awaiting staff verification.",
+            $"Your payment confirmation for booking {booking.BookingId} has been submitted.",
             booking.BookingId);
 
         return await GetCheckTimeDetailsAsync(bookingId, landlordId);
@@ -2263,6 +2271,34 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var totalOutstanding = outstandingFees.Sum(GetCheckTimeFeeTotal);
         throw new InvalidOperationException($"You have unpaid check-time fees totaling {totalOutstanding:0.00}. Please settle them before creating a new booking.");
+    }
+
+    private async Task EnsureTenantHasNoPendingCheckTimeRequestsAsync(Guid tenantId)
+    {
+        if (_checkTimeRequestRepository == null)
+        {
+            return; // CheckTimeRequest feature not enabled
+        }
+
+        var bookings = await _bookingRepository.FindAsync(b => b.TenantId == tenantId);
+        var bookingIds = bookings.Select(b => b.BookingId).ToList();
+
+        if (!bookingIds.Any())
+        {
+            return;
+        }
+
+        // Check if any booking has pending or counter-offered check-time requests
+        foreach (var bookingId in bookingIds)
+        {
+            var hasPending = await _checkTimeRequestRepository.HasPendingOrCounterOfferAsync(bookingId, "EarlyCheckIn") ||
+                             await _checkTimeRequestRepository.HasPendingOrCounterOfferAsync(bookingId, "LateCheckOut");
+
+            if (hasPending)
+            {
+                throw new InvalidOperationException("You have pending check-time requests that must be resolved before creating a new booking.");
+            }
+        }
     }
 
     private static decimal GetCheckTimeFeeTotal(BookingCheckTime checkTime)
@@ -3488,7 +3524,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             var feeTotal = GetCheckTimeFeeTotal(checkTime);
             var status = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
-            
+
             // Include if: not paid, not waived, and has fees
             if (feeTotal > 0m && status != FeeSettlementStatusPaid && status != FeeSettlementStatusWaived)
             {
@@ -3497,7 +3533,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
                 var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
                 var isOverdue = IsFeeSettlementRequired(checkTime, now);
-                
+
                 if (isOverdue) overdueCount++;
                 if (string.Equals(status, FeeSettlementStatusDisputed, StringComparison.OrdinalIgnoreCase)) disputedCount++;
 
@@ -3602,7 +3638,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             var feeTotal = GetCheckTimeFeeTotal(checkTime);
             var status = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
-            
+
             // Include if: not paid, not waived, and has fees
             if (feeTotal > 0m && status != FeeSettlementStatusPaid && status != FeeSettlementStatusWaived)
             {
@@ -3612,7 +3648,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                 var apartment = apartments.FirstOrDefault(a => a.ApartmentId == booking.ApartmentId);
                 var tenant = await _userRepository.GetByIdAsync(booking.TenantId);
                 var isOverdue = IsFeeSettlementRequired(checkTime, now);
-                
+
                 if (isOverdue) overdueCount++;
                 if (string.Equals(status, FeeSettlementStatusDisputed, StringComparison.OrdinalIgnoreCase)) disputedCount++;
 

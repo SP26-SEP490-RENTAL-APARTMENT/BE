@@ -2023,9 +2023,58 @@ public partial class AppDbContext : DbContext
 
         modelBuilder.Entity<CheckTimeRequest>(entity =>
         {
-            entity.Property(e => e.Id).HasColumnType("char(36)");
-            entity.Property(e => e.BookingId).HasColumnType("char(36)");
-            entity.Property(e => e.ProcessedById).HasColumnType("char(36)");
+            entity.HasKey(e => e.Id).HasName("PRIMARY");
+
+            entity.ToTable("check_time_requests");
+
+            entity.Property(e => e.Id)
+                .HasColumnType("char(36)")
+                .HasColumnName("check_time_request_id")
+                .HasDefaultValueSql("(UUID())");
+            entity.Property(e => e.BookingId)
+                .HasColumnType("char(36)")
+                .HasColumnName("booking_id");
+            entity.Property(e => e.RequestType)
+                .HasMaxLength(50)
+                .HasColumnName("request_type");
+            entity.Property(e => e.RequestedTime)
+                .HasColumnType("datetime(6)")
+                .HasColumnName("requested_time");
+            entity.Property(e => e.CounterOfferedTime)
+                .HasColumnType("datetime(6)")
+                .HasColumnName("counter_offered_time");
+            entity.Property(e => e.CounterOfferedFee)
+                .HasPrecision(18, 2)
+                .HasColumnName("counter_offered_fee");
+            entity.Property(e => e.AgreedTime)
+                .HasColumnType("datetime(6)")
+                .HasColumnName("agreed_time");
+            entity.Property(e => e.AgreedFee)
+                .HasPrecision(18, 2)
+                .HasColumnName("agreed_fee");
+            entity.Property(e => e.Status)
+                .HasMaxLength(50)
+                .HasColumnName("request_status")
+                .HasDefaultValue("Pending");
+            entity.Property(e => e.GuestReason)
+                .HasMaxLength(500)
+                .HasColumnName("guest_reason");
+            entity.Property(e => e.HostResponse)
+                .HasMaxLength(500)
+                .HasColumnName("host_response");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("datetime(6)")
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("CURRENT_TIMESTAMP(6)");
+            entity.Property(e => e.ExpiresAt)
+                .HasColumnType("datetime(6)")
+                .HasColumnName("expires_at");
+            entity.Property(e => e.ProcessedAt)
+                .HasColumnType("datetime(6)")
+                .HasColumnName("processed_at");
+            entity.Property(e => e.ProcessedById)
+                .HasColumnType("char(36)")
+                .HasColumnName("processed_by_id");
 
             entity.HasOne(e => e.Booking)
                 .WithMany()

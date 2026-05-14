@@ -960,7 +960,7 @@ namespace Short_termApartmentAPI.Controllers
             try
             {
                 var checkTimeResponse = await _bookingService.SubmitPaymentConfirmationAsync(id, landlordId, dto);
-                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Payment confirmation submitted successfully and is awaiting staff verification."));
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Payment confirmation submitted successfully."));
             }
             catch (KeyNotFoundException ex)
             {
