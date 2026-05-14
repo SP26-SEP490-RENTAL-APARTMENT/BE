@@ -47,6 +47,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
     private readonly IMapper _mapper;
+    private readonly ICheckTimeRequestRepository? _checkTimeRequestRepository;
 
     public BookingService(
         IBookingRepository repository,
@@ -68,7 +69,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         ILandlordWalletService landlordWalletService,
         IConfiguration configuration,
         IMapper mapper,
-            IRepository<BookingOccupant>? bookingOccupantRepository = null) : base(repository)
+        IRepository<BookingOccupant>? bookingOccupantRepository = null,
+        ICheckTimeRequestRepository? checkTimeRequestRepository = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -90,6 +92,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _configuration = configuration;
         _mapper = mapper;
         _bookingOccupantRepository = bookingOccupantRepository;
+        _checkTimeRequestRepository = checkTimeRequestRepository;
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -394,6 +397,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     {
         await _identityVerificationService.EnsureUserVerifiedForBookingAsync(tenantId);
         await EnsureTenantHasNoOutstandingCheckTimeFeesAsync(tenantId);
+        await EnsureTenantHasNoPendingCheckTimeRequestsAsync(tenantId);
 
         var (checkInDate, checkOutDate, checkInDateTime, checkOutDateTime, nights) = ResolveBookingWindow(
             requestDto.CheckInDate,
@@ -2263,6 +2267,34 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var totalOutstanding = outstandingFees.Sum(GetCheckTimeFeeTotal);
         throw new InvalidOperationException($"You have unpaid check-time fees totaling {totalOutstanding:0.00}. Please settle them before creating a new booking.");
+    }
+
+    private async Task EnsureTenantHasNoPendingCheckTimeRequestsAsync(Guid tenantId)
+    {
+        if (_checkTimeRequestRepository == null)
+        {
+            return; // CheckTimeRequest feature not enabled
+        }
+
+        var bookings = await _bookingRepository.FindAsync(b => b.TenantId == tenantId);
+        var bookingIds = bookings.Select(b => b.BookingId).ToList();
+        
+        if (!bookingIds.Any())
+        {
+            return;
+        }
+
+        // Check if any booking has pending or counter-offered check-time requests
+        foreach (var bookingId in bookingIds)
+        {
+            var hasPending = await _checkTimeRequestRepository.HasPendingOrCounterOfferAsync(bookingId, "EarlyCheckIn") ||
+                             await _checkTimeRequestRepository.HasPendingOrCounterOfferAsync(bookingId, "LateCheckOut");
+            
+            if (hasPending)
+            {
+                throw new InvalidOperationException("You have pending check-time requests that must be resolved before creating a new booking.");
+            }
+        }
     }
 
     private static decimal GetCheckTimeFeeTotal(BookingCheckTime checkTime)
