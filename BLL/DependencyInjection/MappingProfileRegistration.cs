@@ -23,6 +23,7 @@ namespace BLL.DependencyInjection
             services.AddAutoMapper(cfg => cfg.AddProfile<PaymentProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<WishlistProfile>());
             services.AddAutoMapper(cfg => cfg.AddProfile<SmartPricingHistoryProfile>());
+            services.AddAutoMapper(cfg => cfg.AddProfile<CheckTimeRequestProfile>());
             return services;
         }
     }

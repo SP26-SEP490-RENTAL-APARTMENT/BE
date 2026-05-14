@@ -114,6 +114,7 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<GeneratedReport> GeneratedReports { get; set; }
 
     public virtual DbSet<LandlordWallet> LandlordWallets { get; set; } = null!;
+    public virtual DbSet<CheckTimeRequest> CheckTimeRequests { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -2019,6 +2020,19 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.UploadedBy)
                 .HasConstraintName("support_ticket_attachments_ibfk_2");
         });
+
+        modelBuilder.Entity<CheckTimeRequest>(entity =>
+        {
+            entity.Property(e => e.Id).HasColumnType("char(36)");
+            entity.Property(e => e.BookingId).HasColumnType("char(36)");
+            entity.Property(e => e.ProcessedById).HasColumnType("char(36)");
+
+            entity.HasOne(e => e.Booking)
+                .WithMany()
+                .HasForeignKey(e => e.BookingId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_CheckTimeRequests_Bookings");
+        });
         ApplySoftDeleteModelConfiguration(modelBuilder);
         OnModelCreatingPartial(modelBuilder);
     }
@@ -2070,8 +2084,8 @@ public partial class AppDbContext : DbContext
     private void ApplySoftDeleteModelConfiguration(ModelBuilder modelBuilder)
     {
         var entityTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(t => !t.IsOwned() 
-                    && t.ClrType != null 
+            .Where(t => !t.IsOwned()
+                    && t.ClrType != null
                     && t.ClrType != typeof(Dictionary<string, object>)
                     && t.ClrType != typeof(ApartmentPriceCalendar))
             .ToList();

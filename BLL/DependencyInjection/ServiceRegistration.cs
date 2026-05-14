@@ -56,6 +56,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<IReportExportService, ReportExportService>();
             services.AddScoped<IAdminAnalyticsService, AdminAnalyticsService>();
             services.AddScoped<IWishlistService, WishlistService>();
+            services.AddScoped<ICheckTimeRequestService, CheckTimeRequestService>();
             services.AddScoped<EmailService, EmailService>();
             services.AddScoped<ICacheService, RedisCacheService>();
             return services;
