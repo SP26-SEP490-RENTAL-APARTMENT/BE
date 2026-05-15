@@ -1292,6 +1292,8 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(Guid bookingId, Guid confirmedBy, Guid? ticketId = null, string? notes = null) => Task.FromResult(new ConfirmOccupiedIncidentPenaltyResponseDto());
     public Task<OutstandingCheckTimeFeesResponseDto> GetOutstandingCheckTimeFeesAsync(Guid userId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new OutstandingCheckTimeFeesResponseDto { UserId = userId });
     public Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new LandlordOutstandingCheckTimeFeesResponseDto { LandlordId = landlordId });
+    public Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetReportedBookingsAsync(int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
+        => Task.FromResult((Enumerable.Empty<ReportedBookingDto>(), 0));
 }
 
 internal sealed class MomoTransactionServiceStub : BaseServiceStub<MomoTransaction>, IMomoTransactionService

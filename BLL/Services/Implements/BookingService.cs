@@ -3695,4 +3695,160 @@ public class BookingService : BaseService<Booking>, IBookingService
             OutstandingFees = outstandingFees
         };
     }
+
+    public async Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetReportedBookingsAsync(
+        int page = 1,
+        int pageSize = 10,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        // Get all bookings with disputed status or bookings that have support tickets
+        var allBookings = await _bookingRepository.FindAsync(b => b.Status == "disputed");
+        
+        // Get bookings with support tickets from tenants
+        var supportTickets = await _supportTicketRepository.FindAsync(t => 
+            t.Category == "booking_issue" || t.Category == "dispute");
+        
+        var bookingIdsWithTickets = new HashSet<Guid>();
+        foreach (var ticket in supportTickets)
+        {
+            // Extract booking ID from support ticket if available (via description parsing)
+            // For now, we'll include tickets that mention "booking" 
+            if (ticket.Description.Contains("booking", StringComparison.OrdinalIgnoreCase) ||
+                ticket.Category == "dispute")
+            {
+                bookingIdsWithTickets.Add(ticket.UserId);
+            }
+        }
+
+        // Combine disputed bookings and bookings with support tickets
+        var reportedBookings = allBookings.ToList();
+        
+        // Get booking check-time records to find disputes
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct => 
+            !string.IsNullOrEmpty(ct.DisputeResolutionStatus) || ct.TenantResponseStatus == "dispute");
+        
+        var bookingIdsWithCheckTimeDisputes = checkTimes.Select(ct => ct.BookingId).Distinct().ToList();
+        
+        var allReportedBookingIds = new HashSet<Guid>();
+        foreach (var booking in reportedBookings)
+        {
+            allReportedBookingIds.Add(booking.BookingId);
+        }
+        foreach (var id in bookingIdsWithCheckTimeDisputes)
+        {
+            allReportedBookingIds.Add(id);
+        }
+
+        // Fetch full booking details
+        var reportedBookingsList = new List<ReportedBookingDto>();
+        
+        foreach (var bookingId in allReportedBookingIds)
+        {
+            var booking = await _bookingRepository.GetByIdAsync(bookingId);
+            if (booking == null) continue;
+
+            var checkTime = checkTimes.FirstOrDefault(ct => ct.BookingId == bookingId);
+            var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+            var tenant = await _userRepository.GetByIdAsync(booking.TenantId);
+            var landlord = apartment != null ? await _userRepository.GetByIdAsync(apartment.LandlordId) : null;
+
+            // Count support tickets for this booking
+            var ticketsForBooking = supportTickets
+                .Where(t => t.UserId == booking.TenantId && 
+                       (t.Description.Contains(bookingId.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                        t.Category == "dispute"))
+                .Count();
+
+            var reportedDto = new ReportedBookingDto
+            {
+                BookingId = booking.BookingId,
+                TenantId = booking.TenantId,
+                TenantFullName = tenant?.FullName,
+                ApartmentId = booking.ApartmentId,
+                ApartmentAddress = apartment?.Address,
+                LandlordId = apartment?.LandlordId ?? Guid.Empty,
+                LandlordFullName = landlord?.FullName,
+                CheckInDate = booking.CheckInDate,
+                CheckOutDate = booking.CheckOutDate,
+                Nights = booking.Nights,
+                TotalPrice = booking.TotalPrice,
+                BookingStatus = booking.Status,
+                HasCheckTimeDispute = checkTime != null && 
+                    (checkTime.TenantResponseStatus == "dispute" || 
+                     !string.IsNullOrEmpty(checkTime.DisputeResolutionStatus)),
+                DisputeReason = checkTime?.TenantDisputeReason,
+                DisputeResolutionStatus = checkTime?.DisputeResolutionStatus,
+                DisputeCreatedAt = checkTime?.TenantRespondedAt,
+                SupportTicketCount = ticketsForBooking,
+                CreatedAt = booking.CreatedAt
+            };
+
+            reportedBookingsList.Add(reportedDto);
+        }
+
+        // Apply filtering
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            reportedBookingsList = reportedBookingsList
+                .Where(b => b.TenantFullName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                           b.LandlordFullName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                           b.ApartmentAddress?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
+                .ToList();
+        }
+
+        if (fromDate.HasValue)
+        {
+            reportedBookingsList = reportedBookingsList
+                .Where(b => b.CreatedAt >= fromDate)
+                .ToList();
+        }
+
+        if (toDate.HasValue)
+        {
+            reportedBookingsList = reportedBookingsList
+                .Where(b => b.CreatedAt <= toDate)
+                .ToList();
+        }
+
+        // Apply sorting
+        if (string.IsNullOrWhiteSpace(sortBy))
+        {
+            sortBy = "CreatedAt";
+        }
+
+        var isDescending = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
+
+        reportedBookingsList = sortBy.ToLower() switch
+        {
+            "tenantname" => isDescending 
+                ? reportedBookingsList.OrderByDescending(b => b.TenantFullName).ToList()
+                : reportedBookingsList.OrderBy(b => b.TenantFullName).ToList(),
+            "landlordname" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.LandlordFullName).ToList()
+                : reportedBookingsList.OrderBy(b => b.LandlordFullName).ToList(),
+            "price" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.TotalPrice).ToList()
+                : reportedBookingsList.OrderBy(b => b.TotalPrice).ToList(),
+            "checkinddate" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.CheckInDate).ToList()
+                : reportedBookingsList.OrderBy(b => b.CheckInDate).ToList(),
+            _ => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.CreatedAt).ToList()
+                : reportedBookingsList.OrderBy(b => b.CreatedAt).ToList()
+        };
+
+        // Apply pagination
+        var totalCount = reportedBookingsList.Count;
+        var items = reportedBookingsList
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
+    }
 }
+

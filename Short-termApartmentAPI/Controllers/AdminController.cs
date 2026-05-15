@@ -12,10 +12,14 @@ namespace Short_termApartmentAPI.Controllers;
 public sealed class AdminController : ControllerBase
 {
     private readonly IPricingPolicyService _pricingPolicyService;
+    private readonly IBookingService _bookingService;
 
-    public AdminController(IPricingPolicyService pricingPolicyService)
+    public AdminController(
+        IPricingPolicyService pricingPolicyService,
+        IBookingService bookingService)
     {
         _pricingPolicyService = pricingPolicyService;
+        _bookingService = bookingService;
     }
 
     [HttpGet("ping")]
@@ -87,6 +91,39 @@ public sealed class AdminController : ControllerBase
             return Ok(template);
         }
         catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("bookings/reported")]
+    public async Task<IActionResult> GetReportedBookings(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        try
+        {
+            var (items, totalCount) = await _bookingService.GetReportedBookingsAsync(
+                page, pageSize, sortBy, sortOrder, search, fromDate, toDate);
+
+            return Ok(new
+            {
+                data = items,
+                pagination = new
+                {
+                    currentPage = page,
+                    pageSize = pageSize,
+                    totalCount = totalCount,
+                    totalPages = (totalCount + pageSize - 1) / pageSize
+                }
+            });
+        }
+        catch (Exception ex)
         {
             return BadRequest(new { message = ex.Message });
         }

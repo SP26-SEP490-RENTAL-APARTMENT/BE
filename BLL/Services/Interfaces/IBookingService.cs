@@ -125,4 +125,18 @@ public interface IBookingService : IBaseService<Booking>
 	/// Returns all bookings with non-zero fees that haven't been fully settled, aggregated by tenant.
 	/// </summary>
 	Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null);
+
+	/// <summary>
+	/// Lists all bookings that have been reported by tenants (disputes or support tickets).
+	/// Returns bookings with disputed check-time status or associated support tickets.
+	/// Admin-only access to view reported bookings across all properties.
+	/// </summary>
+	Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetReportedBookingsAsync(
+		int page = 1,
+		int pageSize = 10,
+		string? sortBy = null,
+		string? sortOrder = null,
+		string? search = null,
+		DateTime? fromDate = null,
+		DateTime? toDate = null);
 }

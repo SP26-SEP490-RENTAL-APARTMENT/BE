@@ -623,3 +623,41 @@ public class BookingOccupantOcrUploadDto
     [Required]
     public IFormFile Image { get; set; } = null!;
 }
+
+/// <summary>
+/// DTO representing a booking that has been reported by tenant or has disputes.
+/// </summary>
+public class ReportedBookingDto
+{
+    public Guid BookingId { get; set; }
+    public Guid TenantId { get; set; }
+    public string? TenantFullName { get; set; }
+    public Guid ApartmentId { get; set; }
+    public string? ApartmentAddress { get; set; }
+    public Guid LandlordId { get; set; }
+    public string? LandlordFullName { get; set; }
+
+    public DateOnly CheckInDate { get; set; }
+    public DateOnly CheckOutDate { get; set; }
+    public int Nights { get; set; }
+    public decimal TotalPrice { get; set; }
+
+    public string? BookingStatus { get; set; }
+
+    /// <summary>
+    /// Whether there's a check-time dispute (disputed status).
+    /// </summary>
+    public bool HasCheckTimeDispute { get; set; }
+
+    public string? DisputeReason { get; set; }
+    public string? DisputeResolutionStatus { get; set; }
+    public DateTime? DisputeCreatedAt { get; set; }
+
+    /// <summary>
+    /// Number of support tickets created for this booking by the tenant.
+    /// </summary>
+    public int SupportTicketCount { get; set; }
+
+    public DateTime? CreatedAt { get; set; }
+}
+

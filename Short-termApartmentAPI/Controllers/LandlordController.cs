@@ -477,4 +477,32 @@ public sealed class LandlordController : ControllerBase
         var updated = await _landlordPayoutService.SyncProcessingPayoutsAsync(cancellationToken);
         return Ok(new ApiResponse<int>(updated));
     }
+
+    [HttpGet("penalties")]
+    public async Task<IActionResult> GetPenalties()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+
+        try
+        {
+            var penalties = await _bookingService.GetLandlordOutstandingCheckTimeFeesAsync(
+                landlord.LandlordId,
+                userId,
+                "landlord");
+
+            return Ok(new ApiResponse<LandlordOutstandingCheckTimeFeesResponseDto>(penalties));
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
 }
