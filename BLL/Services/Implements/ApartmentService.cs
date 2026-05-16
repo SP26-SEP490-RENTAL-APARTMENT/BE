@@ -67,7 +67,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             "City",
             "Status",
             "BasePricePerNight",
-            "CreatedAt"
+            "CreatedAt",
+            "MaxOccupants",
+            "IsPetAllowed"
         };
 
         return await base.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns);
@@ -94,7 +96,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             "City",
             "Status",
             "BasePricePerNight",
-            "CreatedAt"
+            "CreatedAt",
+            "MaxOccupants",
+            "IsPetAllowed"
         };
 
         return await _apartmentRepository.GetAllPublicAsync(page, pageSize, sortBy, sortOrder, search, filters, effectiveAllowedColumns, checkInDate, checkOutDate);
@@ -621,7 +625,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             "City",
             "Status",
             "BasePricePerNight",
-            "CreatedAt"
+            "CreatedAt",
+            "MaxOccupants",
+            "IsPetAllowed"
         };
 
         return await _apartmentRepository.GetPendingReviewAsync(page, pageSize, sortBy, sortOrder, search, effectiveAllowedColumns, filters);
@@ -640,7 +646,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             "City",
             "Status",
             "BasePricePerNight",
-            "CreatedAt"
+            "CreatedAt",
+            "MaxOccupants",
+            "IsPetAllowed"
         };
 
         return await _apartmentRepository.GetPendingReviewByLandlordIdAsync(page, pageSize, landlordId, sortBy, sortOrder, search, effectiveAllowedColumns, filters);

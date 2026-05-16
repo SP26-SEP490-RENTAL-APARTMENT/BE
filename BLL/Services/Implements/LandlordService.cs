@@ -59,7 +59,9 @@ public class LandlordService : BaseService<Landlord>, ILandlordService
             "City",
             "Status",
             "BasePricePerNight",
-            "CreatedAt"
+            "CreatedAt",
+            "MaxOccupants",
+            "IsPetAllowed"
         };
 
         return await _apartmentRepository.GetApartmentByLandlordIdAsync(landlordId, page, pageSize, sortBy, sortOrder, search, filters, allowedColumns);
