@@ -514,6 +514,23 @@ namespace DAL.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
+                    b.Property<DateTime?>("ClaimExpiresAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("claim_expires_at");
+
+                    b.Property<DateTime?>("ClaimLockedAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("claim_locked_at");
+
+                    b.Property<DateTime?>("ClaimOpenedAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("claim_opened_at");
+
+                    b.Property<string>("ClaimStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("longtext")
+                        .HasColumnName("claim_status");
+
                     b.Property<decimal?>("EarlyCheckInFee")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(12, 2)
@@ -561,6 +578,16 @@ namespace DAL.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("text")
                         .HasColumnName("notes");
+
+                    b.Property<string>("CheckInPhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("longtext")
+                        .HasColumnName("check_in_photo_url");
+
+                    b.Property<string>("CheckOutPhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("longtext")
+                        .HasColumnName("check_out_photo_url");
 
                     b.Property<DateTime?>("RecordedAt")
                         .HasColumnType("datetime")

@@ -702,6 +702,18 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp")
                 .HasColumnName("created_at");
+            entity.Property(e => e.ClaimExpiresAt)
+                .HasColumnType("datetime")
+                .HasColumnName("claim_expires_at");
+            entity.Property(e => e.ClaimLockedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("claim_locked_at");
+            entity.Property(e => e.ClaimOpenedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("claim_opened_at");
+            entity.Property(e => e.ClaimStatus)
+                .HasMaxLength(30)
+                .HasColumnName("claim_status");
             entity.Property(e => e.DisputeResolutionNotes)
                 .HasColumnType("text")
                 .HasColumnName("dispute_resolution_notes");
@@ -742,6 +754,12 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Notes)
                 .HasColumnType("text")
                 .HasColumnName("notes");
+            entity.Property(e => e.CheckInPhotoUrl)
+                .HasMaxLength(500)
+                .HasColumnName("check_in_photo_url");
+            entity.Property(e => e.CheckOutPhotoUrl)
+                .HasMaxLength(500)
+                .HasColumnName("check_out_photo_url");
             entity.Property(e => e.RecordedAt)
                 .HasColumnType("datetime")
                 .HasColumnName("recorded_at");

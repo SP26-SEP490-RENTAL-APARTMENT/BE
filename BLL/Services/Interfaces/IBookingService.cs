@@ -71,6 +71,11 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto);
 
 	/// <summary>
+	/// Allows tenant to pay a locked checkout claim fee.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, PayClaimFeeDto dto);
+
+	/// <summary>
 	/// Retrieves the availability calendar for an apartment showing available and unavailable date ranges.
 	/// Returns a 90-day calendar by default (customizable via startDate/endDate parameters).
 	/// Anonymous users see availability only; landlord/owner roles see booking IDs and statuses for blocked periods.

@@ -15,6 +15,11 @@ public class RecordCheckInDto : IValidatableObject
     [MaxLength(500)]
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// URL of uploaded photo evidence (controller should upload file and set this).
+    /// </summary>
+    public string? PhotoEvidenceUrl { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         // Validate that ActualCheckIn is a reasonable timestamp
@@ -26,6 +31,11 @@ public class RecordCheckInDto : IValidatableObject
         if (ActualCheckIn > Common.Utils.VietnamTime.Now.AddMinutes(5))
         {
             yield return new ValidationResult("Check-in time cannot be in the future (+5 min grace).", new[] { nameof(ActualCheckIn) });
+        }
+
+        if (string.IsNullOrWhiteSpace(PhotoEvidenceUrl))
+        {
+            yield return new ValidationResult("PhotoEvidenceUrl is required.", new[] { nameof(PhotoEvidenceUrl) });
         }
     }
 }
@@ -41,6 +51,11 @@ public class RecordCheckOutDto : IValidatableObject
     [MaxLength(500)]
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// URL of uploaded photo evidence (controller should upload file and set this).
+    /// </summary>
+    public string? PhotoEvidenceUrl { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         // Validate that ActualCheckOut is a reasonable timestamp
@@ -52,6 +67,11 @@ public class RecordCheckOutDto : IValidatableObject
         if (ActualCheckOut > Common.Utils.VietnamTime.Now.AddMinutes(5))
         {
             yield return new ValidationResult("Check-out time cannot be in the future (+5 min grace).", new[] { nameof(ActualCheckOut) });
+        }
+
+        if (string.IsNullOrWhiteSpace(PhotoEvidenceUrl))
+        {
+            yield return new ValidationResult("PhotoEvidenceUrl is required.", new[] { nameof(PhotoEvidenceUrl) });
         }
     }
 }
@@ -110,6 +130,22 @@ public class BookingCheckTimeResponseDto
     /// </summary>
     public string? CheckOutModifications { get; set; }
 
+    /// <summary>
+    /// URLs for the uploaded photo evidence for check-in and check-out.
+    /// </summary>
+    public string? CheckInPhotoUrl { get; set; }
+    public string? CheckOutPhotoUrl { get; set; }
+
+    /// <summary>
+    /// Claim metadata for the checkout snapshot.
+    /// </summary>
+    public DateTime? ClaimOpenedAt { get; set; }
+    public DateTime? ClaimExpiresAt { get; set; }
+    public DateTime? ClaimLockedAt { get; set; }
+    public string ClaimStatus { get; set; } = "open";
+    public bool ClaimIsLocked { get; set; }
+    public bool ClaimIsExpired { get; set; }
+
     public DateTime? LastModifiedAt { get; set; }
 
     /// <summary>
@@ -144,7 +180,7 @@ public class BookingCheckTimeResponseDto
 public class RespondBookingCheckTimeDto : IValidatableObject
 {
     [Required]
-    [RegularExpression("^(confirm|dispute)$", ErrorMessage = "Action must be 'confirm' or 'dispute'.")]
+    [RegularExpression("^(confirm|refute|dispute)$", ErrorMessage = "Action must be 'confirm' or 'refute'.")]
     public string Action { get; set; } = string.Empty;
 
     [MaxLength(300)]
@@ -155,9 +191,9 @@ public class RespondBookingCheckTimeDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (string.Equals(Action, "dispute", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(DisputeReason))
+        if ((string.Equals(Action, "refute", StringComparison.OrdinalIgnoreCase) || string.Equals(Action, "dispute", StringComparison.OrdinalIgnoreCase)) && string.IsNullOrWhiteSpace(DisputeReason))
         {
-            yield return new ValidationResult("DisputeReason is required when action is 'dispute'.", new[] { nameof(DisputeReason) });
+            yield return new ValidationResult("DisputeReason is required when action is 'refute'.", new[] { nameof(DisputeReason) });
         }
     }
 }
@@ -212,6 +248,26 @@ public class LandlordPaymentConfirmationDto : IValidatableObject
         if (PaymentDate > Common.Utils.VietnamTime.Now)
         {
             yield return new ValidationResult("Payment date cannot be in the future.", new[] { nameof(PaymentDate) });
+        }
+    }
+}
+
+/// <summary>
+/// Tenant payment payload for settling a locked claim fee.
+/// </summary>
+public class PayClaimFeeDto : IValidatableObject
+{
+    [MaxLength(100)]
+    public string? PaymentReference { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(PaymentReference) && string.IsNullOrWhiteSpace(Notes))
+        {
+            yield return new ValidationResult("Either PaymentReference or Notes is required.", new[] { nameof(PaymentReference), nameof(Notes) });
         }
     }
 }

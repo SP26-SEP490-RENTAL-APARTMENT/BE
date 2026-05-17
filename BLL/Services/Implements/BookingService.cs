@@ -1740,6 +1740,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.ActualCheckIn = dto.ActualCheckIn;
         checkTime.IsEarlyCheckIn = isEarlyCheckIn;
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
+        checkTime.CheckInPhotoUrl = dto.PhotoEvidenceUrl;
         ApplyFeeSettlementState(checkTime, earlyCheckInFee, Common.Utils.VietnamTime.Now);
         checkTime.RecordedBy = recordedBy;
         checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
@@ -1830,11 +1831,22 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         // Update check-out record
+        var now = Common.Utils.VietnamTime.Now;
         checkTime.ActualCheckOut = dto.ActualCheckOut;
         checkTime.IsLateCheckOut = isLateCheckOut;
         checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
-        ApplyFeeSettlementState(checkTime, GetCheckTimeFeeTotal(checkTime), Common.Utils.VietnamTime.Now);
-        checkTime.UpdatedAt = Common.Utils.VietnamTime.Now;
+        checkTime.CheckOutPhotoUrl = dto.PhotoEvidenceUrl;
+        checkTime.ClaimOpenedAt = now;
+        checkTime.ClaimExpiresAt = now.AddHours(24);
+        checkTime.ClaimLockedAt = null;
+        checkTime.ClaimStatus = "open";
+        ApplyFeeSettlementState(checkTime, GetCheckTimeFeeTotal(checkTime), now);
+        if (GetCheckTimeFeeTotal(checkTime) > 0m)
+        {
+            // Claim window controls when the fee becomes due for tenant settlement.
+            checkTime.FeeDueAt = checkTime.ClaimExpiresAt;
+        }
+        checkTime.UpdatedAt = now;
         checkTime.TenantResponseStatus = "pending";
         checkTime.TenantRespondedBy = null;
         checkTime.TenantRespondedAt = null;
@@ -1894,8 +1906,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         await CreateBookingNotificationAsync(
             booking.TenantId,
             NotificationType.check_out_recorded.ToString(),
-            "Check-out Recorded",
-            $"Your checkout has been recorded. {(isLateCheckOut ? $"Late checkout fee: ${lateCheckOutFee}" : "Thank you for checking out on time!")}",
+            "Claim Opened",
+            $"A claim snapshot has been opened for your checkout and will lock at {checkTime.ClaimExpiresAt:yyyy-MM-dd HH:mm}. {(isLateCheckOut ? $"Late checkout fee: ${lateCheckOutFee}" : "Thank you for checking out on time!")}",
             bookingId);
 
         return await GetCheckTimeDetailsAsync(bookingId, apartment.LandlordId);
@@ -1918,6 +1930,14 @@ public class BookingService : BaseService<Booking>, IBookingService
             isEditable = timeSinceRecording.TotalHours <= correctionWindowHours;
         }
 
+        var now = Common.Utils.VietnamTime.Now;
+        var claimExpiresAt = checkTime.ClaimExpiresAt;
+        var claimIsExpired = claimExpiresAt.HasValue && now >= claimExpiresAt.Value;
+        var claimLockedAt = checkTime.ClaimLockedAt ?? (claimIsExpired ? claimExpiresAt : null);
+        var claimStatus = string.IsNullOrWhiteSpace(checkTime.ClaimStatus)
+            ? (claimLockedAt.HasValue ? "locked" : "open")
+            : checkTime.ClaimStatus.Trim().ToLowerInvariant();
+
         return new BookingCheckTimeResponseDto
         {
             CheckTimeId = checkTime.CheckTimeId,
@@ -1939,6 +1959,14 @@ public class BookingService : BaseService<Booking>, IBookingService
             RecordedBy = checkTime.RecordedBy,
             RecordedAt = checkTime.RecordedAt,
             Notes = checkTime.Notes,
+            CheckInPhotoUrl = checkTime.CheckInPhotoUrl,
+            CheckOutPhotoUrl = checkTime.CheckOutPhotoUrl,
+            ClaimOpenedAt = checkTime.ClaimOpenedAt,
+            ClaimExpiresAt = claimExpiresAt,
+            ClaimLockedAt = claimLockedAt,
+            ClaimStatus = claimStatus,
+            ClaimIsLocked = claimLockedAt.HasValue,
+            ClaimIsExpired = claimIsExpired,
             LastModifiedAt = checkTime.UpdatedAt ?? checkTime.RecordedAt,
             IsEditable = isEditable,
             TenantResponseStatus = string.IsNullOrWhiteSpace(checkTime.TenantResponseStatus) ? "pending" : checkTime.TenantResponseStatus,
@@ -1973,10 +2001,20 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new KeyNotFoundException("Apartment not found.");
 
-        var action = dto.Action.Trim().ToLowerInvariant();
-        if (action != "confirm" && action != "dispute")
+        var claimExpiresAt = checkTime.ClaimExpiresAt ?? checkTime.ClaimOpenedAt?.AddHours(24) ?? checkTime.RecordedAt?.AddHours(24);
+        if (claimExpiresAt.HasValue && Common.Utils.VietnamTime.Now >= claimExpiresAt.Value)
         {
-            throw new InvalidOperationException("Action must be 'confirm' or 'dispute'.");
+            checkTime.ClaimLockedAt ??= claimExpiresAt;
+            checkTime.ClaimStatus = "locked";
+            _bookingCheckTimeRepository.Update(checkTime);
+            await _bookingCheckTimeRepository.SaveChangesAsync();
+            throw new InvalidOperationException("This claim is locked and can no longer be refuted.");
+        }
+
+        var action = dto.Action.Trim().ToLowerInvariant();
+        if (action != "confirm" && action != "refute" && action != "dispute")
+        {
+            throw new InvalidOperationException("Action must be 'confirm' or 'refute'.");
         }
 
         var currentStatus = checkTime.TenantResponseStatus?.Trim().ToLowerInvariant();
@@ -1991,6 +2029,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (action == "confirm")
         {
             checkTime.TenantResponseStatus = "confirmed";
+            checkTime.ClaimStatus = "confirmed";
             checkTime.TenantDisputeReason = null;
             checkTime.TenantDisputeNotes = null;
             checkTime.DisputeResolutionStatus = null;
@@ -2020,10 +2059,11 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (string.IsNullOrWhiteSpace(dto.DisputeReason))
         {
-            throw new InvalidOperationException("Dispute reason is required.");
+            throw new InvalidOperationException("Refute reason is required.");
         }
 
-        checkTime.TenantResponseStatus = "disputed";
+        checkTime.TenantResponseStatus = "refuted";
+        checkTime.ClaimStatus = "refuted";
         checkTime.TenantDisputeReason = dto.DisputeReason.Trim();
         checkTime.TenantDisputeNotes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim();
         checkTime.DisputeResolutionStatus = "open";
@@ -2043,15 +2083,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.check_time_disputed.ToString(),
-            "Check-time Disputed",
-            $"Tenant disputed recorded check-time. Reason: {checkTime.TenantDisputeReason}",
+            "Claim Refuted",
+            $"Tenant refuted the claim. Reason: {checkTime.TenantDisputeReason}",
             booking.BookingId);
 
         await CreateBookingNotificationAsync(
             tenantId,
             NotificationType.check_time_disputed.ToString(),
-            "Dispute Submitted",
-            "Your dispute has been submitted and is waiting for staff/admin resolution.",
+            "Claim Submitted",
+            "Your refutation has been submitted and is waiting for staff/admin resolution.",
             booking.BookingId);
 
         return await GetCheckTimeDetailsAsync(bookingId, tenantId);
@@ -2064,13 +2104,14 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
 
-        var isDisputed = string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase);
+        var isDisputed = string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(checkTime.TenantResponseStatus, "refuted", StringComparison.OrdinalIgnoreCase);
         var isOpen = string.Equals(checkTime.DisputeResolutionStatus, "open", StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(checkTime.DisputeResolutionStatus);
 
         if (!isDisputed || !isOpen)
         {
-            throw new InvalidOperationException("No open tenant check-time dispute found for this booking.");
+            throw new InvalidOperationException("No open tenant claim found for this booking.");
         }
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
@@ -2119,8 +2160,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var resolutionMessage = dto.ApproveTenantDispute
-            ? "A check-time dispute was resolved in favor of tenant."
-            : "A check-time dispute was resolved in favor of landlord.";
+            ? "A claim was resolved in favor of tenant."
+            : "A claim was resolved in favor of landlord.";
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
@@ -2249,6 +2290,78 @@ public class BookingService : BaseService<Booking>, IBookingService
         return await GetCheckTimeDetailsAsync(bookingId, landlordId);
     }
 
+    public async Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, PayClaimFeeDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        if (booking.TenantId != tenantId)
+        {
+            throw new InvalidOperationException("You are not allowed to pay claim fees for this booking.");
+        }
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        var totalFee = GetCheckTimeFeeTotal(checkTime);
+        if (totalFee <= 0m)
+        {
+            throw new InvalidOperationException("No claim fee is available for payment.");
+        }
+
+        var now = Common.Utils.VietnamTime.Now;
+        var claimExpiresAt = checkTime.ClaimExpiresAt ?? checkTime.ClaimOpenedAt?.AddHours(24) ?? checkTime.UpdatedAt?.AddHours(24);
+        if (!claimExpiresAt.HasValue || now < claimExpiresAt.Value)
+        {
+            throw new InvalidOperationException("Claim is still open for refutation. Payment becomes required after the 24-hour claim window.");
+        }
+
+        if (string.Equals(checkTime.TenantResponseStatus, "refuted", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Claim is under refutation/dispute and cannot be paid until resolved.");
+        }
+
+        var currentStatus = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+        if (currentStatus == FeeSettlementStatusPaid)
+        {
+            return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        }
+
+        if (currentStatus == FeeSettlementStatusWaived)
+        {
+            throw new InvalidOperationException("Claim fee has already been waived.");
+        }
+
+        checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
+        checkTime.ClaimStatus = "paid";
+        checkTime.FeeSettlementStatus = FeeSettlementStatusPaid;
+        checkTime.FeeSettledAt = now;
+        checkTime.FeeDueAt = null;
+        checkTime.FeeSettlementNotes = $"[TENANT CLAIM PAYMENT] Ref: {dto.PaymentReference ?? "n/a"}; Notes: {dto.Notes ?? "n/a"}; At: {now:yyyy-MM-dd HH:mm:ss}";
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment != null)
+        {
+            await CreateBookingNotificationAsync(
+                apartment.LandlordId,
+                NotificationType.system_announcement.ToString(),
+                "Claim Fee Paid",
+                $"Tenant has paid the claim fee of {totalFee:0.00} for booking {booking.BookingId}.",
+                booking.BookingId);
+        }
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.system_announcement.ToString(),
+            "Claim Fee Paid",
+            $"Your claim fee payment of {totalFee:0.00} has been recorded.",
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+    }
+
     private async Task EnsureTenantHasNoOutstandingCheckTimeFeesAsync(Guid tenantId)
     {
         var bookings = await _bookingRepository.FindAsync(b => b.TenantId == tenantId);
@@ -2354,6 +2467,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (GetCheckTimeFeeTotal(checkTime) <= 0m)
         {
             return false;
+        }
+
+        var tenantRefuted = string.Equals(checkTime.TenantResponseStatus, "refuted", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase);
+        var claimExpiresAt = checkTime.ClaimExpiresAt ?? checkTime.ClaimOpenedAt?.AddHours(24) ?? checkTime.UpdatedAt?.AddHours(24);
+        var claimExpiredUnrefuted = claimExpiresAt.HasValue && now >= claimExpiresAt.Value && !tenantRefuted;
+        if (claimExpiredUnrefuted)
+        {
+            return true;
         }
 
         if (!checkTime.FeeDueAt.HasValue)
@@ -3729,7 +3851,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         
         // Get booking check-time records to find disputes
         var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct => 
-            !string.IsNullOrEmpty(ct.DisputeResolutionStatus) || ct.TenantResponseStatus == "dispute");
+            !string.IsNullOrEmpty(ct.DisputeResolutionStatus) || ct.TenantResponseStatus == "dispute" || ct.TenantResponseStatus == "refuted");
         
         var bookingIdsWithCheckTimeDisputes = checkTimes.Select(ct => ct.BookingId).Distinct().ToList();
         

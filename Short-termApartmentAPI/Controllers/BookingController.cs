@@ -453,7 +453,8 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpPost("{id:guid}/check-in")]
         [Authorize(Roles = "landlord,staff")]
-        public async Task<IActionResult> RecordCheckIn(Guid id, [FromBody] RecordCheckInDto dto)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> RecordCheckIn(Guid id, [FromForm] Short_termApartmentAPI.DTOs.RecordCheckInFormDto form)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var recordedBy))
@@ -466,8 +467,21 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (form.PhotoEvidence == null || form.PhotoEvidence.Length == 0)
+            {
+                return BadRequest(new ApiResponse<string>("Photo evidence is required."));
+            }
+
             try
             {
+                var photoUrl = await _imageService.UploadImageAsync(form.PhotoEvidence);
+                var dto = new Common.DTOs.RecordCheckInDto
+                {
+                    ActualCheckIn = form.ActualCheckIn,
+                    Notes = form.Notes,
+                    PhotoEvidenceUrl = photoUrl
+                };
+
                 var checkTimeResponse = await _bookingService.RecordCheckInAsync(id, dto, recordedBy);
                 return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-in recorded successfully."));
             }
@@ -803,7 +817,8 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpPost("{id:guid}/check-out")]
         [Authorize(Roles = "landlord,staff")]
-        public async Task<IActionResult> RecordCheckOut(Guid id, [FromBody] RecordCheckOutDto dto)
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> RecordCheckOut(Guid id, [FromForm] Short_termApartmentAPI.DTOs.RecordCheckOutFormDto form)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdClaim, out var recordedBy))
@@ -816,10 +831,23 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (form.PhotoEvidence == null || form.PhotoEvidence.Length == 0)
+            {
+                return BadRequest(new ApiResponse<string>("Photo evidence is required."));
+            }
+
             try
             {
+                var photoUrl = await _imageService.UploadImageAsync(form.PhotoEvidence);
+                var dto = new Common.DTOs.RecordCheckOutDto
+                {
+                    ActualCheckOut = form.ActualCheckOut,
+                    Notes = form.Notes,
+                    PhotoEvidenceUrl = photoUrl
+                };
+
                 var checkTimeResponse = await _bookingService.RecordCheckOutAsync(id, dto, recordedBy);
-                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-out recorded successfully."));
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Claim opened successfully."));
             }
             catch (KeyNotFoundException ex)
             {
@@ -853,6 +881,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("{id:guid}/check-time/respond")]
+        [HttpPost("{id:guid}/check-time/claim/refute")]
         [Authorize(Roles = "tenant")]
         public async Task<IActionResult> RespondCheckTime(Guid id, [FromBody] RespondBookingCheckTimeDto dto)
         {
@@ -870,7 +899,7 @@ namespace Short_termApartmentAPI.Controllers
             try
             {
                 var checkTimeResponse = await _bookingService.RespondToCheckTimeAsync(id, tenantId, dto);
-                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-time response recorded successfully."));
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Claim response recorded successfully."));
             }
             catch (KeyNotFoundException ex)
             {
@@ -883,6 +912,7 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("{id:guid}/check-time/resolve")]
+        [HttpPost("{id:guid}/check-time/claim/resolve")]
         [Authorize(Roles = "staff,admin")]
         public async Task<IActionResult> ResolveCheckTimeDispute(Guid id, [FromBody] ResolveBookingCheckTimeDisputeDto dto)
         {
@@ -900,7 +930,7 @@ namespace Short_termApartmentAPI.Controllers
             try
             {
                 var checkTimeResponse = await _bookingService.ResolveCheckTimeDisputeAsync(id, resolvedBy, dto);
-                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-time dispute resolved successfully."));
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Claim resolved successfully."));
             }
             catch (KeyNotFoundException ex)
             {
@@ -961,6 +991,36 @@ namespace Short_termApartmentAPI.Controllers
             {
                 var checkTimeResponse = await _bookingService.SubmitPaymentConfirmationAsync(id, landlordId, dto);
                 return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Payment confirmation submitted successfully."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpPost("{id:guid}/check-time/claim/pay")]
+        [Authorize(Roles = "tenant")]
+        public async Task<IActionResult> PayClaimFee(Guid id, [FromBody] PayClaimFeeDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var tenantId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var checkTimeResponse = await _bookingService.PayClaimFeeAsync(id, tenantId, dto);
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Claim fee paid successfully."));
             }
             catch (KeyNotFoundException ex)
             {

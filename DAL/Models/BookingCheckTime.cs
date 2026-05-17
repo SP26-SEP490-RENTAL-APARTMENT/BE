@@ -45,6 +45,14 @@ public partial class BookingCheckTime
 
     public string? Notes { get; set; }
 
+    public string? CheckInPhotoUrl { get; set; }
+    public string? CheckOutPhotoUrl { get; set; }
+
+    public DateTime? ClaimOpenedAt { get; set; }
+    public DateTime? ClaimExpiresAt { get; set; }
+    public DateTime? ClaimLockedAt { get; set; }
+    public string? ClaimStatus { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

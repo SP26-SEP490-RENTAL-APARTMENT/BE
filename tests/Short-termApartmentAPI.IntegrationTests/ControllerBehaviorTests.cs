@@ -1282,6 +1282,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> SettleCheckTimeFeeAsync(Guid bookingId, Guid settledBy, SettleBookingCheckTimeFeeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
+    public Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, PayClaimFeeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<AvailabilityCalendarResponseDto> GetAvailabilityCalendarAsync(Guid apartmentId, DateTime? startDate = null, DateTime? endDate = null, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new AvailabilityCalendarResponseDto());
     public Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(Guid apartmentId, Guid landlordId, SetApartmentAvailabilityRequestDto dto) => Task.FromResult(new SetApartmentAvailabilityResponseDto());
     public Task<RemoveApartmentAvailabilityResponseDto> RemoveApartmentAvailabilityAsync(Guid apartmentId, Guid landlordId, RemoveApartmentAvailabilityRequestDto dto) => Task.FromResult(new RemoveApartmentAvailabilityResponseDto());
