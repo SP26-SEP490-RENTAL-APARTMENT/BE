@@ -1148,7 +1148,7 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpGet("{id:guid}/occupied-alternatives")]
         [Authorize(Roles = "tenant,staff,admin")]
-        public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int maxResults = 5)
+        public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int maxResults = 5, [FromQuery] int? radiusMeters = null)
         {
             try
             {
@@ -1172,7 +1172,7 @@ namespace Short_termApartmentAPI.Controllers
                     }
                 }
 
-                var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, maxResults);
+                var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, maxResults, radiusMeters);
                 return Ok(new ApiResponse<IReadOnlyList<OccupiedRoomAlternativeOptionDto>>(alternatives));
             }
             catch (ArgumentException ex)

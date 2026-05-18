@@ -6,6 +6,7 @@ using DAL.Models;
 using DAL.Repository.Interfaces;
 using System.Linq;
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using NotificationType = Common.Enums.Notification;
 using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 using Microsoft.Extensions.Configuration;
@@ -3673,7 +3674,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         return "available";
     }
 
-    public async Task<IReadOnlyList<OccupiedRoomAlternativeOptionDto>> FindAlternativeApartmentsAsync(Guid bookingId, int maxResults = 5)
+    public async Task<IReadOnlyList<OccupiedRoomAlternativeOptionDto>> FindAlternativeApartmentsAsync(Guid bookingId, int maxResults = 5, int? radiusMeters = null)
     {
         if (maxResults <= 0)
             throw new ArgumentException("maxResults must be greater than zero.");
@@ -3697,18 +3698,65 @@ public class BookingService : BaseService<Booking>, IBookingService
             tolerance = DefaultPriceTolerancePercent;
         }
 
-        var candidateApartments = await _apartmentRepository.FindAsync(a =>
-            a.ApartmentId != booking.ApartmentId &&
-            a.Status == "posted" &&
-            a.City == sourceApartment.City &&
-            a.District == sourceApartment.District &&
-            (!hasPets || a.IsPetAllowed == true) &&
-            (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
-            (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value));
-
-        var alternatives = new List<OccupiedRoomAlternativeOptionDto>();
-        foreach (var candidate in candidateApartments)
+        // If caller didn't specify radius, allow a configured default radius (meters)
+        if (!radiusMeters.HasValue)
         {
+            radiusMeters = _configuration.GetValue<int?>("OccupiedRoomAlternatives:DefaultRadiusMeters", null);
+        }
+
+        // If radiusMeters is provided and source has coordinates, use spatial bounding-box + exact Haversine check.
+        IEnumerable<Apartment> candidateApartmentsRaw;
+
+        if (radiusMeters.HasValue && sourceApartment.Latitude.HasValue && sourceApartment.Longitude.HasValue)
+        {
+            var bbox = ComputeBoundingBoxMeters((double)sourceApartment.Latitude.Value, (double)sourceApartment.Longitude.Value, radiusMeters.Value);
+            candidateApartmentsRaw = (await _apartmentRepository.FindAsync(a =>
+                a.ApartmentId != booking.ApartmentId &&
+                a.Status == "posted" &&
+                a.Latitude.HasValue && a.Longitude.HasValue &&
+                a.Latitude >= (decimal)bbox.minLat && a.Latitude <= (decimal)bbox.maxLat &&
+                a.Longitude >= (decimal)bbox.minLon && a.Longitude <= (decimal)bbox.maxLon &&
+                (!hasPets || a.IsPetAllowed == true) &&
+                (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
+                (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value))).ToList();
+        }
+        else
+        {
+            var sourceCity = NormalizeLocationValue(sourceApartment.City);
+            var sourceDistrict = NormalizeLocationValue(sourceApartment.District);
+            if (sourceCity == null || sourceDistrict == null)
+            {
+                return Array.Empty<OccupiedRoomAlternativeOptionDto>();
+            }
+
+            candidateApartmentsRaw = (await _apartmentRepository.FindAsync(a =>
+                a.ApartmentId != booking.ApartmentId &&
+                a.Status == "posted" &&
+                a.City != null && a.City.Trim().ToUpper() == sourceCity &&
+                a.District != null && a.District.Trim().ToUpper() == sourceDistrict &&
+                (!hasPets || a.IsPetAllowed == true) &&
+                (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
+                (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value))).ToList();
+        }
+
+        // If we used bounding-box we must apply exact Haversine distance check; otherwise candidates are already location-matched.
+        var alternatives = new List<OccupiedRoomAlternativeOptionDto>();
+        var srcLat = sourceApartment.Latitude.HasValue ? (double?)sourceApartment.Latitude.Value : null;
+        var srcLon = sourceApartment.Longitude.HasValue ? (double?)sourceApartment.Longitude.Value : null;
+
+        foreach (var candidate in candidateApartmentsRaw)
+        {
+            // If candidate lacks coordinates and radius search requested, skip it
+            if (radiusMeters.HasValue && (srcLat == null || srcLon == null || !candidate.Latitude.HasValue || !candidate.Longitude.HasValue))
+                continue;
+
+            if (radiusMeters.HasValue && srcLat.HasValue && srcLon.HasValue)
+            {
+                var dist = HaversineDistanceMeters(srcLat.Value, srcLon.Value, (double)candidate.Latitude!.Value, (double)candidate.Longitude!.Value);
+                if (dist > radiusMeters.Value)
+                    continue;
+            }
+
             try
             {
                 await EnsureNoConflictingBookingsAsync(candidate.ApartmentId, booking.CheckInDate, booking.CheckOutDate);
@@ -3771,8 +3819,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         var sourceApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Original apartment not found.");
 
-        if (!string.Equals(sourceApartment.City, alternativeApartment.City, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(sourceApartment.District, alternativeApartment.District, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(NormalizeLocationValue(sourceApartment.City), NormalizeLocationValue(alternativeApartment.City), StringComparison.Ordinal)
+            || !string.Equals(NormalizeLocationValue(sourceApartment.District), NormalizeLocationValue(alternativeApartment.District), StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Alternative apartment must be in the same city and district as the original booking.");
         }
@@ -3987,6 +4035,39 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (priceDifference < 0)
             return "downgrade";
         return "same_price";
+    }
+
+    private static string? NormalizeLocationValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToUpperInvariant();
+    }
+
+    private static double DegreesToRadians(double deg) => deg * Math.PI / 180.0;
+
+    private static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6378137.0; // Earth radius in meters
+        var dLat = DegreesToRadians(lat2 - lat1);
+        var dLon = DegreesToRadians(lon2 - lon1);
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                Math.Cos(DegreesToRadians(lat1)) * Math.Cos(DegreesToRadians(lat2)) *
+                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return R * c;
+    }
+
+    private static (double minLat, double maxLat, double minLon, double maxLon) ComputeBoundingBoxMeters(double lat, double lon, double radiusMeters)
+    {
+        const double earthRadius = 6378137.0; // meters
+        var radLat = DegreesToRadians(lat);
+        var degLat = (radiusMeters / earthRadius) * (180.0 / Math.PI);
+        var degLon = (radiusMeters / earthRadius) * (180.0 / Math.PI) / Math.Cos(radLat);
+        return (lat - degLat, lat + degLat, lon - degLon, lon + degLon);
     }
 
     private BookingOfferResponseDto MapOfferToResponse(BookingOffer offer)
@@ -4273,12 +4354,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         var bookingIdsWithTickets = new HashSet<Guid>();
         foreach (var ticket in supportTickets)
         {
-            // Extract booking ID from support ticket if available (via description parsing)
-            // For now, we'll include tickets that mention "booking" 
-            if (ticket.Description.Contains("booking", StringComparison.OrdinalIgnoreCase) ||
-                ticket.Category == "dispute")
+            var bookingId = ExtractBookingIdFromSupportTicket(ticket);
+            if (bookingId.HasValue)
             {
-                bookingIdsWithTickets.Add(ticket.UserId);
+                bookingIdsWithTickets.Add(bookingId.Value);
             }
         }
 
@@ -4300,6 +4379,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             allReportedBookingIds.Add(id);
         }
+        foreach (var id in bookingIdsWithTickets)
+        {
+            allReportedBookingIds.Add(id);
+        }
 
         // Fetch full booking details
         var reportedBookingsList = new List<ReportedBookingDto>();
@@ -4316,9 +4399,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             // Count support tickets for this booking
             var ticketsForBooking = supportTickets
-                .Where(t => t.UserId == booking.TenantId && 
-                       (t.Description.Contains(bookingId.ToString(), StringComparison.OrdinalIgnoreCase) ||
-                        t.Category == "dispute"))
+                .Where(t => ExtractBookingIdFromSupportTicket(t) == bookingId)
                 .Count();
 
             var reportedDto = new ReportedBookingDto
@@ -4407,6 +4488,29 @@ public class BookingService : BaseService<Booking>, IBookingService
             .ToList();
 
         return (items, totalCount);
+    }
+
+    private static Guid? ExtractBookingIdFromSupportTicket(SupportTicket ticket)
+    {
+        static Guid? TryExtractGuid(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var match = Regex.Match(
+                text,
+                @"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+                RegexOptions.CultureInvariant);
+
+            return match.Success && Guid.TryParse(match.Value, out var bookingId)
+                ? bookingId
+                : null;
+        }
+
+        return TryExtractGuid(ticket.Subject)
+            ?? TryExtractGuid(ticket.Description);
     }
 }
 
