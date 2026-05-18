@@ -34,6 +34,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<Package> _packageRepository;
     private readonly IRepository<DAL.Models.Notification> _notificationRepository;
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
+    private readonly IRepository<BookingCheckTimeStateEvent> _checkTimeStateEventRepository;
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
     private readonly IRepository<BookingOccupant>? _bookingOccupantRepository;
     private readonly IRepository<Tenant> _tenantRepository;
@@ -70,7 +71,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IConfiguration configuration,
         IMapper mapper,
         IRepository<BookingOccupant>? bookingOccupantRepository = null,
-        ICheckTimeRequestRepository? checkTimeRequestRepository = null) : base(repository)
+        ICheckTimeRequestRepository? checkTimeRequestRepository = null,
+        IRepository<BookingCheckTimeStateEvent>? checkTimeStateEventRepository = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -93,6 +95,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _mapper = mapper;
         _bookingOccupantRepository = bookingOccupantRepository;
         _checkTimeRequestRepository = checkTimeRequestRepository;
+        _checkTimeStateEventRepository = checkTimeStateEventRepository ?? throw new ArgumentNullException(nameof(checkTimeStateEventRepository));
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -198,6 +201,16 @@ public class BookingService : BaseService<Booking>, IBookingService
             "Occupied incident penalty confirmed",
             "Support staff confirmed your occupied-room incident and applied landlord penalty equal to the booking deposit.",
             booking.BookingId);
+
+        // Audit event for occupied incident penalty confirmation (staff action)
+        try
+        {
+            await CreateCheckTimeStateEventAsync(booking.BookingId, null, confirmedBy, "occupied_penalty_confirmed", new { TicketId = ticket.TicketId, PenaltyAmount = booking.DepositAmount, Notes = notes });
+        }
+        catch
+        {
+            // swallow audit failures
+        }
 
         return new ConfirmOccupiedIncidentPenaltyResponseDto
         {
@@ -1698,6 +1711,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (apartment == null)
             throw new KeyNotFoundException("Apartment not found.");
 
+        await EnsureActorIsOwnerOrStaffAsync(recordedBy, apartment.LandlordId);
+
         // Validate booking status (must be confirmed or paid)
         if (!checkTime.ActualCheckIn.HasValue &&
             !(string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) ||
@@ -1762,6 +1777,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
 
+        // Emit audit event for check-in
+        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, recordedBy, "check_in_recorded", new { ActualCheckIn = dto.ActualCheckIn, Notes = dto.Notes, Photo = dto.PhotoEvidenceUrl });
+
         // Notify landlord
         var checkInMessage = isEarlyCheckIn
             ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}"
@@ -1788,6 +1806,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment == null)
             throw new KeyNotFoundException("Apartment not found.");
+
+        await EnsureActorIsOwnerOrStaffAsync(recordedBy, apartment.LandlordId);
 
         // Validate that check-in has been recorded
         if (!checkTime.ActualCheckIn.HasValue)
@@ -1840,6 +1860,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.ClaimExpiresAt = now.AddHours(24);
         checkTime.ClaimLockedAt = null;
         checkTime.ClaimStatus = "open";
+        checkTime.NoShowStatus = null;
+        checkTime.NoShowMarkedAt = null;
+        checkTime.NoShowMarkedBy = null;
+        checkTime.MissingCheckOutStatus = null;
+        checkTime.AutoClosedAt = null;
         ApplyFeeSettlementState(checkTime, GetCheckTimeFeeTotal(checkTime), now);
         if (GetCheckTimeFeeTotal(checkTime) > 0m)
         {
@@ -1870,6 +1895,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
         await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        // (audit event for claim resolution is emitted in dispute resolution flow)
 
         // Credit landlord wallet after successful checkout
         var paymentMode = GetBookingPaymentMode(booking);
@@ -1967,6 +1994,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             ClaimStatus = claimStatus,
             ClaimIsLocked = claimLockedAt.HasValue,
             ClaimIsExpired = claimIsExpired,
+            NoShowStatus = checkTime.NoShowStatus,
+            NoShowMarkedBy = checkTime.NoShowMarkedBy,
+            NoShowMarkedAt = checkTime.NoShowMarkedAt,
+            MissingCheckOutStatus = checkTime.MissingCheckOutStatus,
+            AutoClosedAt = checkTime.AutoClosedAt,
             LastModifiedAt = checkTime.UpdatedAt ?? checkTime.RecordedAt,
             IsEditable = isEditable,
             TenantResponseStatus = string.IsNullOrWhiteSpace(checkTime.TenantResponseStatus) ? "pending" : checkTime.TenantResponseStatus,
@@ -2102,6 +2134,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new KeyNotFoundException("Booking not found.");
 
+        await EnsureIsStaffOrAdminAsync(resolvedBy);
+
         var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
 
         var isDisputed = string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase)
@@ -2177,6 +2211,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             resolutionMessage,
             booking.BookingId);
 
+        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, resolvedBy, "claim_resolved", new { ResolvedInFavorOfTenant = dto.ApproveTenantDispute, Notes = dto.Notes });
+
         return await GetCheckTimeDetailsAsync(bookingId, resolvedBy);
     }
 
@@ -2221,6 +2257,8 @@ public class BookingService : BaseService<Booking>, IBookingService
                 title,
                 message,
                 booking.BookingId);
+
+            await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, settledBy, "fee_settled", new { SettlementAction = settlementAction, Notes = dto.Notes });
 
             await CreateBookingNotificationAsync(
                 apartment.LandlordId,
@@ -2331,35 +2369,359 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Claim fee has already been waived.");
         }
 
+        // Create payment record (pending)
+        var payment = new DAL.Models.Payment
+        {
+            PaymentId = Guid.NewGuid(),
+            RelatedEntityId = booking.BookingId,
+            RelatedEntityType = "booking_check_time",
+            Amount = totalFee,
+            PaymentType = "charge",
+            PaymentPurpose = "check_time_fee",
+            LandlordId = booking.ApartmentId == Guid.Empty ? null : (Guid?)null,
+            LandlordAmount = 0m,
+            PlatformFee = 0m,
+            SettlementStatus = "pending",
+            Method = string.IsNullOrWhiteSpace(dto.PaymentMethod) ? "stripe" : dto.PaymentMethod.Trim().ToLowerInvariant(),
+            Status = "initiated",
+            TransactionId = null,
+            PaidAt = null
+        };
+
+        await _paymentRepository.AddAsync(payment);
+        await _paymentRepository.SaveChangesAsync();
+
+        // Default to stripe if available
+        var method = payment.Method;
+        if (method == "stripe")
+        {
+            // Prepare stripe checkout
+            var amountMinor = (long)Math.Round(totalFee * 100m, 0, MidpointRounding.AwayFromZero);
+            var stripeReq = new Common.DTOs.StripeCheckoutRequestDto
+            {
+                Amount = amountMinor,
+                Currency = _configuration.GetValue<string>("Stripe:Currency", "usd"),
+                RelatedEntityId = booking.BookingId,
+                PaymentPurpose = "check_time_fee",
+                PaymentType = "check_time",
+                DevicePlatform = dto.DevicePlatform ?? "web",
+                ReturnUrl = dto.ReturnUrl
+            };
+
+            var checkout = await _stripeService.CreateCheckoutSessionAsync(stripeReq);
+
+            // Save transaction id
+            payment.TransactionId = checkout.SessionId;
+            payment.Method = "stripe";
+            payment.Status = "pending";
+            _paymentRepository.Update(payment);
+            await _paymentRepository.SaveChangesAsync();
+
+            // Mark checkTime as awaiting payment verification
+            checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
+            checkTime.ClaimStatus = "payment_pending";
+            checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
+            checkTime.FeeSettlementNotes = $"[PAYMENT_INITIATED] Checkout: {checkout.Url}";
+
+            _bookingCheckTimeRepository.Update(checkTime);
+            await _bookingCheckTimeRepository.SaveChangesAsync();
+
+            var response = await GetCheckTimeDetailsAsync(bookingId, tenantId);
+            response.PaymentRedirectUrl = checkout.Url;
+            response.PendingPaymentId = payment.PaymentId;
+
+            await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, tenantId, "payment_initiated", new { PaymentId = payment.PaymentId, CheckoutUrl = checkout.Url });
+            return response;
+        }
+
+        // For other methods (e.g., momo), we can implement later; return initiated response
         checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
-        checkTime.ClaimStatus = "paid";
-        checkTime.FeeSettlementStatus = FeeSettlementStatusPaid;
-        checkTime.FeeSettledAt = now;
-        checkTime.FeeDueAt = null;
-        checkTime.FeeSettlementNotes = $"[TENANT CLAIM PAYMENT] Ref: {dto.PaymentReference ?? "n/a"}; Notes: {dto.Notes ?? "n/a"}; At: {now:yyyy-MM-dd HH:mm:ss}";
+        checkTime.ClaimStatus = "payment_pending";
+        checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
+        checkTime.FeeSettlementNotes = $"[PAYMENT_INITIATED] Method: {payment.Method}";
 
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
 
-        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
-        if (apartment != null)
+        var fallback = await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        fallback.PendingPaymentId = payment.PaymentId;
+        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, tenantId, "payment_initiated", new { PaymentId = payment.PaymentId, Method = payment.Method });
+        return fallback;
+    }
+
+    public async Task<BookingCheckTimeResponseDto> MarkNoShowAsync(Guid bookingId, Guid actorId, MarkNoShowDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        if (checkTime.ActualCheckIn.HasValue)
         {
-            await CreateBookingNotificationAsync(
-                apartment.LandlordId,
-                NotificationType.system_announcement.ToString(),
-                "Claim Fee Paid",
-                $"Tenant has paid the claim fee of {totalFee:0.00} for booking {booking.BookingId}.",
-                booking.BookingId);
+            throw new InvalidOperationException("Cannot mark no-show after check-in has already been recorded.");
         }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        await EnsureActorIsOwnerOrStaffAsync(actorId, apartment.LandlordId);
+
+        var noShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
+        var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(noShowGraceHours <= 0 ? 4 : noShowGraceHours);
+        var now = Common.Utils.VietnamTime.Now;
+        if (now < noShowEligibleAt)
+        {
+            throw new InvalidOperationException($"No-show can only be marked after {noShowEligibleAt:yyyy-MM-dd HH:mm}.");
+        }
+
+        checkTime.NoShowStatus = "confirmed";
+        checkTime.NoShowMarkedBy = actorId;
+        checkTime.NoShowMarkedAt = now;
+        checkTime.ClaimStatus = "no_show_confirmed";
+        checkTime.ClaimLockedAt = now;
+        checkTime.ClaimExpiresAt = now;
+        checkTime.TenantResponseStatus = "pending";
+        checkTime.Notes = string.IsNullOrWhiteSpace(dto.Notes) ? checkTime.Notes : dto.Notes.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.Reason))
+        {
+            checkTime.FeeSettlementNotes = $"[NO_SHOW] {dto.Reason.Trim()}";
+        }
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+        booking.Status = BookingStatus.cancelled.ToString();
+
+        // Emit audit event for no-show
+        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, actorId, "no_show_marked", new { Reason = dto.Reason, Notes = dto.Notes });
+
+        booking.Status = BookingStatus.cancelled.ToString();
+        _bookingRepository.Update(booking);
+        await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
             NotificationType.system_announcement.ToString(),
-            "Claim Fee Paid",
-            $"Your claim fee payment of {totalFee:0.00} has been recorded.",
+            "No-show Marked",
+            "Your booking has been marked as no-show. Contact support if this is incorrect.",
             booking.BookingId);
 
-        return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+        return await GetCheckTimeDetailsAsync(bookingId, actorId);
+    }
+
+    public async Task<BookingCheckTimeResponseDto> CloseMissingCheckOutAsync(Guid bookingId, Guid actorId, CloseMissingCheckOutDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        if (!checkTime.ActualCheckIn.HasValue)
+        {
+            throw new InvalidOperationException("Cannot close missing check-out before check-in is recorded.");
+        }
+
+        if (checkTime.ActualCheckOut.HasValue)
+        {
+            return await GetCheckTimeDetailsAsync(bookingId, actorId);
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        await EnsureActorIsOwnerOrStaffAsync(actorId, apartment.LandlordId);
+
+        var now = Common.Utils.VietnamTime.Now;
+        var graceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:MissingCheckOutGraceHours", 6);
+        var eligibleAt = checkTime.ScheduledCheckOut.AddHours(graceHours <= 0 ? 6 : graceHours);
+        if (!dto.Force && now < eligibleAt)
+        {
+            throw new InvalidOperationException($"Missing check-out can only be closed after {eligibleAt:yyyy-MM-dd HH:mm}, or set Force=true.");
+        }
+
+        checkTime.ActualCheckOut = checkTime.ScheduledCheckOut;
+        checkTime.IsLateCheckOut = false;
+        checkTime.LateCheckOutFee = 0m;
+        checkTime.MissingCheckOutStatus = dto.Force ? "closed_forced" : "closed_after_grace";
+        checkTime.AutoClosedAt = now;
+        checkTime.ClaimStatus = "closed";
+        checkTime.ClaimOpenedAt ??= now;
+        checkTime.ClaimExpiresAt ??= now;
+        checkTime.ClaimLockedAt ??= now;
+        checkTime.UpdatedAt = now;
+        if (!string.IsNullOrWhiteSpace(dto.Notes))
+        {
+            checkTime.Notes = dto.Notes.Trim();
+        }
+
+        ApplyFeeSettlementState(checkTime, GetCheckTimeFeeTotal(checkTime), now);
+
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+        booking.Status = BookingStatus.completed.ToString();
+
+        // Emit event for missing check-out closed
+        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, actorId, "missing_checkout_closed", new { Force = dto.Force, Notes = dto.Notes });
+
+        booking.Status = BookingStatus.completed.ToString();
+        _bookingRepository.Update(booking);
+        await _bookingRepository.SaveChangesAsync();
+        await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        await CreateBookingNotificationAsync(
+            booking.TenantId,
+            NotificationType.system_announcement.ToString(),
+            "Missing Check-out Closed",
+            "Your booking was closed due to missing check-out record.",
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, actorId);
+    }
+
+    public async Task ProcessCheckTimeAutomationAsync()
+    {
+        var now = Common.Utils.VietnamTime.Now;
+        // Check for long-running claim queues and emit alert events when thresholds exceeded
+        try
+        {
+            var longClaimDays = _configuration.GetValue<int>("BookingCheckTimeSettings:LongClaimThresholdDays", 7);
+            var longClaimAlertCount = _configuration.GetValue<int>("BookingCheckTimeSettings:LongClaimAlertCount", 20);
+            if (longClaimDays > 0)
+            {
+                var longAgo = now.AddDays(-longClaimDays);
+                var longClaims = (await _bookingCheckTimeRepository.FindAsync(ct => ct.ClaimOpenedAt.HasValue && ct.ClaimOpenedAt.Value <= longAgo)).ToList();
+                if (longClaims.Count >= longClaimAlertCount)
+                {
+                    var oldest = longClaims.Min(ct => ct.ClaimOpenedAt.Value);
+                    await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "long_claim_queue", new { Count = longClaims.Count, ThresholdDays = longClaimDays, Oldest = oldest });
+                }
+            }
+        }
+        catch
+        {
+            // don't fail automation because of alerting checks
+        }
+        var claimWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:ClaimWindowHours", 24);
+        if (claimWindowHours <= 0)
+        {
+            claimWindowHours = 24;
+        }
+
+        var noShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
+        if (noShowGraceHours <= 0)
+        {
+            noShowGraceHours = 4;
+        }
+
+        var missingCheckOutGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:MissingCheckOutGraceHours", 6);
+        if (missingCheckOutGraceHours <= 0)
+        {
+            missingCheckOutGraceHours = 6;
+        }
+
+        // Emit automation run started event
+        var runId = Guid.NewGuid();
+        await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "automation_run_started", new { RunId = runId, StartedAt = now });
+
+        var processed = 0;
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(_ => true);
+        foreach (var checkTime in checkTimes)
+        {
+            var booking = await _bookingRepository.GetByIdAsync(checkTime.BookingId);
+            if (booking == null)
+            {
+                continue;
+            }
+
+            var changed = false;
+
+            var claimExpiresAt = checkTime.ClaimExpiresAt ?? checkTime.ClaimOpenedAt?.AddHours(claimWindowHours);
+            var tenantRefuted = string.Equals(checkTime.TenantResponseStatus, "refuted", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(checkTime.TenantResponseStatus, "disputed", StringComparison.OrdinalIgnoreCase);
+            var feeTotal = GetCheckTimeFeeTotal(checkTime);
+
+            if (claimExpiresAt.HasValue && now >= claimExpiresAt.Value && !checkTime.ClaimLockedAt.HasValue)
+            {
+                checkTime.ClaimLockedAt = claimExpiresAt.Value;
+                if (!string.Equals(checkTime.ClaimStatus, "paid", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(checkTime.ClaimStatus, "waived", StringComparison.OrdinalIgnoreCase))
+                {
+                    checkTime.ClaimStatus = "locked";
+                }
+
+                if (!tenantRefuted && feeTotal > 0m)
+                {
+                    var status = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+                    if (status != FeeSettlementStatusPaid && status != FeeSettlementStatusWaived)
+                    {
+                        checkTime.FeeSettlementStatus = FeeSettlementStatusDue;
+                        checkTime.FeeDueAt ??= claimExpiresAt.Value;
+                    }
+                }
+
+                changed = true;
+                await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, null, "claim_locked", new { ClaimExpiresAt = claimExpiresAt.Value });
+            }
+
+            if (!checkTime.ActualCheckIn.HasValue && !checkTime.NoShowMarkedAt.HasValue)
+            {
+                var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(noShowGraceHours);
+                var bookingOpenForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
+                if (bookingOpenForCheckIn && now >= noShowEligibleAt)
+                {
+                    checkTime.NoShowStatus = "auto_confirmed";
+                    checkTime.NoShowMarkedBy = Guid.Empty;
+                    checkTime.NoShowMarkedAt = now;
+                    checkTime.ClaimStatus = "no_show_confirmed";
+                    checkTime.ClaimOpenedAt ??= now;
+                    checkTime.ClaimExpiresAt ??= now;
+                    checkTime.ClaimLockedAt ??= now;
+
+                    booking.Status = BookingStatus.cancelled.ToString();
+                    _bookingRepository.Update(booking);
+                    await _bookingRepository.SaveChangesAsync();
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+                    changed = true;
+                    await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, null, "no_show_auto_confirmed", new { NoShowMarkedAt = now });
+                }
+            }
+
+            if (checkTime.ActualCheckIn.HasValue && !checkTime.ActualCheckOut.HasValue)
+            {
+                var missingCheckOutEligibleAt = checkTime.ScheduledCheckOut.AddHours(missingCheckOutGraceHours);
+                if (now >= missingCheckOutEligibleAt)
+                {
+                    checkTime.ActualCheckOut = checkTime.ScheduledCheckOut;
+                    checkTime.IsLateCheckOut = false;
+                    checkTime.LateCheckOutFee = 0m;
+                    checkTime.MissingCheckOutStatus = "auto_closed";
+                    checkTime.AutoClosedAt = now;
+                    checkTime.ClaimOpenedAt ??= now;
+                    checkTime.ClaimExpiresAt ??= now;
+                    checkTime.ClaimLockedAt ??= now;
+                    checkTime.ClaimStatus ??= "closed";
+                    checkTime.UpdatedAt = now;
+
+                    ApplyFeeSettlementState(checkTime, GetCheckTimeFeeTotal(checkTime), now);
+
+                    booking.Status = BookingStatus.completed.ToString();
+                    _bookingRepository.Update(booking);
+                    await _bookingRepository.SaveChangesAsync();
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+                    changed = true;
+                    await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, null, "missing_checkout_auto_closed", new { AutoClosedAt = now });
+                }
+            }
+
+            if (changed)
+            {
+                _bookingCheckTimeRepository.Update(checkTime);
+                await _bookingCheckTimeRepository.SaveChangesAsync();
+                processed++;
+            }
+        }
+
+        // Emit automation run completed event
+        await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "automation_run_completed", new { RunId = runId, CompletedAt = Common.Utils.VietnamTime.Now, Processed = processed });
     }
 
     private async Task EnsureTenantHasNoOutstandingCheckTimeFeesAsync(Guid tenantId)
@@ -2384,6 +2746,30 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var totalOutstanding = outstandingFees.Sum(GetCheckTimeFeeTotal);
         throw new InvalidOperationException($"You have unpaid check-time fees totaling {totalOutstanding:0.00}. Please settle them before creating a new booking.");
+    }
+
+    private async Task CreateCheckTimeStateEventAsync(Guid bookingId, Guid? checkTimeId, Guid? actorId, string eventType, object? eventData = null)
+    {
+        try
+        {
+            var ev = new BookingCheckTimeStateEvent
+            {
+                EventId = Guid.NewGuid(),
+                BookingId = bookingId,
+                CheckTimeId = checkTimeId,
+                EventType = eventType,
+                EventData = eventData == null ? null : JsonSerializer.Serialize(eventData),
+                CreatedBy = actorId,
+                CreatedAt = Common.Utils.VietnamTime.Now
+            };
+
+            await _checkTimeStateEventRepository.AddAsync(ev);
+            await _checkTimeStateEventRepository.SaveChangesAsync();
+        }
+        catch
+        {
+            // swallow errors to avoid breaking main flow; consider logging
+        }
     }
 
     private async Task EnsureTenantHasNoPendingCheckTimeRequestsAsync(Guid tenantId)
@@ -2439,6 +2825,46 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.FeeSettlementStatus = FeeSettlementStatusDue;
         checkTime.FeeDueAt ??= now.AddDays(GetFeeSettlementGraceDays());
         checkTime.FeeSettledAt = null;
+    }
+
+    private async Task EnsureActorIsOwnerOrStaffAsync(Guid actorId, Guid landlordId)
+    {
+        // Allow system/automation actor (Guid.Empty) to perform actions
+        if (actorId == Guid.Empty)
+            return;
+
+        var user = await _userRepository.GetByIdAsync(actorId);
+        if (user == null)
+            throw new InvalidOperationException("Actor not found.");
+
+        var role = (user.Role ?? string.Empty).Trim().ToLowerInvariant();
+        if (role == "landlord")
+        {
+            if (landlordId != actorId)
+                throw new InvalidOperationException("You are not allowed to modify bookings for properties you do not own.");
+            return;
+        }
+
+        if (role == "tenant")
+        {
+            throw new InvalidOperationException("Tenants are not allowed to perform this action.");
+        }
+
+        // staff/admin/other roles are allowed by default
+    }
+
+    private async Task EnsureIsStaffOrAdminAsync(Guid actorId)
+    {
+        if (actorId == Guid.Empty)
+            return;
+
+        var user = await _userRepository.GetByIdAsync(actorId);
+        if (user == null)
+            throw new InvalidOperationException("Actor not found.");
+
+        var role = (user.Role ?? string.Empty).Trim().ToLowerInvariant();
+        if (role != "staff" && role != "admin")
+            throw new InvalidOperationException("Only staff or admin users can perform this action.");
     }
 
     private static string NormalizeFeeSettlementStatus(string? feeSettlementStatus, BookingCheckTime checkTime)
@@ -3424,6 +3850,16 @@ public class BookingService : BaseService<Booking>, IBookingService
                 ? "Support staff created an alternative apartment offer for a tenant due to occupancy incident."
                 : "An alternative apartment offer was automatically created for a tenant after an occupancy incident report.",
             booking.BookingId);
+
+        // Audit event for alternative offer creation (staff action)
+        try
+        {
+            await CreateCheckTimeStateEventAsync(booking.BookingId, null, staffUserId, "alternative_offer_created", new { OfferId = offer.OfferId, AlternativeApartmentId = alternativeApartmentId, CreatedAt = now, Reason = offer.Reason });
+        }
+        catch
+        {
+            // swallow audit failures
+        }
 
         var createdOffer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offer.OfferId)
             ?? throw new InvalidOperationException("Offer created but failed to load details.");

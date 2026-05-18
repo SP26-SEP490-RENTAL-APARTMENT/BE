@@ -37,6 +37,8 @@ builder.Services.AddHostedService<AdminAnalyticsStreamingService>();
 builder.Services.AddHostedService<MomoIpnQueueWorkerService>();
 builder.Services.AddHostedService<MomoPaymentStatusRecoveryWorkerService>();
 builder.Services.AddHostedService<CheckTimeRequestExpiryWorkerService>();
+builder.Services.AddHostedService<BookingCheckTimeAutomationWorkerService>();
+builder.Services.AddHostedService<CheckTimeEventRetentionService>();
 builder.Services.AddScoped<PricingDataOptimizerService>();
 builder.Services.AddScoped<IMomoWebhookService, MomoWebhookService>();
 builder.Services.AddSwaggerGen(c =>

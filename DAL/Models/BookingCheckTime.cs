@@ -53,6 +53,12 @@ public partial class BookingCheckTime
     public DateTime? ClaimLockedAt { get; set; }
     public string? ClaimStatus { get; set; }
 
+    public string? NoShowStatus { get; set; }
+    public Guid? NoShowMarkedBy { get; set; }
+    public DateTime? NoShowMarkedAt { get; set; }
+    public string? MissingCheckOutStatus { get; set; }
+    public DateTime? AutoClosedAt { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

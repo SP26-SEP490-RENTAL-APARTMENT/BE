@@ -1032,6 +1032,66 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/check-time/no-show")]
+        [Authorize(Roles = "landlord,staff")]
+        public async Task<IActionResult> MarkNoShow(Guid id, [FromBody] MarkNoShowDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var actorId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var response = await _bookingService.MarkNoShowAsync(id, actorId, dto);
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(response, "No-show marked successfully."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpPost("{id:guid}/check-time/missing-checkout/close")]
+        [Authorize(Roles = "landlord,staff,admin")]
+        public async Task<IActionResult> CloseMissingCheckOut(Guid id, [FromBody] CloseMissingCheckOutDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var actorId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var response = await _bookingService.CloseMissingCheckOutAsync(id, actorId, dto);
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(response, "Missing check-out closed successfully."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
         [HttpGet("outstanding-fees/{userId:guid}")]
         [Authorize(Roles = "tenant,staff,admin")]
         public async Task<IActionResult> GetOutstandingCheckTimeFees(Guid userId)

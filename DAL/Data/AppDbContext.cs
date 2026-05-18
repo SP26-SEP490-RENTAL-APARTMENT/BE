@@ -46,6 +46,7 @@ public partial class AppDbContext : DbContext
     public virtual DbSet<BookingOccupant> BookingOccupants { get; set; }
 
     public virtual DbSet<BookingCheckTime> BookingCheckTimes { get; set; }
+    public virtual DbSet<BookingCheckTimeStateEvent> BookingCheckTimeStateEvents { get; set; }
 
     public virtual DbSet<HolidaysEvent> HolidaysEvents { get; set; }
 
@@ -158,6 +159,29 @@ public partial class AppDbContext : DbContext
             entity.HasOne(d => d.Admin).WithMany(p => p.AdminActions)
                 .HasForeignKey(d => d.AdminId)
                 .HasConstraintName("admin_actions_ibfk_1");
+        });
+
+        modelBuilder.Entity<BookingCheckTimeStateEvent>(entity =>
+        {
+            entity.HasKey(e => e.EventId).HasName("PRIMARY");
+            entity.ToTable("check_time_state_events");
+            entity.Property(e => e.EventId).HasColumnName("event_id");
+            entity.Property(e => e.BookingId).HasColumnName("booking_id");
+            entity.Property(e => e.CheckTimeId).HasColumnName("check_time_id");
+            entity.Property(e => e.EventType)
+                .HasMaxLength(100)
+                .HasColumnName("event_type");
+            entity.Property(e => e.EventData)
+                .HasColumnType("text")
+                .HasColumnName("event_data");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+
+            entity.HasIndex(e => e.BookingId, "idx_event_booking");
+            entity.HasIndex(e => e.CheckTimeId, "idx_event_check_time");
         });
 
         modelBuilder.Entity<Amenity>(entity =>
@@ -714,6 +738,20 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ClaimStatus)
                 .HasMaxLength(30)
                 .HasColumnName("claim_status");
+            entity.Property(e => e.NoShowStatus)
+                .HasMaxLength(30)
+                .HasColumnName("no_show_status");
+            entity.Property(e => e.NoShowMarkedBy)
+                .HasColumnName("no_show_marked_by");
+            entity.Property(e => e.NoShowMarkedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("no_show_marked_at");
+            entity.Property(e => e.MissingCheckOutStatus)
+                .HasMaxLength(40)
+                .HasColumnName("missing_checkout_status");
+            entity.Property(e => e.AutoClosedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("auto_closed_at");
             entity.Property(e => e.DisputeResolutionNotes)
                 .HasColumnType("text")
                 .HasColumnName("dispute_resolution_notes");

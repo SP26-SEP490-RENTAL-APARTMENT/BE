@@ -76,6 +76,21 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, PayClaimFeeDto dto);
 
 	/// <summary>
+	/// Marks a booking as no-show when tenant did not check in.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> MarkNoShowAsync(Guid bookingId, Guid actorId, MarkNoShowDto dto);
+
+	/// <summary>
+	/// Closes a booking with missing check-out record.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> CloseMissingCheckOutAsync(Guid bookingId, Guid actorId, CloseMissingCheckOutDto dto);
+
+	/// <summary>
+	/// Background automation for claim expiry, no-show detection, and missing check-out closure.
+	/// </summary>
+	Task ProcessCheckTimeAutomationAsync();
+
+	/// <summary>
 	/// Retrieves the availability calendar for an apartment showing available and unavailable date ranges.
 	/// Returns a 90-day calendar by default (customizable via startDate/endDate parameters).
 	/// Anonymous users see availability only; landlord/owner roles see booking IDs and statuses for blocked periods.

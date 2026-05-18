@@ -531,6 +531,28 @@ namespace DAL.Migrations
                         .HasColumnType("longtext")
                         .HasColumnName("claim_status");
 
+                    b.Property<string>("NoShowStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("longtext")
+                        .HasColumnName("no_show_status");
+
+                    b.Property<Guid?>("NoShowMarkedBy")
+                        .HasColumnType("char(36)")
+                        .HasColumnName("no_show_marked_by");
+
+                    b.Property<DateTime?>("NoShowMarkedAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("no_show_marked_at");
+
+                    b.Property<string>("MissingCheckOutStatus")
+                        .HasMaxLength(40)
+                        .HasColumnType("longtext")
+                        .HasColumnName("missing_checkout_status");
+
+                    b.Property<DateTime?>("AutoClosedAt")
+                        .HasColumnType("datetime")
+                        .HasColumnName("auto_closed_at");
+
                     b.Property<decimal?>("EarlyCheckInFee")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(12, 2)

@@ -146,6 +146,12 @@ public class BookingCheckTimeResponseDto
     public bool ClaimIsLocked { get; set; }
     public bool ClaimIsExpired { get; set; }
 
+    public string? NoShowStatus { get; set; }
+    public Guid? NoShowMarkedBy { get; set; }
+    public DateTime? NoShowMarkedAt { get; set; }
+    public string? MissingCheckOutStatus { get; set; }
+    public DateTime? AutoClosedAt { get; set; }
+
     public DateTime? LastModifiedAt { get; set; }
 
     /// <summary>
@@ -172,6 +178,16 @@ public class BookingCheckTimeResponseDto
     public Guid? DisputeResolvedBy { get; set; }
     public DateTime? DisputeResolvedAt { get; set; }
     public string? DisputeResolutionNotes { get; set; }
+
+    /// <summary>
+    /// If payment is required and a checkout session was created, provide a URL for tenant to complete payment.
+    /// </summary>
+    public string? PaymentRedirectUrl { get; set; }
+
+    /// <summary>
+    /// Pending payment record id if payment was initiated but not yet settled.
+    /// </summary>
+    public Guid? PendingPaymentId { get; set; }
 }
 
 /// <summary>
@@ -263,11 +279,68 @@ public class PayClaimFeeDto : IValidatableObject
     [MaxLength(1000)]
     public string? Notes { get; set; }
 
+    /// <summary>
+    /// Preferred payment method: 'stripe' or 'momo'. Optional; defaults to configured gateway.
+    /// </summary>
+    [MaxLength(50)]
+    public string? PaymentMethod { get; set; }
+
+    /// <summary>
+    /// Device platform for redirect payload: 'web', 'ios', 'android'. Required for Stripe deep links.
+    /// </summary>
+    [MaxLength(20)]
+    public string? DevicePlatform { get; set; }
+
+    /// <summary>
+    /// Optional return URL to override configured success/cancel URLs.
+    /// </summary>
+    [MaxLength(2000)]
+    public string? ReturnUrl { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (string.IsNullOrWhiteSpace(PaymentReference) && string.IsNullOrWhiteSpace(Notes))
         {
             yield return new ValidationResult("Either PaymentReference or Notes is required.", new[] { nameof(PaymentReference), nameof(Notes) });
+        }
+    }
+}
+
+/// <summary>
+/// Payload for marking a booking as no-show when check-in never happened.
+/// </summary>
+public class MarkNoShowDto : IValidatableObject
+{
+    [MaxLength(300)]
+    public string? Reason { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (string.IsNullOrWhiteSpace(Reason) && string.IsNullOrWhiteSpace(Notes))
+        {
+            yield return new ValidationResult("Either Reason or Notes is required.", new[] { nameof(Reason), nameof(Notes) });
+        }
+    }
+}
+
+/// <summary>
+/// Payload for manually closing missing check-out records.
+/// </summary>
+public class CloseMissingCheckOutDto : IValidatableObject
+{
+    public bool Force { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (!Force && string.IsNullOrWhiteSpace(Notes))
+        {
+            yield return new ValidationResult("Notes are required unless Force is true.", new[] { nameof(Notes) });
         }
     }
 }
