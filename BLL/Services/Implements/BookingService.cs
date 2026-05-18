@@ -35,7 +35,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<Package> _packageRepository;
     private readonly IRepository<DAL.Models.Notification> _notificationRepository;
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
-    private readonly IRepository<BookingCheckTimeStateEvent> _checkTimeStateEventRepository;
+    private readonly IRepository<BookingCheckTimeStateEvent>? _checkTimeStateEventRepository;
     private readonly IRepository<TemporaryResidenceReport> _temporaryResidenceReportRepository;
     private readonly IRepository<BookingOccupant>? _bookingOccupantRepository;
     private readonly IRepository<Tenant> _tenantRepository;
@@ -96,7 +96,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _mapper = mapper;
         _bookingOccupantRepository = bookingOccupantRepository;
         _checkTimeRequestRepository = checkTimeRequestRepository;
-        _checkTimeStateEventRepository = checkTimeStateEventRepository ?? throw new ArgumentNullException(nameof(checkTimeStateEventRepository));
+        _checkTimeStateEventRepository = checkTimeStateEventRepository;
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -3698,65 +3698,25 @@ public class BookingService : BaseService<Booking>, IBookingService
             tolerance = DefaultPriceTolerancePercent;
         }
 
-        // If caller didn't specify radius, allow a configured default radius (meters)
-        if (!radiusMeters.HasValue)
+        var sourceCity = NormalizeLocationValue(sourceApartment.City);
+        var sourceDistrict = NormalizeLocationValue(sourceApartment.District);
+        if (sourceCity == null || sourceDistrict == null)
         {
-            radiusMeters = _configuration.GetValue<int?>("OccupiedRoomAlternatives:DefaultRadiusMeters", null);
+            return Array.Empty<OccupiedRoomAlternativeOptionDto>();
         }
 
-        // If radiusMeters is provided and source has coordinates, use spatial bounding-box + exact Haversine check.
-        IEnumerable<Apartment> candidateApartmentsRaw;
+        var candidateApartments = await _apartmentRepository.FindAsync(a =>
+            a.ApartmentId != booking.ApartmentId &&
+            a.Status == "posted" &&
+            a.City != null && a.City.Trim().ToUpper() == sourceCity &&
+            a.District != null && a.District.Trim().ToUpper() == sourceDistrict &&
+            (!hasPets || a.IsPetAllowed == true) &&
+            (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
+            (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value));
 
-        if (radiusMeters.HasValue && sourceApartment.Latitude.HasValue && sourceApartment.Longitude.HasValue)
-        {
-            var bbox = ComputeBoundingBoxMeters((double)sourceApartment.Latitude.Value, (double)sourceApartment.Longitude.Value, radiusMeters.Value);
-            candidateApartmentsRaw = (await _apartmentRepository.FindAsync(a =>
-                a.ApartmentId != booking.ApartmentId &&
-                a.Status == "posted" &&
-                a.Latitude.HasValue && a.Longitude.HasValue &&
-                a.Latitude >= (decimal)bbox.minLat && a.Latitude <= (decimal)bbox.maxLat &&
-                a.Longitude >= (decimal)bbox.minLon && a.Longitude <= (decimal)bbox.maxLon &&
-                (!hasPets || a.IsPetAllowed == true) &&
-                (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
-                (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value))).ToList();
-        }
-        else
-        {
-            var sourceCity = NormalizeLocationValue(sourceApartment.City);
-            var sourceDistrict = NormalizeLocationValue(sourceApartment.District);
-            if (sourceCity == null || sourceDistrict == null)
-            {
-                return Array.Empty<OccupiedRoomAlternativeOptionDto>();
-            }
-
-            candidateApartmentsRaw = (await _apartmentRepository.FindAsync(a =>
-                a.ApartmentId != booking.ApartmentId &&
-                a.Status == "posted" &&
-                a.City != null && a.City.Trim().ToUpper() == sourceCity &&
-                a.District != null && a.District.Trim().ToUpper() == sourceDistrict &&
-                (!hasPets || a.IsPetAllowed == true) &&
-                (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
-                (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value))).ToList();
-        }
-
-        // If we used bounding-box we must apply exact Haversine distance check; otherwise candidates are already location-matched.
         var alternatives = new List<OccupiedRoomAlternativeOptionDto>();
-        var srcLat = sourceApartment.Latitude.HasValue ? (double?)sourceApartment.Latitude.Value : null;
-        var srcLon = sourceApartment.Longitude.HasValue ? (double?)sourceApartment.Longitude.Value : null;
-
-        foreach (var candidate in candidateApartmentsRaw)
+        foreach (var candidate in candidateApartments)
         {
-            // If candidate lacks coordinates and radius search requested, skip it
-            if (radiusMeters.HasValue && (srcLat == null || srcLon == null || !candidate.Latitude.HasValue || !candidate.Longitude.HasValue))
-                continue;
-
-            if (radiusMeters.HasValue && srcLat.HasValue && srcLon.HasValue)
-            {
-                var dist = HaversineDistanceMeters(srcLat.Value, srcLon.Value, (double)candidate.Latitude!.Value, (double)candidate.Longitude!.Value);
-                if (dist > radiusMeters.Value)
-                    continue;
-            }
-
             try
             {
                 await EnsureNoConflictingBookingsAsync(candidate.ApartmentId, booking.CheckInDate, booking.CheckOutDate);
@@ -4045,29 +4005,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         return value.Trim().ToUpperInvariant();
-    }
-
-    private static double DegreesToRadians(double deg) => deg * Math.PI / 180.0;
-
-    private static double HaversineDistanceMeters(double lat1, double lon1, double lat2, double lon2)
-    {
-        const double R = 6378137.0; // Earth radius in meters
-        var dLat = DegreesToRadians(lat2 - lat1);
-        var dLon = DegreesToRadians(lon2 - lon1);
-        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
-                Math.Cos(DegreesToRadians(lat1)) * Math.Cos(DegreesToRadians(lat2)) *
-                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
-        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return R * c;
-    }
-
-    private static (double minLat, double maxLat, double minLon, double maxLon) ComputeBoundingBoxMeters(double lat, double lon, double radiusMeters)
-    {
-        const double earthRadius = 6378137.0; // meters
-        var radLat = DegreesToRadians(lat);
-        var degLat = (radiusMeters / earthRadius) * (180.0 / Math.PI);
-        var degLon = (radiusMeters / earthRadius) * (180.0 / Math.PI) / Math.Cos(radLat);
-        return (lat - degLat, lat + degLat, lon - degLon, lon + degLon);
     }
 
     private BookingOfferResponseDto MapOfferToResponse(BookingOffer offer)

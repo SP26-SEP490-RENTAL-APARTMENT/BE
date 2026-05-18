@@ -451,50 +451,6 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
-        [HttpPost("{id:guid}/check-in")]
-        [Authorize(Roles = "landlord,staff")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> RecordCheckIn(Guid id, [FromForm] Short_termApartmentAPI.DTOs.RecordCheckInFormDto form)
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(userIdClaim, out var recordedBy))
-            {
-                return Unauthorized(new ApiResponse<string>("Invalid user token."));
-            }
-
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            if (form.PhotoEvidence == null || form.PhotoEvidence.Length == 0)
-            {
-                return BadRequest(new ApiResponse<string>("Photo evidence is required."));
-            }
-
-            try
-            {
-                var photoUrl = await _imageService.UploadImageAsync(form.PhotoEvidence);
-                var dto = new Common.DTOs.RecordCheckInDto
-                {
-                    ActualCheckIn = form.ActualCheckIn,
-                    Notes = form.Notes,
-                    PhotoEvidenceUrl = photoUrl
-                };
-
-                var checkTimeResponse = await _bookingService.RecordCheckInAsync(id, dto, recordedBy);
-                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-in recorded successfully."));
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ApiResponse<string>(ex.Message));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new ApiResponse<string>(ex.Message));
-            }
-        }
-
         [HttpGet("{id:guid}/occupants")]
         [Authorize(Roles = "tenant,landlord")]
         public async Task<IActionResult> GetOccupants(Guid id)
@@ -815,6 +771,50 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/check-in")]
+        [Authorize(Roles = "landlord,staff")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> RecordCheckIn(Guid id, [FromForm] Short_termApartmentAPI.DTOs.RecordCheckInFormDto form)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var recordedBy))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (form.PhotoEvidence == null || form.PhotoEvidence.Length == 0)
+            {
+                return BadRequest(new ApiResponse<string>("Photo evidence is required."));
+            }
+
+            try
+            {
+                var photoUrl = await _imageService.UploadImageAsync(form.PhotoEvidence);
+                var dto = new Common.DTOs.RecordCheckInDto
+                {
+                    ActualCheckIn = form.ActualCheckIn,
+                    Notes = form.Notes,
+                    PhotoEvidenceUrl = photoUrl
+                };
+
+                var checkTimeResponse = await _bookingService.RecordCheckInAsync(id, dto, recordedBy);
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Check-in recorded successfully."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
         [HttpPost("{id:guid}/check-out")]
         [Authorize(Roles = "landlord,staff")]
         [Consumes("multipart/form-data")]
@@ -881,7 +881,6 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("{id:guid}/check-time/respond")]
-        [HttpPost("{id:guid}/check-time/claim/refute")]
         [Authorize(Roles = "tenant")]
         public async Task<IActionResult> RespondCheckTime(Guid id, [FromBody] RespondBookingCheckTimeDto dto)
         {

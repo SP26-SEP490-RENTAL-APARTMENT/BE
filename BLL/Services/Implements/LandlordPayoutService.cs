@@ -198,8 +198,31 @@ public class LandlordPayoutService : ILandlordPayoutService
 
         foreach (var payout in processing)
         {
-            // All payouts use PayOS (bank channel)
-            var payosQuery = await _payOSService.QueryBankPayoutStatusAsync(payout.MomoOrderId, cancellationToken);
+            PayOSPayoutResult payosQuery;
+
+            if (string.Equals(payout.Channel, "wallet", StringComparison.OrdinalIgnoreCase))
+            {
+                // Wallet channel uses Momo disbursement status
+                var momoQuery = await _momoService.QueryDisbursementStatusAsync(new Common.DTOs.MomoQueryDisbursementRequest
+                {
+                    OrderId = payout.MomoOrderId ?? string.Empty,
+                    RequestId = payout.MomoRequestId
+                }, cancellationToken);
+
+                payosQuery = new PayOSPayoutResult(
+                    ResultCode: momoQuery.ResultCode,
+                    PayoutId: momoQuery.OrderId ?? payout.MomoOrderId,
+                    Message: momoQuery.Message,
+                    RequestRaw: string.Empty,
+                    ResponseRaw: momoQuery.ResponseRaw,
+                    TransId: momoQuery.TransId);
+            }
+            else
+            {
+                // Bank and other channels use PayOS
+                payosQuery = await _payOSService.QueryBankPayoutStatusAsync(payout.MomoOrderId, cancellationToken);
+            }
+
             var bankStatus = MapStatus(payosQuery.ResultCode);
 
             if (bankStatus == payout.Status)
@@ -212,7 +235,7 @@ public class LandlordPayoutService : ILandlordPayoutService
             payout.Message = payosQuery.Message;
             payout.MomoTransId = string.IsNullOrWhiteSpace(payosQuery.TransId) ? payout.MomoTransId : payosQuery.TransId;
             payout.ResponseBody = payosQuery.ResponseRaw;
-            payout.ProviderName = "PayOS";
+            payout.ProviderName = string.Equals(payout.Channel, "wallet", StringComparison.OrdinalIgnoreCase) ? "Momo" : "PayOS";
             payout.ProviderPayoutId = payosQuery.PayoutId;
             payout.ProviderTransId = string.IsNullOrWhiteSpace(payosQuery.TransId) ? payout.ProviderTransId : payosQuery.TransId;
             payout.ProviderResponseBody = payosQuery.ResponseRaw;

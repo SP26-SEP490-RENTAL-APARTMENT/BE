@@ -658,6 +658,16 @@ public class ReportedBookingDto
     /// </summary>
     public int SupportTicketCount { get; set; }
 
+    /// <summary>
+    /// If there's a related support ticket for this reported booking, the latest ticket ID.
+    /// </summary>
+    public Guid? TicketId { get; set; }
+
+    /// <summary>
+    /// URLs of images/attachments associated with the related support ticket (if any).
+    /// </summary>
+    public List<string> Images { get; set; } = new();
+
     public DateTime? CreatedAt { get; set; }
 }
 
