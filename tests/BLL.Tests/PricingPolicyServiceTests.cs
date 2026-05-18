@@ -55,13 +55,17 @@ namespace BLL.Tests
             var apartmentRepo = new InMemoryRepo<Apartment>(new[] { apartment });
             var calendarRepo = new InMemoryRepo<ApartmentPriceCalendar>();
 
+            var holidayService = new TestHolidayService();
+
             var service = new PricingPolicyService(
                 templatesRepo,
                 paramsRepo,
                 applicationsRepo,
                 apartmentRepo as DAL.Repository.Interfaces.IApartmentRepository ?? new FakeApartmentRepository(apartmentRepo),
-                calendarRepo as IApartmentPriceCalendarRepository ?? new FakeCalendarRepository(calendarRepo)
+                calendarRepo as IApartmentPriceCalendarRepository ?? new FakeCalendarRepository(calendarRepo),
+                holidayService
             );
+
 
             var dto = new CreateApartmentPricingPolicyApplicationDto
             {
@@ -88,6 +92,85 @@ namespace BLL.Tests
             Assert.NotNull(generated);
             Assert.Equal(150m, generated.FixedPricePerNight);
             Assert.Equal("pricing_policy", generated.PriceType);
+        }
+
+        [Fact]
+        public async Task UpdateApplicationOverrides_ChangesMultiplier_WithoutDates()
+        {
+            // Arrange
+            var adminId = Guid.NewGuid();
+            var landlordId = Guid.NewGuid();
+            var apartmentId = Guid.NewGuid();
+
+            var apartment = new Apartment
+            {
+                ApartmentId = apartmentId,
+                LandlordId = landlordId,
+                BasePricePerNight = 100m
+            };
+
+            var template = new PricingRuleTemplate
+            {
+                TemplateId = Guid.NewGuid(),
+                CreatedByAdminId = adminId,
+                Name = "Multiplier template",
+                IsActive = true
+            };
+
+            var parameter = new PricingRuleTemplateParameter
+            {
+                ParameterId = Guid.NewGuid(),
+                TemplateId = template.TemplateId,
+                ParameterKey = "multiplier",
+                DisplayName = "Multiplier",
+                DefaultValue = 1.2m,
+                MinValue = 1.0m,
+                MaxValue = 2.0m,
+                IsAdjustable = true
+            };
+
+            var templatesRepo = new InMemoryRepo<PricingRuleTemplate>(new[] { template });
+            var paramsRepo = new InMemoryRepo<PricingRuleTemplateParameter>(new[] { parameter });
+            var applicationsRepo = new InMemoryRepo<ApartmentPricingPolicyApplication>();
+            var apartmentRepo = new InMemoryRepo<Apartment>(new[] { apartment });
+            var calendarRepo = new InMemoryRepo<ApartmentPriceCalendar>();
+            var holidayService = new TestHolidayService();
+
+            var service = new PricingPolicyService(
+                templatesRepo,
+                paramsRepo,
+                applicationsRepo,
+                apartmentRepo as DAL.Repository.Interfaces.IApartmentRepository ?? new FakeApartmentRepository(apartmentRepo),
+                calendarRepo as IApartmentPriceCalendarRepository ?? new FakeCalendarRepository(calendarRepo),
+                holidayService
+            );
+
+            var applyDto = new CreateApartmentPricingPolicyApplicationDto
+            {
+                TemplateId = template.TemplateId,
+                StartDate = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(1)),
+                EndDate = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(3)),
+                IsEnabled = true,
+                Overrides = new Dictionary<string, decimal> { { "multiplier", 1.2m } }
+            };
+
+            var applied = await service.ApplyTemplateAsync(apartmentId, applyDto, landlordId);
+
+            var updateDto = new UpdateApartmentPricingPolicyApplicationOverridesDto
+            {
+                Overrides = new Dictionary<string, decimal> { { "multiplier", 1.6m } }
+            };
+
+            // Act
+            var updated = await service.UpdateApplicationOverridesAsync(apartmentId, applied.ApplicationId, updateDto, landlordId);
+
+            // Assert
+            Assert.Equal(1.6m, updated.EffectiveMultiplier);
+            Assert.Equal(160m, updated.EffectivePricePerNight);
+
+            var generated = calendarRepo.Items.OfType<ApartmentPriceCalendar>().FirstOrDefault(r => r.VersionId == applied.ApplicationId);
+            Assert.NotNull(generated);
+            Assert.Equal(160m, generated.FixedPricePerNight);
         }
 
         // Lightweight in-memory repository for tests
@@ -173,6 +256,11 @@ namespace BLL.Tests
             public void Remove(ApartmentPriceCalendar entity) => _repo.Remove(entity);
             public void Update(ApartmentPriceCalendar entity) => _repo.Update(entity);
             public Task<int> SaveChangesAsync() => _repo.SaveChangesAsync();
+        }
+
+        private class TestHolidayService : IHolidayService
+        {
+            public Task<bool> IsHolidayAsync(DateOnly date, string? locationScope = null) => Task.FromResult(false);
         }
     }
 }

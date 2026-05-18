@@ -22,4 +22,12 @@ public interface IPricingPolicyService
         Guid applicationId,
         bool isEnabled,
         Guid landlordId);
+
+    Task<ApartmentPricingPolicyApplicationResponseDto> UpdateApplicationOverridesAsync(
+        Guid apartmentId,
+        Guid applicationId,
+        UpdateApartmentPricingPolicyApplicationOverridesDto dto,
+        Guid landlordId);
+
+    Task<AvailableTemplatesForApartmentDto> GetAvailableTemplatesForApartmentAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate);
 }

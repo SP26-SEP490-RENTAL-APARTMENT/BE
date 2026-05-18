@@ -911,7 +911,6 @@ namespace Short_termApartmentAPI.Controllers
         }
 
         [HttpPost("{id:guid}/check-time/resolve")]
-        [HttpPost("{id:guid}/check-time/claim/resolve")]
         [Authorize(Roles = "staff,admin")]
         public async Task<IActionResult> ResolveCheckTimeDispute(Guid id, [FromBody] ResolveBookingCheckTimeDisputeDto dto)
         {

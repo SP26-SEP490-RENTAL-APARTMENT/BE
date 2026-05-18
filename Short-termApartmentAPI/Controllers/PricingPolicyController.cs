@@ -51,6 +51,37 @@ public sealed class PricingPolicyController : ControllerBase
         }
     }
 
+    [HttpGet("templates")]
+    public async Task<ActionResult<AvailableTemplatesForApartmentDto>> GetAvailableTemplates(
+        [FromRoute] Guid apartmentId,
+        [FromQuery] DateOnly startDate,
+        [FromQuery] DateOnly endDate)
+    {
+        var userId = GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "Invalid user token." });
+        }
+
+        if (!await _authService.IsUserOwnerOrManager(userId.Value, apartmentId))
+        {
+            return Forbid("You do not have permission to view templates for this apartment.");
+        }
+
+        if (startDate > endDate)
+            return BadRequest("Start date cannot be after end date.");
+
+        try
+        {
+            var result = await _pricingPolicyService.GetAvailableTemplatesForApartmentAsync(apartmentId, startDate, endDate);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPatch("{applicationId:guid}/enabled")]
     public async Task<ActionResult<ApartmentPricingPolicyApplicationResponseDto>> SetApplicationStatus(
         [FromRoute] Guid apartmentId,
@@ -71,6 +102,38 @@ public sealed class PricingPolicyController : ControllerBase
         try
         {
             var result = await _pricingPolicyService.SetApplicationStatusAsync(apartmentId, applicationId, enabled, userId.Value);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Forbid(ex.Message);
+        }
+    }
+
+    [HttpPatch("{applicationId:guid}/overrides")]
+    public async Task<ActionResult<ApartmentPricingPolicyApplicationResponseDto>> UpdateApplicationOverrides(
+        [FromRoute] Guid apartmentId,
+        [FromRoute] Guid applicationId,
+        [FromBody] UpdateApartmentPricingPolicyApplicationOverridesDto dto)
+    {
+        var userId = GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "Invalid user token." });
+        }
+
+        if (!await _authService.IsUserOwnerOrManager(userId.Value, apartmentId))
+        {
+            return Forbid("You do not have permission to modify pricing for this apartment.");
+        }
+
+        try
+        {
+            var result = await _pricingPolicyService.UpdateApplicationOverridesAsync(apartmentId, applicationId, dto, userId.Value);
             return Ok(result);
         }
         catch (ArgumentException ex)

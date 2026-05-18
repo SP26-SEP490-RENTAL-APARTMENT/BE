@@ -106,3 +106,28 @@ public class ApartmentPricingPolicyApplicationResponseDto
 
     public Dictionary<string, decimal> Overrides { get; set; } = new();
 }
+
+public class UpdateApartmentPricingPolicyApplicationOverridesDto
+{
+    public Dictionary<string, decimal> Overrides { get; set; } = new();
+}
+
+public class TemplatePreviewDto
+{
+    public Guid TemplateId { get; set; }
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    public bool IsActive { get; set; }
+    public List<PricingRuleTemplateParameterResponseDto> Parameters { get; set; } = new();
+    public DateOnly StartDate { get; set; }
+    public DateOnly EndDate { get; set; }
+    public decimal PreviewMultiplier { get; set; }
+    public decimal PreviewPricePerNight { get; set; }
+}
+
+public class AvailableTemplatesForApartmentDto
+{
+    public Guid ApartmentId { get; set; }
+    public decimal ApartmentBasePrice { get; set; }
+    public List<TemplatePreviewDto> Templates { get; set; } = new();
+}

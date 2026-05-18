@@ -27,6 +27,7 @@ public static class DbInitializer
         await HolidaysEventSeed.SeedAsync(context, cancellationToken);
         await NearbyAttractionSeed.SeedAsync(context, cancellationToken);
         await PackageSeed.SeedAsync(context, cancellationToken);
+        await PricingRuleTemplateSeed.SeedAsync(context, cancellationToken);
 
         // Dependent entities
         await LandlordWalletSeed.SeedAsync(context, cancellationToken);

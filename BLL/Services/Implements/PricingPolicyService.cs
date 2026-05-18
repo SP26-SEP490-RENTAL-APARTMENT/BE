@@ -16,27 +16,81 @@ public sealed class PricingPolicyService : IPricingPolicyService
     private readonly IRepository<ApartmentPricingPolicyApplication> _applicationRepository;
     private readonly IApartmentRepository _apartmentRepository;
     private readonly IApartmentPriceCalendarRepository _calendarRepository;
+    private readonly IHolidayService _holidayService;
 
     public PricingPolicyService(
         IRepository<PricingRuleTemplate> templateRepository,
         IRepository<PricingRuleTemplateParameter> parameterRepository,
         IRepository<ApartmentPricingPolicyApplication> applicationRepository,
         IApartmentRepository apartmentRepository,
-        IApartmentPriceCalendarRepository calendarRepository)
+        IApartmentPriceCalendarRepository calendarRepository,
+        IHolidayService holidayService)
     {
         _templateRepository = templateRepository;
         _parameterRepository = parameterRepository;
         _applicationRepository = applicationRepository;
         _apartmentRepository = apartmentRepository;
         _calendarRepository = calendarRepository;
+        _holidayService = holidayService;
+    }
+
+    public async Task<AvailableTemplatesForApartmentDto> GetAvailableTemplatesForApartmentAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate)
+    {
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId)
+            ?? throw new ArgumentException("Apartment not found.");
+
+        var templates = (await _templateRepository.FindAsync(t => t.IsActive)).ToList();
+        var templateIds = templates.Select(t => t.TemplateId).ToArray();
+        var parameters = templateIds.Length == 0
+            ? new List<PricingRuleTemplateParameter>()
+            : (await _parameterRepository.FindAsync(p => templateIds.Contains(p.TemplateId))).ToList();
+
+        var result = new AvailableTemplatesForApartmentDto
+        {
+            ApartmentId = apartment.ApartmentId,
+            ApartmentBasePrice = apartment.BasePricePerNight
+        };
+
+        foreach (var template in templates)
+        {
+            var parms = parameters.Where(p => p.TemplateId == template.TemplateId).ToList();
+            var defaults = parms.ToDictionary(p => p.ParameterKey, p => p.DefaultValue, StringComparer.OrdinalIgnoreCase);
+            var multiplier = await ResolveMultiplierAsync(parms, defaults, startDate);
+            var previewPrice = Math.Round(apartment.BasePricePerNight * multiplier, 2, MidpointRounding.AwayFromZero);
+
+            result.Templates.Add(new TemplatePreviewDto
+            {
+                TemplateId = template.TemplateId,
+                Name = template.Name,
+                Description = template.Description,
+                IsActive = template.IsActive,
+                Parameters = parms.Select(p => new PricingRuleTemplateParameterResponseDto
+                {
+                    ParameterId = p.ParameterId,
+                    TemplateId = p.TemplateId,
+                    ParameterKey = p.ParameterKey,
+                    DisplayName = p.DisplayName,
+                    DefaultValue = p.DefaultValue,
+                    MinValue = p.MinValue,
+                    MaxValue = p.MaxValue,
+                    IsAdjustable = p.IsAdjustable
+                }).ToList(),
+                StartDate = startDate,
+                EndDate = endDate,
+                PreviewMultiplier = multiplier,
+                PreviewPricePerNight = previewPrice
+            });
+        }
+
+        return result;
     }
 
     public async Task<IEnumerable<PricingRuleTemplateResponseDto>> GetTemplatesAsync()
     {
         var templates = (await _templateRepository.FindAsync(_ => true)).ToList();
         var parameters = templates.Count == 0
-            ? []
-            : await _parameterRepository.FindAsync(p => templates.Select(t => t.TemplateId).Contains(p.TemplateId));
+            ? new List<PricingRuleTemplateParameter>()
+            : (await _parameterRepository.FindAsync(p => templates.Select(t => t.TemplateId).Contains(p.TemplateId))).ToList();
 
         return templates
             .OrderBy(t => t.Name)
@@ -98,21 +152,34 @@ public sealed class PricingPolicyService : IPricingPolicyService
         template.UpdatedAt = DateTime.UtcNow;
         template.CreatedByAdminId = adminId;
 
-        var existingParameters = await _parameterRepository.FindAsync(p => p.TemplateId == templateId);
-        foreach (var parameter in existingParameters.ToList())
-        {
-            _parameterRepository.Remove(parameter);
-        }
+        var existingParameters = (await _parameterRepository.FindAsync(p => p.TemplateId == templateId)).ToList();
+        var existingByKey = existingParameters
+            .GroupBy(p => p.ParameterKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        await _parameterRepository.SaveChangesAsync();
+        var incomingKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var parameterDto in dto.Parameters)
         {
+            var key = parameterDto.ParameterKey.Trim();
+            incomingKeys.Add(key);
+
+            if (existingByKey.TryGetValue(key, out var existingParameter))
+            {
+                existingParameter.DisplayName = parameterDto.DisplayName.Trim();
+                existingParameter.DefaultValue = parameterDto.DefaultValue;
+                existingParameter.MinValue = parameterDto.MinValue;
+                existingParameter.MaxValue = parameterDto.MaxValue;
+                existingParameter.IsAdjustable = parameterDto.IsAdjustable;
+                _parameterRepository.Update(existingParameter);
+                continue;
+            }
+
             await _parameterRepository.AddAsync(new PricingRuleTemplateParameter
             {
                 ParameterId = Guid.NewGuid(),
                 TemplateId = template.TemplateId,
-                ParameterKey = parameterDto.ParameterKey.Trim(),
+                ParameterKey = key,
                 DisplayName = parameterDto.DisplayName.Trim(),
                 DefaultValue = parameterDto.DefaultValue,
                 MinValue = parameterDto.MinValue,
@@ -122,8 +189,14 @@ public sealed class PricingPolicyService : IPricingPolicyService
             });
         }
 
+        foreach (var staleParameter in existingParameters.Where(p => !incomingKeys.Contains(p.ParameterKey)).ToList())
+        {
+            _parameterRepository.Remove(staleParameter);
+        }
+
         _templateRepository.Update(template);
         await _templateRepository.SaveChangesAsync();
+        await _parameterRepository.SaveChangesAsync();
 
         return await GetTemplateResponseAsync(template.TemplateId)
             ?? throw new InvalidOperationException("Failed to update pricing template.");
@@ -173,7 +246,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
 
         var parameters = (await _parameterRepository.FindAsync(p => p.TemplateId == template.TemplateId)).ToList();
         var effectiveOverrides = ValidateOverrides(parameters, dto.Overrides);
-        var effectiveMultiplier = ResolveMultiplier(parameters, effectiveOverrides);
+        var effectiveMultiplier = await ResolveMultiplierAsync(parameters, effectiveOverrides, dto.StartDate);
 
         var existingApplications = await _applicationRepository.FindAsync(a =>
             a.ApartmentId == apartmentId &&
@@ -246,7 +319,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
             ?? throw new ArgumentException("Pricing template not found.");
         var parameters = (await _parameterRepository.FindAsync(p => p.TemplateId == template.TemplateId)).ToList();
         var overrides = DeserializeOverrides(application.OverridesJson);
-        var effectiveMultiplier = ResolveMultiplier(parameters, overrides);
+        var effectiveMultiplier = await ResolveMultiplierAsync(parameters, overrides, application.StartDate);
 
         if (!isEnabled)
         {
@@ -264,6 +337,55 @@ public sealed class PricingPolicyService : IPricingPolicyService
 
         return await BuildApplicationResponseAsync(application, template, effectiveMultiplier, apartment.BasePricePerNight)
             ?? throw new InvalidOperationException("Failed to update pricing policy application.");
+    }
+
+    public async Task<ApartmentPricingPolicyApplicationResponseDto> UpdateApplicationOverridesAsync(
+        Guid apartmentId,
+        Guid applicationId,
+        UpdateApartmentPricingPolicyApplicationOverridesDto dto,
+        Guid landlordId)
+    {
+        var application = await _applicationRepository.GetByIdAsync(applicationId)
+            ?? throw new ArgumentException("Pricing policy application not found.");
+
+        var apartment = await _apartmentRepository.GetByIdAsync(apartmentId)
+            ?? throw new ArgumentException("Apartment not found.");
+
+        if (application.ApartmentId != apartmentId)
+        {
+            throw new ArgumentException("Pricing policy application does not belong to this apartment.");
+        }
+
+        if (apartment.LandlordId != landlordId)
+        {
+            throw new UnauthorizedAccessException("You do not have permission to modify pricing policies for this apartment.");
+        }
+
+        var template = await _templateRepository.GetByIdAsync(application.TemplateId)
+            ?? throw new ArgumentException("Pricing template not found.");
+
+        if (!template.IsActive)
+        {
+            throw new ArgumentException("Pricing template is inactive.");
+        }
+
+        var parameters = (await _parameterRepository.FindAsync(p => p.TemplateId == template.TemplateId)).ToList();
+        var effectiveOverrides = ValidateOverrides(parameters, dto.Overrides);
+        var effectiveMultiplier = await ResolveMultiplierAsync(parameters, effectiveOverrides, application.StartDate);
+
+        application.OverridesJson = SerializeOverrides(effectiveOverrides);
+        application.UpdatedAt = DateTime.UtcNow;
+        _applicationRepository.Update(application);
+
+        if (application.IsEnabled)
+        {
+            await UpsertGeneratedCalendarRowAsync(apartment, application, template, effectiveMultiplier);
+        }
+
+        await _applicationRepository.SaveChangesAsync();
+
+        return await BuildApplicationResponseAsync(application, template, effectiveMultiplier, apartment.BasePricePerNight)
+            ?? throw new InvalidOperationException("Failed to update pricing policy application overrides.");
     }
 
     private async Task RemoveGeneratedCalendarRowsAsync(Guid applicationId)
@@ -321,6 +443,17 @@ public sealed class PricingPolicyService : IPricingPolicyService
         if (dto.Parameters == null || dto.Parameters.Count == 0)
         {
             throw new ArgumentException("At least one template parameter is required.");
+        }
+
+        var duplicateKey = dto.Parameters
+            .Where(parameter => !string.IsNullOrWhiteSpace(parameter.ParameterKey))
+            .GroupBy(parameter => parameter.ParameterKey.Trim(), StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1)?
+            .Key;
+
+        if (!string.IsNullOrWhiteSpace(duplicateKey))
+        {
+            throw new ArgumentException($"Template parameter key '{duplicateKey}' is duplicated.");
         }
 
         foreach (var parameter in dto.Parameters)
@@ -382,19 +515,47 @@ public sealed class PricingPolicyService : IPricingPolicyService
         return effectiveOverrides;
     }
 
-    private static decimal ResolveMultiplier(
+    private async Task<decimal> ResolveMultiplierAsync(
         IReadOnlyCollection<PricingRuleTemplateParameter> parameters,
-        IReadOnlyDictionary<string, decimal> overrides)
+        IReadOnlyDictionary<string, decimal> overrides,
+        DateOnly? date = null)
     {
-        var parameter = parameters.FirstOrDefault(p => string.Equals(p.ParameterKey, MultiplierKey, StringComparison.OrdinalIgnoreCase))
-            ?? parameters.First();
-
-        if (overrides.TryGetValue(parameter.ParameterKey, out var overrideValue))
+        // lookup keys
+        decimal GetOverrideOrDefault(string key, decimal fallback)
         {
-            return overrideValue;
+            if (overrides != null && overrides.TryGetValue(key, out var v)) return v;
+            var p = parameters.FirstOrDefault(x => string.Equals(x.ParameterKey, key, StringComparison.OrdinalIgnoreCase));
+            return p != null ? p.DefaultValue : fallback;
         }
 
-        return parameter.DefaultValue;
+        var holidayKey = "holiday_multiplier";
+        var weekendKey = "weekend_multiplier";
+        var baseKey = MultiplierKey;
+
+        if (date.HasValue)
+        {
+            // Holiday has priority
+            var holidayMultiplier = GetOverrideOrDefault(holidayKey, decimal.MinValue);
+            if (holidayMultiplier != decimal.MinValue)
+            {
+                if (await _holidayService.IsHolidayAsync(date.Value))
+                    return holidayMultiplier;
+            }
+
+            // Weekend
+            var weekendMultiplier = GetOverrideOrDefault(weekendKey, decimal.MinValue);
+            if (weekendMultiplier != decimal.MinValue)
+            {
+                var dow = date.Value.DayOfWeek;
+                if (dow == DayOfWeek.Saturday || dow == DayOfWeek.Sunday)
+                    return weekendMultiplier;
+            }
+        }
+
+        // fallback to generic multiplier
+        var generic = GetOverrideOrDefault(baseKey, 1.0m);
+        if (generic == decimal.MinValue) return 1.0m;
+        return generic;
     }
 
     private static string SerializeOverrides(Dictionary<string, decimal> overrides)
