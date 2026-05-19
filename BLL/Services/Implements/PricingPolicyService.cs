@@ -284,7 +284,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
 
         if (application.IsEnabled)
         {
-            await UpsertGeneratedCalendarRowAsync(apartment, application, template, effectiveMultiplier);
+            await UpsertGeneratedCalendarRowsAsync(apartment, application, template, parameters, effectiveOverrides);
         }
 
         await _applicationRepository.SaveChangesAsync();
@@ -327,7 +327,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
         }
         else
         {
-            await UpsertGeneratedCalendarRowAsync(apartment, application, template, effectiveMultiplier);
+            await UpsertGeneratedCalendarRowsAsync(apartment, application, template, parameters, overrides);
         }
 
         application.IsEnabled = isEnabled;
@@ -379,7 +379,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
 
         if (application.IsEnabled)
         {
-            await UpsertGeneratedCalendarRowAsync(apartment, application, template, effectiveMultiplier);
+            await UpsertGeneratedCalendarRowsAsync(apartment, application, template, parameters, effectiveOverrides);
         }
 
         await _applicationRepository.SaveChangesAsync();
@@ -402,34 +402,42 @@ public sealed class PricingPolicyService : IPricingPolicyService
         await _calendarRepository.SaveChangesAsync();
     }
 
-    private async Task UpsertGeneratedCalendarRowAsync(
+    private async Task UpsertGeneratedCalendarRowsAsync(
         Apartment apartment,
         ApartmentPricingPolicyApplication application,
         PricingRuleTemplate template,
-        decimal effectiveMultiplier)
+        IReadOnlyCollection<PricingRuleTemplateParameter> parameters,
+        IReadOnlyDictionary<string, decimal> overrides)
     {
         await RemoveGeneratedCalendarRowsAsync(application.ApplicationId);
 
-        var price = Math.Round(apartment.BasePricePerNight * effectiveMultiplier, 2, MidpointRounding.AwayFromZero);
-        var generatedRow = new ApartmentPriceCalendar
+        var cursor = application.StartDate;
+        while (cursor <= application.EndDate)
         {
-            PriceId = Guid.NewGuid(),
-            ApartmentId = apartment.ApartmentId,
-            PricingPolicyId = template.TemplateId,
-            VersionId = application.ApplicationId,
-            VersionNumber = 1,
-            StartDate = application.StartDate,
-            EndDate = application.EndDate,
-            FixedPricePerNight = price,
-            PriceType = PolicyPriceType,
-            DiscountPercentage = null,
-            IsDiscount = false,
-            MinNights = 1,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
+            var dailyMultiplier = await ResolveMultiplierAsync(parameters, overrides, cursor);
+            var price = Math.Round(apartment.BasePricePerNight * dailyMultiplier, 2, MidpointRounding.AwayFromZero);
 
-        await _calendarRepository.AddAsync(generatedRow);
+            await _calendarRepository.AddAsync(new ApartmentPriceCalendar
+            {
+                PriceId = Guid.NewGuid(),
+                ApartmentId = apartment.ApartmentId,
+                PricingPolicyId = template.TemplateId,
+                VersionId = application.ApplicationId,
+                VersionNumber = 1,
+                StartDate = cursor,
+                EndDate = cursor,
+                FixedPricePerNight = price,
+                PriceType = PolicyPriceType,
+                DiscountPercentage = null,
+                IsDiscount = false,
+                MinNights = 1,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+
+            cursor = cursor.AddDays(1);
+        }
+
         await _calendarRepository.SaveChangesAsync();
     }
 
