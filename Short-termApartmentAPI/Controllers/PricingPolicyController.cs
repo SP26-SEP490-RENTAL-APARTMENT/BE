@@ -139,6 +139,8 @@ public sealed class PricingPolicyController : ControllerBase
         }
     }
 
+    
+
     [HttpPatch("{applicationId:guid}/enabled")]
     public async Task<ActionResult<ApartmentPricingPolicyApplicationResponseDto>> SetApplicationStatus(
         [FromRoute] Guid apartmentId,

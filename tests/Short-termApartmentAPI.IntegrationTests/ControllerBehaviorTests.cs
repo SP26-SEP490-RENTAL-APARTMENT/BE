@@ -1446,6 +1446,8 @@ internal sealed class LandlordSubscriptionServiceStub : BaseServiceStub<Landlord
     public Task<MomoCreatePaymentResponse> CreateMomoSubscriptionCheckoutAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
         => Task.FromResult(new MomoCreatePaymentResponse());
 
+    // PayOS checkout for subscriptions (stubbed) - removed to match ILandlordSubscriptionService
+
     public Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
         => Task.FromResult(new WalletSubscriptionPaymentResponseDto());
 }
