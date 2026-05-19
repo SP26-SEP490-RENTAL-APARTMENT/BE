@@ -30,4 +30,5 @@ public interface IPricingPolicyService
         Guid landlordId);
 
     Task<AvailableTemplatesForApartmentDto> GetAvailableTemplatesForApartmentAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate);
+    Task<AvailableTemplatesForApartmentDto> GetAppliedTemplatesForApartmentAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate);
 }

@@ -95,6 +95,106 @@ namespace BLL.Tests
         }
 
         [Fact]
+        public async Task ApplyTemplate_CreatesDailyRows_WithWeekendMultiplierChanges()
+        {
+            // Arrange
+            var adminId = Guid.NewGuid();
+            var landlordId = Guid.NewGuid();
+            var apartmentId = Guid.NewGuid();
+
+            var apartment = new Apartment
+            {
+                ApartmentId = apartmentId,
+                LandlordId = landlordId,
+                BasePricePerNight = 100m
+            };
+
+            var template = new PricingRuleTemplate
+            {
+                TemplateId = Guid.NewGuid(),
+                CreatedByAdminId = adminId,
+                Name = "Multiplier template",
+                IsActive = true
+            };
+
+            var parameters = new[]
+            {
+                new PricingRuleTemplateParameter
+                {
+                    ParameterId = Guid.NewGuid(),
+                    TemplateId = template.TemplateId,
+                    ParameterKey = "multiplier",
+                    DisplayName = "Multiplier",
+                    DefaultValue = 1.1m,
+                    MinValue = 1.0m,
+                    MaxValue = 2.0m,
+                    IsAdjustable = true
+                },
+                new PricingRuleTemplateParameter
+                {
+                    ParameterId = Guid.NewGuid(),
+                    TemplateId = template.TemplateId,
+                    ParameterKey = "weekend_multiplier",
+                    DisplayName = "Weekend Multiplier",
+                    DefaultValue = 1.5m,
+                    MinValue = 1.0m,
+                    MaxValue = 3.0m,
+                    IsAdjustable = true
+                }
+            };
+
+            var templatesRepo = new InMemoryRepo<PricingRuleTemplate>(new[] { template });
+            var paramsRepo = new InMemoryRepo<PricingRuleTemplateParameter>(parameters);
+            var applicationsRepo = new InMemoryRepo<ApartmentPricingPolicyApplication>();
+            var apartmentRepo = new InMemoryRepo<Apartment>(new[] { apartment });
+            var calendarRepo = new InMemoryRepo<ApartmentPriceCalendar>();
+            var holidayService = new TestHolidayService();
+
+            var service = new PricingPolicyService(
+                templatesRepo,
+                paramsRepo,
+                applicationsRepo,
+                apartmentRepo as DAL.Repository.Interfaces.IApartmentRepository ?? new FakeApartmentRepository(apartmentRepo),
+                calendarRepo as IApartmentPriceCalendarRepository ?? new FakeCalendarRepository(calendarRepo),
+                holidayService
+            );
+
+            var dto = new CreateApartmentPricingPolicyApplicationDto
+            {
+                TemplateId = template.TemplateId,
+                StartDate = new DateOnly(2026, 5, 22),
+                EndDate = new DateOnly(2026, 5, 24),
+                IsEnabled = true,
+                Overrides = new Dictionary<string, decimal>()
+            };
+
+            // Act
+            var result = await service.ApplyTemplateAsync(apartmentId, dto, landlordId);
+
+            // Assert
+            Assert.NotNull(result);
+
+            var generatedRows = calendarRepo.Items
+                .OfType<ApartmentPriceCalendar>()
+                .Where(row => row.VersionId == result.ApplicationId)
+                .OrderBy(row => row.StartDate)
+                .ToList();
+
+            Assert.Equal(3, generatedRows.Count);
+            Assert.Equal(new DateOnly(2026, 5, 22), generatedRows[0].StartDate);
+            Assert.Equal(new DateOnly(2026, 5, 22), generatedRows[0].EndDate);
+            Assert.Equal(110m, generatedRows[0].FixedPricePerNight);
+
+            Assert.Equal(new DateOnly(2026, 5, 23), generatedRows[1].StartDate);
+            Assert.Equal(new DateOnly(2026, 5, 23), generatedRows[1].EndDate);
+            Assert.Equal(150m, generatedRows[1].FixedPricePerNight);
+
+            Assert.Equal(new DateOnly(2026, 5, 24), generatedRows[2].StartDate);
+            Assert.Equal(new DateOnly(2026, 5, 24), generatedRows[2].EndDate);
+            Assert.Equal(150m, generatedRows[2].FixedPricePerNight);
+        }
+
+        [Fact]
         public async Task UpdateApplicationOverrides_ChangesMultiplier_WithoutDates()
         {
             // Arrange

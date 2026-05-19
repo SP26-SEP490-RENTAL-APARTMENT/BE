@@ -1,5 +1,6 @@
 using BLL.Services.Interfaces;
 using Common.DTOs;
+using Common.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -73,7 +74,63 @@ public sealed class PricingPolicyController : ControllerBase
 
         try
         {
-            var result = await _pricingPolicyService.GetAvailableTemplatesForApartmentAsync(apartmentId, startDate, endDate);
+            var result = await _pricingPolicyService.GetAppliedTemplatesForApartmentAsync(apartmentId, startDate, endDate);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("/api/landlord/pricing/templates")]
+    public async Task<ActionResult<IEnumerable<PricingRuleTemplateResponseDto>>> GetAllTemplatesForLandlord()
+    {
+        var userId = GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "Invalid user token." });
+        }
+
+        try
+        {
+            var templates = await _pricingPolicyService.GetTemplatesAsync();
+            return Ok(templates);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpGet("templates/available")]
+    public async Task<ActionResult<AvailableTemplatesForApartmentDto>> GetAvailableTemplatesSimple(
+        [FromRoute] Guid apartmentId,
+        [FromQuery] DateOnly? startDate,
+        [FromQuery] DateOnly? endDate)
+    {
+        var userId = GetUserId();
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "Invalid user token." });
+        }
+
+        if (!await _authService.IsUserOwnerOrManager(userId.Value, apartmentId))
+        {
+            return Forbid("You do not have permission to view templates for this apartment.");
+        }
+
+        var resolvedStartDate = startDate ?? DateOnly.FromDateTime(VietnamTime.Now.Date);
+        var resolvedEndDate = endDate ?? resolvedStartDate;
+
+        if (resolvedStartDate > resolvedEndDate)
+        {
+            return BadRequest("Start date cannot be after end date.");
+        }
+
+        try
+        {
+            var result = await _pricingPolicyService.GetAppliedTemplatesForApartmentAsync(apartmentId, resolvedStartDate, resolvedEndDate);
             return Ok(result);
         }
         catch (ArgumentException ex)
