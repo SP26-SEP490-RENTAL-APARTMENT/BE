@@ -23,6 +23,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IStripeService _stripeService;
         private readonly IMomoService _momoService;
         private readonly IMomoTransactionService _momoTransactionService;
+        private readonly IPayOsService _payOsService;
         private readonly IImageService _imageService;
         private readonly IFptPassportRecognitionService _passportRecognitionService;
         private readonly IFptIdRecognitionService _idRecognitionService;
@@ -38,6 +39,7 @@ namespace Short_termApartmentAPI.Controllers
             IStripeService stripeService,
             IMomoService momoService,
             IMomoTransactionService momoTransactionService,
+            IPayOsService payOsService,
             IImageService imageService,
             IOptions<MomoOptions> momoOptions,
             IResidenceReportPdfGenerator residenceReportPdfGenerator,
@@ -54,6 +56,7 @@ namespace Short_termApartmentAPI.Controllers
             _momoTransactionService = momoTransactionService;
             _imageService = imageService;
             _momoOptions = momoOptions.Value;
+            _payOsService = payOsService;
             _residenceReportPdfGenerator = residenceReportPdfGenerator;
             _residenceReportDocxGenerator = residenceReportDocxGenerator;
             _mapper = mapper;
@@ -304,6 +307,68 @@ namespace Short_termApartmentAPI.Controllers
                     Deeplink = momoResponse.Deeplink,
                     QrCodeUrl = momoResponse.QrCodeUrl,
                     TransactionId = momoResponse.OrderId,
+                    Status = PaymentStatus.pending.ToString(),
+                    PaymentId = payment.PaymentId
+                };
+            }
+
+            if (normalized == "payos")
+            {
+                var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
+                var payosRequest = new PayOsCreatePaymentRequest
+                {
+                    Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
+                    OrderInfo = isFullPayment ? $"Booking full payment {booking.BookingId}" : $"Booking deposit {booking.BookingId}",
+                    ExtraData = booking.BookingId.ToString(),
+                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
+                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    RedirectUrl = ResolveMomoRedirectUrl(devicePlatform)
+                };
+
+                var payosResponse = await _payOsService.CreateCheckoutAsync(payosRequest);
+                if (!payosResponse.Success)
+                {
+                    throw new InvalidOperationException($"PayOS checkout could not be created: {payosResponse.Message}");
+                }
+
+                var payment = new Payment
+                {
+                    Amount = booking.UpfrontPaymentAmount,
+                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
+                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    Method = "payos",
+                    Status = PaymentStatus.pending.ToString(),
+                    TransactionId = payosResponse.OrderId
+                };
+
+                await _paymentService.CreateAsync(payment);
+
+                var requestLog = new MomoTransaction
+                {
+                    RequestId = payosResponse.OrderId,
+                    PartnerCode = string.Empty,
+                    Amount = payosResponse.Amount,
+                    Type = "create_wallet_payment_payos",
+                    RequestBody = System.Text.Json.JsonSerializer.Serialize(payosRequest),
+                    ResponseBody = payosResponse.ResponseRaw ?? string.Empty,
+                    Status = "pending",
+                    ResultCode = null,
+                    Message = payosResponse.Message,
+                    PaymentId = payment.PaymentId,
+                    CreatedAt = Common.Utils.VietnamTime.Now,
+                    UpdatedAt = Common.Utils.VietnamTime.Now
+                };
+
+                await _momoTransactionService.CreateAsync(requestLog);
+
+                return new BookingPaymentLinkDto
+                {
+                    Provider = "payos",
+                    Url = payosResponse.Url,
+                    Deeplink = payosResponse.Deeplink,
+                    TransactionId = payosResponse.OrderId,
                     Status = PaymentStatus.pending.ToString(),
                     PaymentId = payment.PaymentId
                 };

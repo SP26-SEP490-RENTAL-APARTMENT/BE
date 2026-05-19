@@ -244,6 +244,47 @@ public sealed class LandlordController : ControllerBase
         }
     }
 
+    [HttpPost("subscription/payos-checkout")]
+    public async Task<IActionResult> CreateSubscriptionPayOsCheckout(
+        [FromBody] StartLandlordSubscriptionRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        try
+        {
+            var payosResult = await _landlordSubscriptionService.CreatePayOsSubscriptionCheckoutAsync(
+                landlord.LandlordId,
+                dto,
+                cancellationToken);
+
+            return Ok(new ApiResponse<Common.DTOs.PayOsCreatePaymentResponse>(payosResult));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
     [HttpPost("subscription/wallet-pay")]
     public async Task<IActionResult> PaySubscriptionByWallet(
         [FromBody] StartLandlordSubscriptionRequestDto dto,

@@ -233,6 +233,15 @@ public class RequestBookingRefundDto : IValidatableObject
     [MaxLength(1000)]
     public string? Notes { get; set; }
 
+    [MaxLength(100)]
+    public string? PayOsReceiverName { get; set; }
+
+    [MaxLength(50)]
+    public string? PayOsBankCode { get; set; }
+
+    [MaxLength(50)]
+    public string? PayOsAccountNumber { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         var normalizedReason = Reason.Trim().ToLowerInvariant();

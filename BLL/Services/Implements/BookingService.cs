@@ -45,6 +45,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<Payment> _paymentRepository;
     private readonly IStripeService _stripeService;
     private readonly IMomoService _momoService;
+    private readonly IPayOSPayoutService? _payOSPayoutService;
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
@@ -73,7 +74,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IMapper mapper,
         IRepository<BookingOccupant>? bookingOccupantRepository = null,
         ICheckTimeRequestRepository? checkTimeRequestRepository = null,
-        IRepository<BookingCheckTimeStateEvent>? checkTimeStateEventRepository = null) : base(repository)
+        IRepository<BookingCheckTimeStateEvent>? checkTimeStateEventRepository = null,
+        IPayOSPayoutService? payOSPayoutService = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -97,6 +99,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingOccupantRepository = bookingOccupantRepository;
         _checkTimeRequestRepository = checkTimeRequestRepository;
         _checkTimeStateEventRepository = checkTimeStateEventRepository;
+        _payOSPayoutService = payOSPayoutService;
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -920,6 +923,67 @@ public class BookingService : BaseService<Booking>, IBookingService
                     Method = payment.Method,
                     Status = PaymentStatus.success.ToString(),
                     TransactionId = refundResult.TransId.ToString(),
+                    PaidAt = now
+                };
+
+                await _paymentRepository.AddAsync(refundPayment);
+            }
+            else if (string.Equals(payment.Method, "payos", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_payOSPayoutService == null)
+                {
+                    throw new InvalidOperationException("PayOS payout service is not configured.");
+                }
+
+                var payOsReceiverName = dto.PayOsReceiverName?.Trim();
+                var payOsBankCode = dto.PayOsBankCode?.Trim();
+                var payOsAccountNumber = dto.PayOsAccountNumber?.Trim();
+
+                if (string.IsNullOrWhiteSpace(payOsReceiverName))
+                {
+                    var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+                    payOsReceiverName = tenantUser?.FullName?.Trim();
+                }
+
+                if (string.IsNullOrWhiteSpace(payOsReceiverName))
+                {
+                    throw new InvalidOperationException("PayOS refund requires receiver name.");
+                }
+
+                if (string.IsNullOrWhiteSpace(payOsBankCode) || string.IsNullOrWhiteSpace(payOsAccountNumber))
+                {
+                    throw new InvalidOperationException("PayOS refund requires bank code and account number.");
+                }
+
+                var payOsReference = $"RF{booking.BookingId:N}{index + 1}";
+                var payOsResult = await _payOSPayoutService.CreateBankPayoutAsync(
+                    payOsReceiverName,
+                    payOsAccountNumber,
+                    payOsBankCode,
+                    Convert.ToInt64(Math.Round(refundAmount, 0, MidpointRounding.AwayFromZero)),
+                    payOsReference,
+                    CancellationToken.None);
+
+                if (payOsResult.ResultCode != 0)
+                {
+                    throw new InvalidOperationException($"PayOS refund failed: {payOsResult.Message}");
+                }
+
+                var refundPayment = new Payment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    Amount = refundAmount,
+                    PaymentType = PaymentTypes.refund.ToString(),
+                    PaymentPurpose = PaymentPurposes.refund_booking.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    LandlordId = apartment.LandlordId,
+                    LandlordAmount = 0m,
+                    PlatformFee = 0m,
+                    SettlementStatus = "pending",
+                    Method = payment.Method,
+                    Status = PaymentStatus.success.ToString(),
+                    TransactionId = payOsResult.PayoutId ?? payOsResult.TransId ?? payOsReference,
                     PaidAt = now
                 };
 

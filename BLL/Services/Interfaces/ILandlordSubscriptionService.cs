@@ -21,6 +21,11 @@ public interface ILandlordSubscriptionService : IBaseService<LandlordSubscriptio
 		StartLandlordSubscriptionRequestDto dto,
 		CancellationToken cancellationToken = default);
 
+	Task<Common.DTOs.PayOsCreatePaymentResponse> CreatePayOsSubscriptionCheckoutAsync(
+		Guid landlordId,
+		StartLandlordSubscriptionRequestDto dto,
+		CancellationToken cancellationToken = default);
+
 	Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(
 		Guid landlordId,
 		StartLandlordSubscriptionRequestDto dto,
