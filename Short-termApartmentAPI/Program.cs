@@ -122,7 +122,46 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddBLLDependencies(builder.Configuration);
 
-// Register PayOS client for payouts (used by BLL PayOS payout service)
+// Register PayOS payment client for webhook verification
+builder.Services.AddKeyedSingleton<PayOSClient>("PayOsPaymentClient", (sp, key) =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+
+    var clientIdFromConfig = config["PayOS:ClientId"];
+    var apiKeyFromConfig = config["PayOS:ApiKey"];
+    var checksumFromConfig = config["PayOS:ChecksumKey"];
+
+    var clientId = clientIdFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_CLIENT_ID");
+    var apiKey = apiKeyFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_API_KEY");
+    var checksumKey = checksumFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_CHECKSUM_KEY");
+
+    static string Mask(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "<empty>";
+        if (value.Length <= 8) return new string('*', value.Length);
+        return $"{value[..4]}...{value[^4..]}";
+    }
+
+    logger.LogInformation(
+        "PayOS payment credentials loaded. Source: ClientId={ClientIdSource}, ApiKey={ApiKeySource}, ChecksumKey={ChecksumSource}. Values: ClientId={ClientId}, ApiKey={ApiKey}, ChecksumKey={ChecksumKey}",
+        clientIdFromConfig != null ? "appsettings" : "env",
+        apiKeyFromConfig != null ? "appsettings" : "env",
+        checksumFromConfig != null ? "appsettings" : "env",
+        Mask(clientId),
+        Mask(apiKey),
+        Mask(checksumKey));
+
+    return new PayOSClient(new PayOSOptions
+    {
+        ClientId = clientId,
+        ApiKey = apiKey,
+        ChecksumKey = checksumKey,
+        LogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
+    });
+});
+
+// Register PayOS payout client (used by BLL PayOS payout service)
 builder.Services.AddSingleton(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();

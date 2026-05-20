@@ -873,6 +873,7 @@ public class ControllerBehaviorTests
         IStripeService? stripeService = null,
         IMomoService? momoService = null,
         IMomoTransactionService? momoTransactionService = null,
+        IPayOsService? payOsService = null,
         IImageService? imageService = null,
         IResidenceReportPdfGenerator? residenceReportPdfGenerator = null,
         IResidenceReportDocxGenerator? residenceReportDocxGenerator = null)
@@ -884,6 +885,7 @@ public class ControllerBehaviorTests
             stripeService ?? new StripeServiceStub(),
             momoService ?? new MomoServiceStub(),
             momoTransactionService ?? new MomoTransactionServiceStub(),
+            payOsService ?? new PayOsServiceStub(),
             imageService ?? new ImageServiceStub(),
             Options.Create(new MomoOptions
             {
@@ -896,6 +898,17 @@ public class ControllerBehaviorTests
             CreateMapper(),
             new PassportRecognitionServiceStub(),
             new IdRecognitionServiceStub());
+    }
+
+    internal sealed class PayOsServiceStub : IPayOsService
+    {
+        public Task<Common.DTOs.PayOsCreatePaymentResponse> CreateCheckoutAsync(Common.DTOs.PayOsCreatePaymentRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new Common.DTOs.PayOsCreatePaymentResponse { Success = true, Url = "https://payos.example/checkout", OrderId = "order_123", Amount = request.Amount });
+
+        public Task<string> QueryPaymentStatusAsync(string orderId, CancellationToken cancellationToken = default)
+            => Task.FromResult("success");
+
+        public bool VerifyWebhookSignature(string requestBody, string signatureHeader) => true;
     }
 
     private sealed class PassportRecognitionServiceStub : IFptPassportRecognitionService
@@ -1275,6 +1288,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     }
     public Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
         => Task.FromResult((Enumerable.Empty<Booking>(), 0));
+    public Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(false);
     public Task<BookingCheckTimeResponseDto> RecordCheckInAsync(Guid bookingId, RecordCheckInDto dto, Guid recordedBy) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> RecordCheckOutAsync(Guid bookingId, RecordCheckOutDto dto, Guid recordedBy) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null) => Task.FromResult(new BookingCheckTimeResponseDto());
@@ -1446,7 +1460,10 @@ internal sealed class LandlordSubscriptionServiceStub : BaseServiceStub<Landlord
     public Task<MomoCreatePaymentResponse> CreateMomoSubscriptionCheckoutAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
         => Task.FromResult(new MomoCreatePaymentResponse());
 
-    // PayOS checkout for subscriptions (stubbed) - removed to match ILandlordSubscriptionService
+    public Task<Common.DTOs.PayOsCreatePaymentResponse> CreatePayOsSubscriptionCheckoutAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
+        => Task.FromResult(new Common.DTOs.PayOsCreatePaymentResponse());
+
+    // PayOS checkout for subscriptions (stubbed)
 
     public Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
         => Task.FromResult(new WalletSubscriptionPaymentResponseDto());

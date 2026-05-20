@@ -1,6 +1,9 @@
 using BLL.Services.Interfaces;
 using DAL.Repository.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using PayOS;
+using PayOS.Exceptions;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -16,7 +19,8 @@ public class PayOsController : ControllerBase
     private readonly IRepository<DAL.Models.BookingCheckTime> _bookingCheckTimeRepository;
     private readonly IRepository<DAL.Models.Booking> _bookingRepository;
     private readonly IRepository<DAL.Models.BookingCheckTimeStateEvent> _checkTimeEventRepository;
-    private readonly PayOS.PayOSClient? _sdkClient;
+    private readonly PayOS.PayOSClient? _paymentSdkClient;
+    private readonly ILogger<PayOsController> _logger;
 
     public PayOsController(
         IPayOsService payOsService,
@@ -24,14 +28,16 @@ public class PayOsController : ControllerBase
         IRepository<DAL.Models.BookingCheckTime> bookingCheckTimeRepository,
         IRepository<DAL.Models.Booking> bookingRepository,
         IRepository<DAL.Models.BookingCheckTimeStateEvent> checkTimeEventRepository,
-        PayOS.PayOSClient? sdkClient = null)
+        ILogger<PayOsController> logger,
+        [FromKeyedServices("PayOsPaymentClient")] PayOS.PayOSClient? paymentSdkClient = null)
     {
         _payOsService = payOsService;
         _paymentRepository = paymentRepository;
         _bookingCheckTimeRepository = bookingCheckTimeRepository;
         _bookingRepository = bookingRepository;
         _checkTimeEventRepository = checkTimeEventRepository;
-        _sdkClient = sdkClient;
+        _logger = logger;
+        _paymentSdkClient = paymentSdkClient;
     }
 
     [HttpPost("payos")]
@@ -47,36 +53,106 @@ public class PayOsController : ControllerBase
                               ?? Request.Headers["X-Payos-Signature"].FirstOrDefault()
                               ?? string.Empty;
 
+        _logger.LogInformation("[PayOS Webhook] Received payload. Length: {PayloadLength}, HasSignature: {HasSignature}", json?.Length ?? 0, !string.IsNullOrEmpty(signatureHeader));
+        _logger.LogDebug("[PayOS Webhook] Payload: {Payload}", json);
+
         try
         {
-            JsonElement root;
+    string? reference = null;
+    string? paymentLinkId = null;
 
-            if (_sdkClient != null)
+            if (_paymentSdkClient != null)
             {
                 // Prefer SDK-based verification
+                _logger.LogInformation("[PayOS Webhook] Using SDK client for verification");
                 var webhookModel = System.Text.Json.JsonSerializer.Deserialize<PayOS.Models.Webhooks.Webhook>(json ?? string.Empty);
-                var webhookData = await _sdkClient.Webhooks.VerifyAsync(webhookModel!).ConfigureAwait(false);
-                if (webhookData == null) return BadRequest(new { error = "Invalid webhook (SDK verification failed)" });
+                if (webhookModel == null)
+                {
+                    _logger.LogError("[PayOS Webhook] Failed to deserialize webhook model");
+                    return BadRequest(new { error = "Failed to deserialize webhook data" });
+                }
 
-                var verifiedJson = JsonSerializer.Serialize(webhookData);
-                using var doc = JsonDocument.Parse(verifiedJson);
-                root = doc.RootElement;
+                _logger.LogInformation("[PayOS Webhook] Webhook model deserialized. Code: {Code}, HasSignature: {HasSig}", 
+                    webhookModel.Code, !string.IsNullOrEmpty(webhookModel.Signature));
+
+                try
+                {
+                    var webhookData = await _paymentSdkClient.Webhooks.VerifyAsync(webhookModel!).ConfigureAwait(false);
+                    if (webhookData == null)
+                    {
+                        _logger.LogError("[PayOS Webhook] SDK verification failed (null result)");
+                        return BadRequest(new { error = "Invalid webhook (SDK verification failed)" });
+                    }
+
+                    _logger.LogInformation("[PayOS Webhook] SDK verification successful");
+                    var verifiedJson = JsonSerializer.Serialize(webhookData);
+                    using (var doc = JsonDocument.Parse(verifiedJson))
+                    {
+                        var root = doc.RootElement;
+                        reference = GetJsonString(root, "reference", "Reference");
+                        paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+                    }
+                }
+                catch (WebhookException wex)
+                {
+                    _logger.LogWarning(wex, "[PayOS Webhook] SDK verification failed: {Message}. Attempting fallback verification", wex.Message);
+                    
+                    // Fallback to service-based verification if SDK fails
+                    if (string.IsNullOrEmpty(json))
+                    {
+                        _logger.LogError("[PayOS Webhook] Received empty payload for fallback");
+                        return BadRequest(new { error = "Empty payload" });
+                    }
+
+                    var verified = _payOsService.VerifyWebhookSignature(json, signatureHeader);
+                    if (!verified)
+                    {
+                        _logger.LogError("[PayOS Webhook] Service-based signature verification also failed");
+                        return BadRequest(new { error = "Invalid signature" });
+                    }
+
+                    _logger.LogInformation("[PayOS Webhook] Service-based verification successful (fallback)");
+                    using (var doc = JsonDocument.Parse(json))
+                    {
+                        var root = doc.RootElement;
+                        reference = GetJsonString(root, "reference", "Reference");
+                        paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+                    }
+                }
             }
             else
             {
-                var verified = _payOsService.VerifyWebhookSignature(json, signatureHeader);
-                if (!verified) return BadRequest(new { error = "Invalid signature" });
+                _logger.LogInformation("[PayOS Webhook] Using service-based signature verification");
+                if (string.IsNullOrEmpty(json))
+                {
+                    _logger.LogError("[PayOS Webhook] Received empty payload");
+                    return BadRequest(new { error = "Empty payload" });
+                }
 
-                using var doc = JsonDocument.Parse(json);
-                root = doc.RootElement;
+                var verified = _payOsService.VerifyWebhookSignature(json, signatureHeader);
+                if (!verified)
+                {
+                    _logger.LogError("[PayOS Webhook] Signature verification failed. Header: {SignatureHeader}", signatureHeader);
+                    return BadRequest(new { error = "Invalid signature" });
+                }
+
+                _logger.LogInformation("[PayOS Webhook] Signature verification successful");
+                using (var doc = JsonDocument.Parse(json))
+                {
+                    var root = doc.RootElement;
+                    reference = GetJsonString(root, "reference", "Reference");
+                    paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+                }
             }
 
-            string? reference = GetJsonString(root, "reference", "Reference");
-            string? paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+
+            _logger.LogInformation("[PayOS Webhook] Extracted reference: {Reference}, paymentLinkId: {PaymentLinkId}", reference, paymentLinkId);
 
             var payment = (await _paymentRepository.FindAsync(p => p.TransactionId == reference || p.TransactionId == paymentLinkId)).FirstOrDefault();
             if (payment != null)
             {
+                _logger.LogInformation("[PayOS Webhook] Found payment record. PaymentId: {PaymentId}, RelatedEntityId: {RelatedEntityId}", payment.PaymentId, payment.RelatedEntityId);
+                
                 payment.Status = "success";
                 payment.SettlementStatus = "settled";
                 payment.PaidAt = Common.Utils.VietnamTime.Now;
@@ -90,6 +166,8 @@ public class PayOsController : ControllerBase
                     var checkTime = (await _bookingCheckTimeRepository.FindAsync(ct => ct.BookingId == bookingId)).FirstOrDefault();
                     if (checkTime != null)
                     {
+                        _logger.LogInformation("[PayOS Webhook] Updating check-time for booking {BookingId}", bookingId);
+                        
                         checkTime.FeeSettlementStatus = "paid";
                         checkTime.FeeSettledAt = Common.Utils.VietnamTime.Now;
                         checkTime.FeeDueAt = null;
@@ -113,23 +191,42 @@ public class PayOsController : ControllerBase
                             await _checkTimeEventRepository.AddAsync(ev);
                             await _checkTimeEventRepository.SaveChangesAsync();
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "[PayOS Webhook] Failed to create state event for booking {BookingId}", bookingId);
+                        }
 
                         var booking = await _bookingRepository.GetByIdAsync(bookingId);
                         if (booking != null && string.Equals(booking.Status, "disputed", StringComparison.OrdinalIgnoreCase))
                         {
+                            _logger.LogInformation("[PayOS Webhook] Updating booking {BookingId} status from 'disputed' to 'completed'", bookingId);
                             booking.Status = "completed";
                             _bookingRepository.Update(booking);
                             await _bookingRepository.SaveChangesAsync();
                         }
                     }
+                    else
+                    {
+                        _logger.LogWarning("[PayOS Webhook] Check-time not found for booking {BookingId}", bookingId);
+                    }
                 }
+                else
+                {
+                    _logger.LogInformation("[PayOS Webhook] Payment has no related entity");
+                }
+
+                _logger.LogInformation("[PayOS Webhook] Successfully processed payment");
+            }
+            else
+            {
+                _logger.LogWarning("[PayOS Webhook] No payment found with reference {Reference} or paymentLinkId {PaymentLinkId}", reference, paymentLinkId);
             }
 
             return Ok();
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "[PayOS Webhook] Error processing webhook: {Message}", ex.Message);
             return BadRequest(new { error = ex.Message });
         }
     }

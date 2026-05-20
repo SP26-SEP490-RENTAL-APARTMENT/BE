@@ -561,6 +561,14 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.TotalPrice)
                 .HasPrecision(12, 2)
                 .HasColumnName("total_price");
+            entity.Property(e => e.AmountPaid)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("amount_paid");
+            entity.Property(e => e.RemainingAmount)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("remaining_amount");
 
             entity.HasOne(d => d.Apartment).WithMany(p => p.Bookings)
                 .HasForeignKey(d => d.ApartmentId)
@@ -1361,6 +1369,16 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.TransactionId)
                 .HasMaxLength(100)
                 .HasColumnName("transaction_id");
+            entity.Property(e => e.ProofUrl)
+                .HasColumnType("text")
+                .HasColumnName("proof_url");
+            entity.Property(e => e.ConfirmedBy).HasColumnName("confirmed_by");
+            entity.Property(e => e.ConfirmedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("confirmed_at");
+            entity.Property(e => e.Notes)
+                .HasColumnType("text")
+                .HasColumnName("notes");
             entity.Property(e => e.LandlordId).HasColumnName("landlord_id");
             entity.Property(e => e.LandlordAmount)
                 .HasPrecision(12, 2)

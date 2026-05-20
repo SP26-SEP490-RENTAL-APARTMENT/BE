@@ -27,6 +27,10 @@ public partial class Booking
 
     public decimal TotalPrice { get; set; }
 
+    public decimal AmountPaid { get; set; }
+
+    public decimal RemainingAmount { get; set; }
+
     public Guid? PackageId { get; set; }
 
     public decimal? PackagePrice { get; set; }

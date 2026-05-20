@@ -52,36 +52,36 @@ public sealed class PricingPolicyController : ControllerBase
         }
     }
 
-    [HttpGet("templates")]
-    public async Task<ActionResult<AvailableTemplatesForApartmentDto>> GetAvailableTemplates(
-        [FromRoute] Guid apartmentId,
-        [FromQuery] DateOnly startDate,
-        [FromQuery] DateOnly endDate)
-    {
-        var userId = GetUserId();
-        if (userId == null)
-        {
-            return Unauthorized(new { message = "Invalid user token." });
-        }
+    // [HttpGet("templates")]
+    // public async Task<ActionResult<AvailableTemplatesForApartmentDto>> GetAvailableTemplates(
+    //     [FromRoute] Guid apartmentId,
+    //     [FromQuery] DateOnly startDate,
+    //     [FromQuery] DateOnly endDate)
+    // {
+    //     var userId = GetUserId();
+    //     if (userId == null)  
+    //     {
+    //         return Unauthorized(new { message = "Invalid user token." });
+    //     }
 
-        if (!await _authService.IsUserOwnerOrManager(userId.Value, apartmentId))
-        {
-            return Forbid("You do not have permission to view templates for this apartment.");
-        }
+    //     if (!await _authService.IsUserOwnerOrManager(userId.Value, apartmentId))
+    //     {
+    //         return Forbid("You do not have permission to view templates for this apartment.");
+    //     }
 
-        if (startDate > endDate)
-            return BadRequest("Start date cannot be after end date.");
+    //     if (startDate > endDate)
+    //         return BadRequest("Start date cannot be after end date.");
 
-        try
-        {
-            var result = await _pricingPolicyService.GetAppliedTemplatesForApartmentAsync(apartmentId, startDate, endDate);
-            return Ok(result);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-    }
+    //     try
+    //     {
+    //         var result = await _pricingPolicyService.GetAppliedTemplatesForApartmentAsync(apartmentId, startDate, endDate);
+    //         return Ok(result);
+    //     }
+    //     catch (ArgumentException ex)
+    //     {
+    //         return BadRequest(new { message = ex.Message });
+    //     }
+    // }
 
     [HttpGet("/api/landlord/pricing/templates")]
     public async Task<ActionResult<IEnumerable<PricingRuleTemplateResponseDto>>> GetAllTemplatesForLandlord()
@@ -138,8 +138,6 @@ public sealed class PricingPolicyController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
-
-    
 
     [HttpPatch("{applicationId:guid}/enabled")]
     public async Task<ActionResult<ApartmentPricingPolicyApplicationResponseDto>> SetApplicationStatus(

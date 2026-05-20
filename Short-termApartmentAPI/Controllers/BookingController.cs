@@ -64,6 +64,19 @@ namespace Short_termApartmentAPI.Controllers
             _idRecognitionService = idRecognitionService;
         }
 
+        public class SubmitOfflinePaymentFormDto
+        {
+            public string? Notes { get; set; }
+            public Microsoft.AspNetCore.Http.IFormFile? Proof { get; set; }
+        }
+
+        public class ConfirmOfflinePaymentDto
+        {
+            public Guid PaymentId { get; set; }
+            public bool Approve { get; set; }
+            public string? Notes { get; set; }
+        }
+
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
         {
@@ -124,6 +137,13 @@ namespace Short_termApartmentAPI.Controllers
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
             }
 
+            var rolesClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+            // Block creating a new booking if tenant has outstanding unpaid booking (admins/staff/appeals can bypass)
+            if (await _bookingService.HasOutstandingUnpaidBookingAsync(userId, userId, rolesClaim))
+            {
+                return BadRequest(new ApiResponse<string>("You have an outstanding unpaid booking. Please settle or cancel it before creating a new booking."));
+            }
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
@@ -145,6 +165,10 @@ namespace Short_termApartmentAPI.Controllers
 
                 return CreatedAtAction(nameof(GetById), new { id = created.BookingId },
                     new ApiResponse<CreateBookingResponseDto>(response, $"Booking created. Please complete {paymentModeText} to confirm."));
+            }
+            catch (BLL.Exceptions.OutstandingUnpaidBookingException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
             }
             catch (InvalidOperationException ex)
             {
@@ -198,6 +222,290 @@ namespace Short_termApartmentAPI.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpPost("{id:guid}/pay-balance")]
+        [Authorize(Roles = "tenant")]
+        public async Task<IActionResult> PayBalance(Guid id, [FromQuery] string? paymentProvider, [FromQuery] string? devicePlatform)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var platform = string.IsNullOrWhiteSpace(devicePlatform)
+                ? (Request.Headers["User-Agent"].ToString().Contains("Android", StringComparison.OrdinalIgnoreCase) ? "android"
+                   : Request.Headers["User-Agent"].ToString().Contains("iPhone", StringComparison.OrdinalIgnoreCase) || Request.Headers["User-Agent"].ToString().Contains("iPad", StringComparison.OrdinalIgnoreCase) ? "ios"
+                   : "web")
+                : devicePlatform.Trim().ToLowerInvariant();
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+                return NotFound(new ApiResponse<string>("Booking not found."));
+
+            if (booking.TenantId != userId)
+                return Forbid();
+
+            if (booking.RemainingAmount <= 0)
+                return BadRequest(new ApiResponse<string>("No remaining balance to pay."));
+
+            if (string.IsNullOrWhiteSpace(paymentProvider))
+                return BadRequest(new ApiResponse<string>("Missing paymentProvider query parameter."));
+
+            var normalized = paymentProvider.Trim().ToLowerInvariant();
+
+            // Build payment request for the remaining balance
+            if (normalized == "stripe")
+            {
+                var stripeRequest = new StripeCheckoutRequestDto
+                {
+                    Amount = (long)Math.Round(booking.RemainingAmount),
+                    DevicePlatform = platform,
+                    RelatedEntityId = booking.BookingId,
+                    PaymentType = PaymentTypes.balance.ToString(),
+                    PaymentPurpose = PaymentPurposes.booking_balance.ToString()
+                };
+
+                var stripeResponse = await _stripeService.CreateCheckoutSessionAsync(stripeRequest);
+
+                var payment = new Payment
+                {
+                    Amount = booking.RemainingAmount,
+                    PaymentType = PaymentTypes.balance.ToString(),
+                    PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    Method = "stripe",
+                    Status = PaymentStatus.pending.ToString(),
+                    TransactionId = stripeResponse.SessionId
+                };
+
+                await _paymentService.CreateAsync(payment);
+
+                return Ok(new BookingPaymentLinkDto
+                {
+                    Provider = "stripe",
+                    Url = stripeResponse.Url,
+                    Deeplink = stripeResponse.RedirectPayload.DeepLinkIos ?? stripeResponse.RedirectPayload.DeepLinkAndroid,
+                    TransactionId = stripeResponse.SessionId,
+                    Status = PaymentStatus.pending.ToString(),
+                    PaymentId = payment.PaymentId
+                });
+            }
+
+            if (normalized == "momo")
+            {
+                var momoRequest = new MomoCreatePaymentRequest
+                {
+                    Amount = (long)Math.Round(booking.RemainingAmount),
+                    OrderInfo = $"Booking balance payment {booking.BookingId}",
+                    ExtraData = booking.BookingId.ToString(),
+                    PaymentType = PaymentTypes.balance.ToString(),
+                    PaymentPurpose = PaymentPurposes.booking_balance.ToString()
+                };
+
+                var momoResponse = await _momoService.CreateWalletPaymentAsync(momoRequest);
+
+                var payment = new Payment
+                {
+                    Amount = booking.RemainingAmount,
+                    PaymentType = PaymentTypes.balance.ToString(),
+                    PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    Method = "momo",
+                    Status = PaymentStatus.pending.ToString(),
+                    TransactionId = momoResponse.RequestId
+                };
+
+                await _paymentService.CreateAsync(payment);
+
+                return Ok(new BookingPaymentLinkDto
+                {
+                    Provider = "momo",
+                    Url = momoResponse.PayUrl,
+                    Deeplink = null,
+                    TransactionId = momoResponse.RequestId,
+                    Status = PaymentStatus.pending.ToString(),
+                    PaymentId = payment.PaymentId
+                });
+            }
+
+            if (normalized == "payos")
+            {
+                var payosRequest = new PayOsCreatePaymentRequest
+                {
+                    Amount = (long)Math.Round(booking.RemainingAmount),
+                    OrderInfo = $"Booking balance payment {booking.BookingId}",
+                    ExtraData = booking.BookingId.ToString(),
+                    PaymentType = PaymentTypes.balance.ToString(),
+                    PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
+                    RedirectUrl = ResolveMomoRedirectUrl(platform)
+                };
+
+                var payosResponse = await _payOsService.CreateCheckoutAsync(payosRequest);
+                if (!payosResponse.Success)
+                {
+                    throw new InvalidOperationException($"PayOS checkout could not be created: {payosResponse.Message}");
+                }
+
+                var payment = new Payment
+                {
+                    Amount = booking.RemainingAmount,
+                    PaymentType = PaymentTypes.balance.ToString(),
+                    PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    Method = "payos",
+                    Status = PaymentStatus.pending.ToString(),
+                    TransactionId = payosResponse.OrderId
+                };
+
+                await _paymentService.CreateAsync(payment);
+
+                var requestLog = new MomoTransaction
+                {
+                    RequestId = payosResponse.OrderId,
+                    PartnerCode = string.Empty,
+                    Amount = payosResponse.Amount,
+                    Type = "create_wallet_payment_payos",
+                    RequestBody = System.Text.Json.JsonSerializer.Serialize(payosRequest),
+                    ResponseBody = payosResponse.ResponseRaw ?? string.Empty,
+                    Status = "pending",
+                    ResultCode = null,
+                    Message = payosResponse.Message,
+                    PaymentId = payment.PaymentId,
+                    CreatedAt = Common.Utils.VietnamTime.Now,
+                    UpdatedAt = Common.Utils.VietnamTime.Now
+                };
+
+                await _momoTransactionService.CreateAsync(requestLog);
+
+                return Ok(new BookingPaymentLinkDto
+                {
+                    Provider = "payos",
+                    Url = payosResponse.Url,
+                    Deeplink = payosResponse.Deeplink,
+                    TransactionId = payosResponse.OrderId,
+                    Status = PaymentStatus.pending.ToString(),
+                    PaymentId = payment.PaymentId
+                });
+            }
+
+            return BadRequest(new ApiResponse<string>("Unsupported paymentProvider."));
+        }
+
+        [HttpPost("{id:guid}/submit-offline-payment")]
+        [Authorize(Roles = "tenant")]
+        public async Task<IActionResult> SubmitOfflinePayment(Guid id, [FromForm] SubmitOfflinePaymentFormDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+                return NotFound(new ApiResponse<string>("Booking not found."));
+
+            if (booking.TenantId != userId)
+                return Forbid();
+
+            // Determine payment type: deposit if deposit not paid, otherwise balance
+            var isDeposit = booking.DepositPaid != true && booking.DepositAmount > 0;
+            var amount = isDeposit ? booking.DepositAmount : booking.RemainingAmount;
+            if (amount <= 0)
+                return BadRequest(new ApiResponse<string>("No amount due for offline payment."));
+
+            string? proofUrl = null;
+            if (dto?.Proof != null)
+            {
+                try
+                {
+                    proofUrl = await _imageService.UploadImageAsync(dto.Proof);
+                }
+                catch
+                {
+                    // non-fatal: continue with null proofUrl
+                    proofUrl = null;
+                }
+            }
+
+            var payment = new Payment
+            {
+                Amount = amount,
+                PaymentType = isDeposit ? PaymentTypes.deposit.ToString() : PaymentTypes.balance.ToString(),
+                PaymentPurpose = isDeposit ? PaymentPurposes.booking_deposit.ToString() : PaymentPurposes.booking_balance.ToString(),
+                RelatedEntityId = booking.BookingId,
+                RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                Method = "offline",
+                Status = PaymentStatus.pending.ToString(),
+                TransactionId = null,
+                ProofUrl = proofUrl,
+                Notes = dto?.Notes
+            };
+
+            await _paymentService.CreateAsync(payment);
+
+            return CreatedAtAction(nameof(GetById), new { id = booking.BookingId }, new ApiResponse<object>(new { PaymentId = payment.PaymentId, Status = payment.Status }, "Offline payment submitted and pending confirmation."));
+        }
+
+        [HttpPost("{id:guid}/confirm-offline-payment")]
+        [Authorize(Roles = "landlord,admin")]
+        public async Task<IActionResult> ConfirmOfflinePayment(Guid id, [FromBody] ConfirmOfflinePaymentDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+                return NotFound(new ApiResponse<string>("Booking not found."));
+
+            // If landlord role, ensure ownership
+            if (User.IsInRole("landlord") && booking.Apartment != null && booking.Apartment.LandlordId != requesterId)
+                return Forbid();
+
+            // find payment
+            var payment = await _paymentService.GetByIdAsync(dto.PaymentId);
+            if (payment == null)
+                return NotFound(new ApiResponse<string>("Payment not found."));
+
+            if (dto.Approve)
+            {
+                payment.Status = PaymentStatus.success.ToString();
+                payment.ConfirmedBy = requesterId;
+                payment.ConfirmedAt = Common.Utils.VietnamTime.Now;
+                if (!string.IsNullOrWhiteSpace(dto.Notes))
+                    payment.Notes = (payment.Notes ?? string.Empty) + "\n" + dto.Notes;
+
+                await _paymentService.UpdateAsync(payment);
+
+                // Apply booking-side effects
+                try
+                {
+                    if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId!.Value);
+                    }
+                    else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId!.Value);
+                    }
+                }
+                catch { }
+
+                return Ok(new ApiResponse<object>(new { payment.PaymentId, payment.Status }, "Offline payment confirmed and applied."));
+            }
+            else
+            {
+                payment.Status = PaymentStatus.failed.ToString();
+                if (!string.IsNullOrWhiteSpace(dto.Notes))
+                    payment.Notes = (payment.Notes ?? string.Empty) + "\n" + dto.Notes;
+                await _paymentService.UpdateAsync(payment);
+                return Ok(new ApiResponse<object>(new { payment.PaymentId, payment.Status }, "Offline payment marked as rejected."));
             }
         }
 

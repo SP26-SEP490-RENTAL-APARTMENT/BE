@@ -19,6 +19,7 @@ public class PaymentWebhookController : ControllerBase
     private readonly IRepository<DAL.Models.Booking> _bookingRepository;
     private readonly IRepository<DAL.Models.BookingCheckTimeStateEvent> _checkTimeEventRepository;
     private readonly StripeSettings _stripeSettings;
+    private readonly BLL.Services.Interfaces.IBookingService _bookingService;
 
     public PaymentWebhookController(
         IStripeService stripeService,
@@ -26,7 +27,8 @@ public class PaymentWebhookController : ControllerBase
         IRepository<DAL.Models.BookingCheckTime> bookingCheckTimeRepository,
         IRepository<DAL.Models.Booking> bookingRepository,
         IRepository<DAL.Models.BookingCheckTimeStateEvent> checkTimeEventRepository,
-        IOptions<StripeSettings> stripeOptions)
+        IOptions<StripeSettings> stripeOptions,
+        BLL.Services.Interfaces.IBookingService bookingService)
     {
         _stripeService = stripeService;
         _paymentRepository = paymentRepository;
@@ -34,6 +36,7 @@ public class PaymentWebhookController : ControllerBase
         _bookingRepository = bookingRepository;
         _checkTimeEventRepository = checkTimeEventRepository;
         _stripeSettings = stripeOptions.Value;
+        _bookingService = bookingService;
     }
 
     [HttpPost("stripe")]
@@ -103,6 +106,24 @@ public class PaymentWebhookController : ControllerBase
                                     _bookingRepository.Update(booking);
                                     await _bookingRepository.SaveChangesAsync();
                                 }
+
+                                // Apply booking-side payment side-effects (recalculate paid amounts and status)
+                                try
+                                {
+                                    if (string.Equals(payment.RelatedEntityType, Common.Enums.PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase) && payment.RelatedEntityId.HasValue)
+                                    {
+                                        if (string.Equals(payment.PaymentType, Common.Enums.PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
+                                            || string.Equals(payment.PaymentType, Common.Enums.PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                        }
+                                        else if (string.Equals(payment.PaymentType, Common.Enums.PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            await _bookingService.MarkBalancePaidAsync(payment.RelatedEntityId.Value);
+                                        }
+                                    }
+                                }
+                                catch { }
                             }
                         }
                     }

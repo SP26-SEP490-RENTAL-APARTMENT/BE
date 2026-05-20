@@ -33,6 +33,15 @@ public partial class Payment
 
     public DateTime? PaidAt { get; set; }
 
+    // Offline payment proof and confirmation
+    public string? ProofUrl { get; set; }
+
+    public Guid? ConfirmedBy { get; set; }
+
+    public DateTime? ConfirmedAt { get; set; }
+
+    public string? Notes { get; set; }
+
     public virtual ICollection<LandlordSubscription> LandlordSubscriptions { get; set; } = new List<LandlordSubscription>();
 
     public virtual ICollection<MomoTransaction> MomoTransactions { get; set; } = new List<MomoTransaction>();
