@@ -14,6 +14,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
     private readonly IRepository<Landlord> _landlordRepository;
     private readonly ISubscriptionPlanService _subscriptionPlanService;
     private readonly IMomoService _momoService;
+    private readonly IPayOsService _payOsService;
     private readonly IPaymentService _paymentService;
     private readonly IMomoTransactionService _momoTransactionService;
     private readonly ILandlordWalletService _landlordWalletService;
@@ -27,6 +28,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         IPaymentService paymentService,
         IMomoTransactionService momoTransactionService,
         ILandlordWalletService landlordWalletService,
+        IPayOsService payOsService,
         IOptions<MomoOptions> momoOptions)
         : base(repository)
     {
@@ -37,6 +39,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         _paymentService = paymentService;
         _momoTransactionService = momoTransactionService;
         _landlordWalletService = landlordWalletService;
+        _payOsService = payOsService;
         _momoOptions = momoOptions.Value;
     }
 
@@ -172,6 +175,124 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         await _momoTransactionService.CreateAsync(requestLog);
 
         return momoResult;
+    }
+
+    public async Task<Common.DTOs.PayOsCreatePaymentResponse> CreatePayOsSubscriptionCheckoutAsync(
+        Guid landlordId,
+        StartLandlordSubscriptionRequestDto dto,
+        CancellationToken cancellationToken = default)
+    {
+        var landlord = await _landlordRepository.GetByIdAsync(landlordId);
+        if (landlord == null)
+        {
+            throw new InvalidOperationException("Landlord profile not found.");
+        }
+
+        var plan = await _subscriptionPlanService.GetByIdAsync(dto.PlanId);
+        if (plan == null || plan.IsActive == false)
+        {
+            throw new InvalidOperationException("Subscription plan not found or inactive.");
+        }
+
+        var renewalType = (dto.RenewalType ?? RenewalType.monthly.ToString())
+            .Trim()
+            .ToLowerInvariant();
+
+        if (renewalType != RenewalType.monthly.ToString() && renewalType != RenewalType.annual.ToString())
+        {
+            throw new ArgumentException("RenewalType must be 'monthly' or 'annual'.");
+        }
+
+        decimal amount;
+        if (renewalType == RenewalType.annual.ToString())
+        {
+            if (!plan.PriceAnnual.HasValue || plan.PriceAnnual.Value <= 0)
+            {
+                throw new InvalidOperationException("Annual price is not configured for this plan.");
+            }
+            amount = plan.PriceAnnual.Value;
+        }
+        else
+        {
+            if (plan.PriceMonthly <= 0)
+            {
+                throw new InvalidOperationException("Monthly price is not configured for this plan.");
+            }
+            amount = plan.PriceMonthly;
+        }
+
+        var landlordSubscription = new LandlordSubscription
+        {
+            SubscriptionId = Guid.NewGuid(),
+            LandlordId = landlord.LandlordId,
+            PlanId = plan.PlanId,
+            Status = Status.pending_payment.ToString(),
+            StartDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now),
+            EndDate = null,
+            RenewalType = renewalType,
+            AutoRenew = dto.AutoRenew,
+            PaymentMethod = "payos",
+            LastPaymentId = null,
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
+        };
+
+        landlordSubscription = await CreateAsync(landlordSubscription);
+
+        var paymentPurpose = renewalType == RenewalType.annual.ToString()
+            ? PaymentPurposes.subscription_annual.ToString()
+            : PaymentPurposes.subscription_monthly.ToString();
+
+        var payment = new Payment
+        {
+            Amount = amount,
+            PaymentType = PaymentTypes.deposit.ToString(),
+            PaymentPurpose = paymentPurpose,
+            RelatedEntityId = landlordSubscription.SubscriptionId,
+            RelatedEntityType = PaymentRelatedEntityType.host_subscription.ToString(),
+            Method = "payos",
+            Status = PaymentStatus.pending.ToString()
+        };
+
+        var payosRequest = new Common.DTOs.PayOsCreatePaymentRequest
+        {
+            Amount = (long)amount,
+            OrderInfo = $"Subscription {landlordSubscription.SubscriptionId} for landlord {landlord.LandlordId}",
+            ExtraData = landlordSubscription.SubscriptionId.ToString(),
+            PaymentType = payment.PaymentType,
+            PaymentPurpose = payment.PaymentPurpose,
+            RedirectUrl = "http://localhost:5173/landlord/my-subscriptions"
+        };
+
+        var payosResult = await _payOsService.CreateCheckoutAsync(payosRequest, cancellationToken);
+        if (!payosResult.Success)
+        {
+            throw new InvalidOperationException($"PayOS payment creation failed: {payosResult.Message}");
+        }
+
+        await _paymentService.CreateAsync(payment);
+
+        await _momoTransactionService.CreateAsync(new MomoTransaction
+        {
+            RequestId = payosResult.OrderId,
+            PartnerCode = string.Empty,
+            Amount = payosResult.Amount,
+            Type = "create_subscription_payment_payos",
+            RequestBody = System.Text.Json.JsonSerializer.Serialize(payosRequest),
+            ResponseBody = payosResult.ResponseRaw ?? string.Empty,
+            Status = "pending",
+            ResultCode = null,
+            Message = payosResult.Message,
+            PaymentId = payment.PaymentId,
+            CreatedAt = Common.Utils.VietnamTime.Now,
+            UpdatedAt = Common.Utils.VietnamTime.Now
+        });
+
+        landlordSubscription.LastPaymentId = payment.PaymentId;
+        landlordSubscription.UpdatedAt = Common.Utils.VietnamTime.Now;
+        await UpdateAsync(landlordSubscription);
+
+        return payosResult;
     }
 
     public async Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(

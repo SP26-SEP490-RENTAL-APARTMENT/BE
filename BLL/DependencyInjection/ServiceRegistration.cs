@@ -47,6 +47,7 @@ namespace BLL.DependencyInjection
             services.AddScoped<ISubscriptionPlanService, SubscriptionPlanService>();
             services.AddScoped<IMomoTransactionService, MomoTransactionService>();
             services.AddHttpClient<IMomoService, MomoService>();
+            services.AddScoped<IPayOsService, PayOsService>();
             services.AddHttpClient<IFptIdRecognitionService, FptIdRecognitionService>();
             services.AddHttpClient<IFptPassportRecognitionService, FptPassportRecognitionService>();
             services.AddScoped<IStripeService, StripeService>();
