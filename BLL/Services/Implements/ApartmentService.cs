@@ -14,6 +14,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IApartmentMediumService _apartmentMediumService;
     private readonly IMapper _mapper;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
+    private readonly IHolidayService _holidayService;
 
     private readonly IApartmentRepository _apartmentRepository;
     private readonly ITenantWishlistRepository _tenantWishlistRepository;
@@ -32,7 +33,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IUserRepository userRepository,
         IRepository<Notification> notificationRepository,
         IRepository<PropertyInspection> propertyInspectionRepository,
-        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository)
+        IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
+        IHolidayService holidayService)
         : base(repository)
     {
         _apartmentRepository = repository;
@@ -45,6 +47,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _notificationRepository = notificationRepository;
         _propertyInspectionRepository = propertyInspectionRepository;
         _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
+        _holidayService = holidayService;
     }
 
     public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
@@ -133,11 +136,11 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         foreach (var apartment in apartments)
         {
             var priceCalendars = await _apartmentPriceCalendarRepository.FindAsync(record => record.ApartmentId == apartment.ApartmentId);
-            apartment.PriceChanges = BuildPriceChanges(apartment, priceCalendars);
+            apartment.PriceChanges = await BuildPriceChangesAsync(apartment, priceCalendars);
         }
     }
 
-    private static List<ApartmentPriceChangeDto> BuildPriceChanges(
+    private async Task<List<ApartmentPriceChangeDto>> BuildPriceChangesAsync(
         ApartmentResponseDto apartment,
         IEnumerable<ApartmentPriceCalendar> priceCalendars)
     {
@@ -153,6 +156,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         foreach (var calendar in sortedCalendars)
         {
             var newPrice = ResolveCalendarPrice(apartment.BasePricePerNight, calendar);
+            var reasonText = await ResolveReasonAsync(calendar);
 
             // Check if we can extend the last entry (consolidation)
             if (priceChanges.Count > 0)
@@ -165,7 +169,6 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                     lastEntry.EndDate = calendar.EndDate;
 
                     // Update reason to reflect the latest calendar row's price type
-                    var reasonText = ExtractReasonFromPriceType(calendar.PriceType);
                     if (!string.Equals(lastEntry.Reason, reasonText, StringComparison.OrdinalIgnoreCase))
                     {
                         lastEntry.Reason = reasonText;
@@ -187,7 +190,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             {
                 OldPricePerNight = previousPrice,
                 NewPricePerNight = newPrice,
-                Reason = ExtractReasonFromPriceType(calendar.PriceType),
+                Reason = reasonText,
                 StartDate = calendar.StartDate,
                 EndDate = calendar.EndDate
             });
@@ -196,6 +199,48 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         }
 
         return priceChanges;
+    }
+
+    private async Task<string?> ResolveReasonAsync(ApartmentPriceCalendar calendar)
+    {
+        var priceType = calendar.PriceType;
+        if (!string.IsNullOrWhiteSpace(priceType))
+        {
+            if (priceType.StartsWith("pricing_policy:", StringComparison.OrdinalIgnoreCase))
+            {
+                var parameterKey = priceType.Substring("pricing_policy:".Length);
+                return string.IsNullOrWhiteSpace(parameterKey) ? null : parameterKey;
+            }
+
+            if (priceType.Equals("pricing_policy", StringComparison.OrdinalIgnoreCase))
+            {
+                return await ResolvePricingPolicyFallbackReasonAsync(calendar.StartDate);
+            }
+
+            return priceType.Replace('_', ' ');
+        }
+
+        if (calendar.PricingPolicyId != Guid.Empty || calendar.VersionId != Guid.Empty)
+        {
+            return await ResolvePricingPolicyFallbackReasonAsync(calendar.StartDate);
+        }
+
+        return null;
+    }
+
+    private async Task<string> ResolvePricingPolicyFallbackReasonAsync(DateOnly date)
+    {
+        if (await _holidayService.IsHolidayAsync(date))
+        {
+            return "holiday_multiplier";
+        }
+
+        if (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+        {
+            return "weekend_multiplier";
+        }
+
+        return "multiplier";
     }
 
     private static string? ExtractReasonFromPriceType(string? priceType)
@@ -208,6 +253,12 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         {
             var parameterKey = priceType.Substring("pricing_policy:".Length);
             return string.IsNullOrWhiteSpace(parameterKey) ? null : parameterKey;
+        }
+
+        // Handle old format "pricing_policy" without parameter key - default to "multiplier"
+        if (priceType.Equals("pricing_policy", StringComparison.OrdinalIgnoreCase))
+        {
+            return "multiplier";
         }
 
         // For other price types, replace underscores with spaces

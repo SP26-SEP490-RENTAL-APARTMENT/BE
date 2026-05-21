@@ -150,7 +150,8 @@ public class ApartmentServicePublicPriceChangesTests
             new NoOpUserRepository(),
             new NoOpRepository<Notification>(),
             new NoOpRepository<PropertyInspection>(),
-            calendarRepository);
+                calendarRepository,
+                new NoOpHolidayService());
     }
 
     private sealed class SimpleMapper : IMapper
@@ -281,6 +282,11 @@ public class ApartmentServicePublicPriceChangesTests
         public Task<ApartmentMedium> CreateAsync(ApartmentMedium entity) => Task.FromResult(entity);
         public Task UpdateAsync(ApartmentMedium entity) => Task.CompletedTask;
         public Task DeleteAsync(Guid id) => Task.CompletedTask;
+    }
+
+    private sealed class NoOpHolidayService : IHolidayService
+    {
+        public Task<bool> IsHolidayAsync(DateOnly date, string? locationScope = null) => Task.FromResult(false);
     }
 
     private sealed class NoOpUserRepository : IUserRepository

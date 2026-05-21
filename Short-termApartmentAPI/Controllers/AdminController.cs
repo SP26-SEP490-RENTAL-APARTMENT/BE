@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BLL.Services.Interfaces;
+using BLL.Services.Implements;
 using Common.DTOs;
 using System.Security.Claims;
 
@@ -13,13 +14,16 @@ public sealed class AdminController : ControllerBase
 {
     private readonly IPricingPolicyService _pricingPolicyService;
     private readonly IBookingService _bookingService;
+    private readonly PricingPolicyMigrationService _migrationService;
 
     public AdminController(
         IPricingPolicyService pricingPolicyService,
-        IBookingService bookingService)
+        IBookingService bookingService,
+        PricingPolicyMigrationService migrationService)
     {
         _pricingPolicyService = pricingPolicyService;
         _bookingService = bookingService;
+        _migrationService = migrationService;
     }
 
     [HttpGet("ping")]
@@ -121,6 +125,27 @@ public sealed class AdminController : ControllerBase
                     totalCount = totalCount,
                     totalPages = (totalCount + pageSize - 1) / pageSize
                 }
+            });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("pricing/migrate-policies")]
+    public async Task<IActionResult> MigratePricingPolicies()
+    {
+        try
+        {
+            var result = await _migrationService.MigrateAllPricingPoliciesAsync();
+            return Ok(new
+            {
+                message = "Pricing policy migration completed.",
+                totalApplications = result.TotalApplications,
+                successfullyMigrated = result.SuccessfullyMigrated,
+                failed = result.Failed,
+                errors = result.Errors
             });
         }
         catch (Exception ex)

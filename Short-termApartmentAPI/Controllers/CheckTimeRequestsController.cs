@@ -110,6 +110,7 @@ namespace Short_termApartmentAPI.Controllers
             }
             catch (UnauthorizedAccessException ex)
             {
+                Console.WriteLine($"Unauthorized access: {ex.Message}");
                 return Forbid();
             }
             catch (Exception ex)

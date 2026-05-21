@@ -176,6 +176,7 @@ builder.Services.AddSingleton(sp =>
         LogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
     });
 });
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CorsPolicy", policy =>
