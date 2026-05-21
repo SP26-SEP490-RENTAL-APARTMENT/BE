@@ -165,9 +165,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                     lastEntry.EndDate = calendar.EndDate;
 
                     // Update reason to reflect the latest calendar row's price type
-                    var reasonText = string.IsNullOrWhiteSpace(calendar.PriceType)
-                        ? null
-                        : calendar.PriceType.Replace('_', ' ');
+                    var reasonText = ExtractReasonFromPriceType(calendar.PriceType);
                     if (!string.Equals(lastEntry.Reason, reasonText, StringComparison.OrdinalIgnoreCase))
                     {
                         lastEntry.Reason = reasonText;
@@ -189,9 +187,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             {
                 OldPricePerNight = previousPrice,
                 NewPricePerNight = newPrice,
-                Reason = string.IsNullOrWhiteSpace(calendar.PriceType)
-                    ? null
-                    : calendar.PriceType.Replace('_', ' '),
+                Reason = ExtractReasonFromPriceType(calendar.PriceType),
                 StartDate = calendar.StartDate,
                 EndDate = calendar.EndDate
             });
@@ -200,6 +196,22 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         }
 
         return priceChanges;
+    }
+
+    private static string? ExtractReasonFromPriceType(string? priceType)
+    {
+        if (string.IsNullOrWhiteSpace(priceType))
+            return null;
+
+        // Handle pricing_policy with parameter key format: "pricing_policy:multiplier", "pricing_policy:weekend_multiplier", etc.
+        if (priceType.StartsWith("pricing_policy:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parameterKey = priceType.Substring("pricing_policy:".Length);
+            return string.IsNullOrWhiteSpace(parameterKey) ? null : parameterKey;
+        }
+
+        // For other price types, replace underscores with spaces
+        return priceType.Replace('_', ' ');
     }
 
     private static decimal ResolveCalendarPrice(decimal basePricePerNight, ApartmentPriceCalendar calendar)

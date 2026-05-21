@@ -342,13 +342,19 @@ namespace Short_termApartmentAPI.Controllers
                     ExtraData = booking.BookingId.ToString(),
                     PaymentType = PaymentTypes.balance.ToString(),
                     PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
-                    RedirectUrl = ResolveMomoRedirectUrl(platform)
+                    RedirectUrl = ResolveMomoRedirectUrl(platform),
+                    Items = new System.Collections.Generic.List<Common.DTOs.PayOsItemDto>
+                    {
+                        new Common.DTOs.PayOsItemDto { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.RemainingAmount), Unit = "booking" }
+                    }
                 };
 
                 var payosResponse = await _payOsService.CreateCheckoutAsync(payosRequest);
-                if (!payosResponse.Success)
+
+                if (!payosResponse.Success || string.IsNullOrWhiteSpace(payosResponse.Url) || string.IsNullOrWhiteSpace(payosResponse.OrderId))
                 {
-                    throw new InvalidOperationException($"PayOS checkout could not be created: {payosResponse.Message}");
+                    return StatusCode(StatusCodes.Status502BadGateway,
+                        new ApiResponse<string>($"PayOS payment link creation failed: {payosResponse.Message}"));
                 }
 
                 var payment = new Payment
@@ -367,7 +373,7 @@ namespace Short_termApartmentAPI.Controllers
 
                 var requestLog = new MomoTransaction
                 {
-                    RequestId = payosResponse.OrderId,
+                    RequestId = payosResponse.OrderId ?? Guid.NewGuid().ToString(),
                     PartnerCode = string.Empty,
                     Amount = payosResponse.Amount,
                     Type = "create_wallet_payment_payos",
@@ -388,6 +394,7 @@ namespace Short_termApartmentAPI.Controllers
                     Provider = "payos",
                     Url = payosResponse.Url,
                     Deeplink = payosResponse.Deeplink,
+                    QrCodeUrl = payosResponse.QrCodeUrl,
                     TransactionId = payosResponse.OrderId,
                     Status = PaymentStatus.pending.ToString(),
                     PaymentId = payment.PaymentId
@@ -630,13 +637,18 @@ namespace Short_termApartmentAPI.Controllers
                     ExtraData = booking.BookingId.ToString(),
                     PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
                     PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
-                    RedirectUrl = ResolveMomoRedirectUrl(devicePlatform)
+                    RedirectUrl = ResolveMomoRedirectUrl(devicePlatform),
+                    Items = new System.Collections.Generic.List<Common.DTOs.PayOsItemDto>
+                    {
+                        new Common.DTOs.PayOsItemDto { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.UpfrontPaymentAmount), Unit = "booking" }
+                    }
                 };
 
                 var payosResponse = await _payOsService.CreateCheckoutAsync(payosRequest);
-                if (!payosResponse.Success)
+
+                if (!payosResponse.Success || string.IsNullOrWhiteSpace(payosResponse.Url) || string.IsNullOrWhiteSpace(payosResponse.OrderId))
                 {
-                    throw new InvalidOperationException($"PayOS checkout could not be created: {payosResponse.Message}");
+                    throw new InvalidOperationException($"PayOS payment link creation failed: {payosResponse.Message}");
                 }
 
                 var payment = new Payment
@@ -655,7 +667,7 @@ namespace Short_termApartmentAPI.Controllers
 
                 var requestLog = new MomoTransaction
                 {
-                    RequestId = payosResponse.OrderId,
+                    RequestId = payosResponse.OrderId ?? Guid.NewGuid().ToString(),
                     PartnerCode = string.Empty,
                     Amount = payosResponse.Amount,
                     Type = "create_wallet_payment_payos",
@@ -676,6 +688,7 @@ namespace Short_termApartmentAPI.Controllers
                     Provider = "payos",
                     Url = payosResponse.Url,
                     Deeplink = payosResponse.Deeplink,
+                    QrCodeUrl = payosResponse.QrCodeUrl,
                     TransactionId = payosResponse.OrderId,
                     Status = PaymentStatus.pending.ToString(),
                     PaymentId = payment.PaymentId
@@ -684,6 +697,8 @@ namespace Short_termApartmentAPI.Controllers
 
             return null;
         }
+
+        
 
         private string ResolveMomoRedirectUrl(string? devicePlatform)
         {

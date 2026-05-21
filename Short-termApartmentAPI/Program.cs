@@ -89,7 +89,10 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), mySqlOptions => mySqlOptions.UseNetTopologySuite())
+    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), mySqlOptions =>
+            mySqlOptions
+                .UseNetTopologySuite()
+                .EnableStringComparisonTranslations())
                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
                .AddInterceptors(new VietnamTimeZoneConnectionInterceptor());
 });
@@ -122,42 +125,16 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddBLLDependencies(builder.Configuration);
 
-// Register PayOS payment client for webhook verification
-builder.Services.AddKeyedSingleton<PayOSClient>("PayOsPaymentClient", (sp, key) =>
+// Configure payOS for order controller
+builder.Services.AddKeyedSingleton("OrderClient", (sp, key) =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
-    var logger = sp.GetRequiredService<ILogger<Program>>();
-
-    var clientIdFromConfig = config["PayOS:ClientId"];
-    var apiKeyFromConfig = config["PayOS:ApiKey"];
-    var checksumFromConfig = config["PayOS:ChecksumKey"];
-
-    var clientId = clientIdFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_CLIENT_ID");
-    var apiKey = apiKeyFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_API_KEY");
-    var checksumKey = checksumFromConfig ?? Environment.GetEnvironmentVariable("PAYOS_CHECKSUM_KEY");
-
-    static string Mask(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return "<empty>";
-        if (value.Length <= 8) return new string('*', value.Length);
-        return $"{value[..4]}...{value[^4..]}";
-    }
-
-    logger.LogInformation(
-        "PayOS payment credentials loaded. Source: ClientId={ClientIdSource}, ApiKey={ApiKeySource}, ChecksumKey={ChecksumSource}. Values: ClientId={ClientId}, ApiKey={ApiKey}, ChecksumKey={ChecksumKey}",
-        clientIdFromConfig != null ? "appsettings" : "env",
-        apiKeyFromConfig != null ? "appsettings" : "env",
-        checksumFromConfig != null ? "appsettings" : "env",
-        Mask(clientId),
-        Mask(apiKey),
-        Mask(checksumKey));
-
     return new PayOSClient(new PayOSOptions
     {
-        ClientId = clientId,
-        ApiKey = apiKey,
-        ChecksumKey = checksumKey,
-        LogLevel = Microsoft.Extensions.Logging.LogLevel.Information,
+        ClientId = config["PayOS:ClientId"] ?? Environment.GetEnvironmentVariable("PAYOS_CLIENT_ID"),
+        ApiKey = config["PayOS:ApiKey"] ?? Environment.GetEnvironmentVariable("PAYOS_API_KEY"),
+        ChecksumKey = config["PayOS:ChecksumKey"] ?? Environment.GetEnvironmentVariable("PAYOS_CHECKSUM_KEY"),
+        LogLevel = LogLevel.Debug,
     });
 });
 

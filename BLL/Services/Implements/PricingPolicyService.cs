@@ -455,7 +455,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
     {
         var generatedRows = await _calendarRepository.FindAsync(row =>
             row.VersionId == applicationId &&
-            row.PriceType == PolicyPriceType);
+            (row.PriceType == PolicyPriceType || row.PriceType!.StartsWith(PolicyPriceType + ":")));
 
         foreach (var row in generatedRows.ToList())
         {
@@ -479,6 +479,10 @@ public sealed class PricingPolicyService : IPricingPolicyService
         {
             var dailyMultiplier = await ResolveMultiplierAsync(parameters, overrides, cursor);
             var price = Math.Round(apartment.BasePricePerNight * dailyMultiplier, 2, MidpointRounding.AwayFromZero);
+            var usedParameterKey = await ResolveUsedParameterKeyAsync(parameters, overrides, cursor);
+            var priceTypeWithParam = string.IsNullOrEmpty(usedParameterKey) 
+                ? PolicyPriceType 
+                : $"{PolicyPriceType}:{usedParameterKey}";
 
             await _calendarRepository.AddAsync(new ApartmentPriceCalendar
             {
@@ -490,7 +494,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
                 StartDate = cursor,
                 EndDate = cursor,
                 FixedPricePerNight = price,
-                PriceType = PolicyPriceType,
+                PriceType = priceTypeWithParam,
                 DiscountPercentage = null,
                 IsDiscount = false,
                 MinNights = 1,
@@ -502,6 +506,44 @@ public sealed class PricingPolicyService : IPricingPolicyService
         }
 
         await _calendarRepository.SaveChangesAsync();
+    }
+
+    private async Task<string> ResolveUsedParameterKeyAsync(
+        IReadOnlyCollection<PricingRuleTemplateParameter> parameters,
+        IReadOnlyDictionary<string, decimal> overrides,
+        DateOnly date)
+    {
+        // lookup keys
+        decimal GetOverrideOrDefault(string key, decimal fallback)
+        {
+            if (overrides != null && overrides.TryGetValue(key, out var v)) return v;
+            var p = parameters.FirstOrDefault(x => string.Equals(x.ParameterKey, key, StringComparison.OrdinalIgnoreCase));
+            return p != null ? p.DefaultValue : fallback;
+        }
+
+        var holidayKey = "holiday_multiplier";
+        var weekendKey = "weekend_multiplier";
+        var baseKey = MultiplierKey;
+
+        // Holiday has priority
+        var holidayMultiplier = GetOverrideOrDefault(holidayKey, decimal.MinValue);
+        if (holidayMultiplier != decimal.MinValue)
+        {
+            if (await _holidayService.IsHolidayAsync(date))
+                return holidayKey;
+        }
+
+        // Weekend
+        var weekendMultiplier = GetOverrideOrDefault(weekendKey, decimal.MinValue);
+        if (weekendMultiplier != decimal.MinValue)
+        {
+            var dow = date.DayOfWeek;
+            if (dow == DayOfWeek.Saturday || dow == DayOfWeek.Sunday)
+                return weekendKey;
+        }
+
+        // fallback to generic multiplier
+        return baseKey;
     }
 
     private static void ValidateTemplateDto(CreatePricingRuleTemplateDto dto)

@@ -114,8 +114,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var matches = await _bookingRepository.FindAsync(b =>
             b.TenantId == tenantId
-            && (string.Equals(b.Status, "pending", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(b.Status, "confirmed", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(b.Status, "confirmed", StringComparison.OrdinalIgnoreCase)
             && (b.DepositPaid != true || b.RemainingAmount > 0m)
         );
 
@@ -2658,7 +2657,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                 var longClaims = (await _bookingCheckTimeRepository.FindAsync(ct => ct.ClaimOpenedAt.HasValue && ct.ClaimOpenedAt.Value <= longAgo)).ToList();
                 if (longClaims.Count >= longClaimAlertCount)
                 {
-                    var oldest = longClaims.Min(ct => ct.ClaimOpenedAt.Value);
+                    var oldest = longClaims.Min(ct => ct!.ClaimOpenedAt!.Value);
                     await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "long_claim_queue", new { Count = longClaims.Count, ThresholdDays = longClaimDays, Oldest = oldest });
                 }
             }

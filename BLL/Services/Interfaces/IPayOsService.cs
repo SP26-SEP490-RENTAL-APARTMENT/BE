@@ -1,6 +1,4 @@
 using Common.DTOs;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace BLL.Services.Interfaces
 {

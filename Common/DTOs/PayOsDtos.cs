@@ -10,6 +10,27 @@ namespace Common.DTOs
         public string? PaymentType { get; set; }
         public string? PaymentPurpose { get; set; }
         public string? RedirectUrl { get; set; }
+        public string? CancelUrl { get; set; }
+        // Optional buyer information
+        public string? BuyerName { get; set; }
+        public string? BuyerCompanyName { get; set; }
+        public string? BuyerEmail { get; set; }
+        public string? BuyerPhone { get; set; }
+        public string? BuyerAddress { get; set; }
+        public bool? BuyerNotGetInvoice { get; set; }
+        public PayOS.Models.V2.PaymentRequests.TaxPercentage? TaxPercentage { get; set; }
+        public DateTimeOffset? ExpiredAt { get; set; }
+        // Optional items
+        public List<PayOsItemDto>? Items { get; set; }
+    }
+
+    public class PayOsItemDto
+    {
+        public string? Name { get; set; }
+        public int Quantity { get; set; }
+        public long Price { get; set; }
+        public string? Unit { get; set; }
+        public PayOS.Models.V2.PaymentRequests.TaxPercentage? TaxPercentage { get; set; }
     }
 
     public class PayOsCreatePaymentResponse

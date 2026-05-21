@@ -91,7 +91,8 @@ namespace BLL.Tests
             var generated = calendarRepo.Items.OfType<ApartmentPriceCalendar>().FirstOrDefault(r => r.VersionId == result.ApplicationId);
             Assert.NotNull(generated);
             Assert.Equal(150m, generated.FixedPricePerNight);
-            Assert.Equal("pricing_policy", generated.PriceType);
+            Assert.True(generated.PriceType == "pricing_policy:multiplier" || generated.PriceType == "pricing_policy:weekend_multiplier" || generated.PriceType == "pricing_policy:holiday_multiplier",
+                $"Expected PriceType to be pricing_policy with parameter key, but got: {generated.PriceType}");
         }
 
         [Fact]

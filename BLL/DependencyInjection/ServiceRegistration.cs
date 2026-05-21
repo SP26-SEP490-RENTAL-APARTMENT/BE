@@ -61,6 +61,8 @@ namespace BLL.DependencyInjection
             services.AddScoped<ICheckTimeRequestService, CheckTimeRequestService>();
             services.AddScoped<EmailService, EmailService>();
             services.AddScoped<ICacheService, RedisCacheService>();
+            services.AddScoped<IPayOsClientAdapter, PayOsHttpAdapter>();
+            services.AddScoped<IPayOsService, PayOsService>();
             return services;
         }
     }
