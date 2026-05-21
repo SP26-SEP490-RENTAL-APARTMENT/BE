@@ -33,6 +33,8 @@ namespace DAL.Repository.Implements
                 .Include(b => b.Tenant)
                 .ThenInclude(t => t.TenantNavigation)
                 .Include(b => b.BookingCheckTime)
+                .Include(b => b.Apartment)
+                    .ThenInclude(a => a.ApartmentMedia)
                 .FirstOrDefaultAsync(b => b.BookingId == id);
         }
 
@@ -49,6 +51,8 @@ namespace DAL.Repository.Implements
                 .Include(b => b.Tenant)
                 .ThenInclude(t => t.TenantNavigation)
                 .Include(b => b.BookingCheckTime)
+                .Include(b => b.Apartment)
+                    .ThenInclude(a => a.ApartmentMedia)
                 .AsQueryable();
 
             query = ApplyFilters(query, filters, allowedColumns);
@@ -76,6 +80,8 @@ namespace DAL.Repository.Implements
                     .Include(b => b.Tenant)
                     .ThenInclude(t => t.TenantNavigation)
                     .Include(b => b.BookingCheckTime)
+                    .Include(b => b.Apartment)
+                        .ThenInclude(a => a.ApartmentMedia)
                     .AsQueryable()
                 join a in _context.Apartments on b.ApartmentId equals a.ApartmentId
                 where a.LandlordId == landlordId

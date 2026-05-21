@@ -123,6 +123,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
 
             result.Templates.Add(new TemplatePreviewDto
             {
+                ApplicationId = application.ApplicationId,
                 TemplateId = template.TemplateId,
                 Name = template.Name,
                 Description = template.Description,

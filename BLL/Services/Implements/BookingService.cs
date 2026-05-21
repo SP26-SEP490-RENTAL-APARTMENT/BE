@@ -4,18 +4,22 @@ using Common.DTOs;
 using Common.Enums;
 using DAL.Models;
 using DAL.Repository.Interfaces;
-using System.Linq;
+using PayOS;
+using PayOS.Models.V2.PaymentRequests;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using NotificationType = Common.Enums.Notification;
 using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 using Microsoft.Extensions.Configuration;
 using System.Text.Json;
+using Common.Settings;
 
 namespace BLL.Services.Implements;
 
 public class BookingService : BaseService<Booking>, IBookingService
 {
+    private readonly PayOSClient _payOsClient;
+    private readonly StripeSettings _stripeSettings;
     private const decimal SuggestedDepositRate = 0.30m;
     private const decimal FullPaymentLandlordShareRate = 0.70m;
     private const int MaxBookingDays = 30;
@@ -66,10 +70,12 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<SupportTicket> supportTicketRepository,
         IRepository<Payment> paymentRepository,
         IStripeService stripeService,
+        PayOSClient payOsClient,
         IMomoService momoService,
         IIdentityVerificationService identityVerificationService,
         ILandlordWalletService landlordWalletService,
         IConfiguration configuration,
+        StripeSettings stripeSettings,
         IMapper mapper,
         IRepository<BookingOccupant>? bookingOccupantRepository = null,
         ICheckTimeRequestRepository? checkTimeRequestRepository = null,
@@ -90,6 +96,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         _paymentRepository = paymentRepository;
         _stripeService = stripeService;
         _momoService = momoService;
+        _payOsClient = payOsClient;
+        _stripeSettings = stripeSettings;
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
@@ -97,6 +105,39 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingOccupantRepository = bookingOccupantRepository;
         _checkTimeRequestRepository = checkTimeRequestRepository;
         _checkTimeStateEventRepository = checkTimeStateEventRepository;
+    }
+
+    public async Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
+    {
+        var response = _mapper.Map<BookingResponseDto>(booking);
+        response.Images = await GetApartmentImageUrlsAsync(booking.ApartmentId);
+        response.TicketId = await ResolveBookingSupportTicketIdAsync(booking.BookingId, booking.TenantId);
+        return response;
+    }
+
+    private async Task<List<string>> GetApartmentImageUrlsAsync(Guid apartmentId)
+    {
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        return apartment?.ApartmentMedia
+            .Where(media => !string.IsNullOrWhiteSpace(media.Url))
+            .Select(media => media.Url)
+            .ToList()
+            ?? new List<string>();
+    }
+
+    private async Task<Guid?> ResolveBookingSupportTicketIdAsync(Guid bookingId, Guid tenantId)
+    {
+        var bookingMarker = bookingId.ToString().ToLowerInvariant();
+        var tickets = await _supportTicketRepository.FindAsync(ticket =>
+            ticket.UserId == tenantId
+            && ticket.Category == "booking_issue"
+            && ticket.Subject != null
+            && ticket.Subject.ToLower().Contains(bookingMarker));
+
+        return tickets
+            .OrderByDescending(ticket => ticket.CreatedAt ?? DateTime.MinValue)
+            .Select(ticket => (Guid?)ticket.TicketId)
+            .FirstOrDefault();
     }
 
     public async Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null)
@@ -2437,6 +2478,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         // Create payment record (pending)
+        var method = string.IsNullOrWhiteSpace(dto.PaymentMethod)
+    ? "payos"
+    : dto.PaymentMethod.Trim().ToLowerInvariant();
+
         var payment = new DAL.Models.Payment
         {
             PaymentId = Guid.NewGuid(),
@@ -2449,7 +2494,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             LandlordAmount = 0m,
             PlatformFee = 0m,
             SettlementStatus = "pending",
-            Method = string.IsNullOrWhiteSpace(dto.PaymentMethod) ? "stripe" : dto.PaymentMethod.Trim().ToLowerInvariant(),
+            Method = method,
             Status = "initiated",
             TransactionId = null,
             PaidAt = null
@@ -2458,8 +2503,73 @@ public class BookingService : BaseService<Booking>, IBookingService
         await _paymentRepository.AddAsync(payment);
         await _paymentRepository.SaveChangesAsync();
 
-        // Default to stripe if available
-        var method = payment.Method;
+
+        if (method == "payos")
+        {
+            var isAndroid = string.Equals(dto.DevicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase);
+            var resolvedReturnUrl = string.IsNullOrWhiteSpace(dto.ReturnUrl)
+                ? isAndroid
+                    ? "VStay://payos-payment"
+                    : _stripeSettings.SuccessUrl
+                : dto.ReturnUrl;
+
+            var resolvedCancelUrl = string.IsNullOrWhiteSpace(dto.ReturnUrl)
+                ? isAndroid
+                    ? "VStay://payos-payment"
+                    : _stripeSettings.CancelUrl
+                : dto.ReturnUrl;
+
+            var orderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var payosRequest = new CreatePaymentLinkRequest
+            {
+                OrderCode = orderCode,
+                Amount = (long)Math.Round(totalFee),
+                Description = "Check-time fee",
+                ReturnUrl = resolvedReturnUrl,
+                CancelUrl = resolvedCancelUrl,
+                Items = new List<PaymentLinkItem>
+        {
+            new PaymentLinkItem
+            {
+                Name = $"Booking {booking.BookingId}",
+                Quantity = 1,
+                Price = (long)Math.Round(totalFee),
+                Unit = "fee"
+            }
+        }
+            };
+
+            CreatePaymentLinkResponse payosResponse;
+            try
+            {
+                payosResponse = await _payOsClient.PaymentRequests.CreateAsync(payosRequest);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"PayOS payment link creation failed: {ex.Message}");
+            }
+
+            payment.TransactionId = payosResponse.PaymentLinkId;
+            payment.Status = "pending";
+            _paymentRepository.Update(payment);
+            await _paymentRepository.SaveChangesAsync();
+
+            checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
+            checkTime.ClaimStatus = "payment_pending";
+            checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
+            checkTime.FeeSettlementNotes = $"[PAYMENT_INITIATED] Checkout: {payosResponse.CheckoutUrl}";
+
+            _bookingCheckTimeRepository.Update(checkTime);
+            await _bookingCheckTimeRepository.SaveChangesAsync();
+
+            var response = await GetCheckTimeDetailsAsync(bookingId, tenantId);
+            response.PaymentRedirectUrl = payosResponse.CheckoutUrl;
+            response.PendingPaymentId = payment.PaymentId;
+
+            return response;
+        }
+
+        // Default to stripe only when explicitly requested.
         if (method == "stripe")
         {
             // Prepare stripe checkout
@@ -2500,7 +2610,6 @@ public class BookingService : BaseService<Booking>, IBookingService
             await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, tenantId, "payment_initiated", new { PaymentId = payment.PaymentId, CheckoutUrl = checkout.Url });
             return response;
         }
-
         // For other methods (e.g., momo), we can implement later; return initiated response
         checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
         checkTime.ClaimStatus = "payment_pending";
@@ -4349,11 +4458,11 @@ public class BookingService : BaseService<Booking>, IBookingService
     {
         // Get all bookings with disputed status or bookings that have support tickets
         var allBookings = await _bookingRepository.FindAsync(b => b.Status == "disputed");
-        
+
         // Get bookings with support tickets from tenants
-        var supportTickets = await _supportTicketRepository.FindAsync(t => 
+        var supportTickets = await _supportTicketRepository.FindAsync(t =>
             t.Category == "booking_issue" || t.Category == "dispute");
-        
+
         var bookingIdsWithTickets = new HashSet<Guid>();
         foreach (var ticket in supportTickets)
         {
@@ -4366,13 +4475,13 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         // Combine disputed bookings and bookings with support tickets
         var reportedBookings = allBookings.ToList();
-        
+
         // Get booking check-time records to find disputes
-        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct => 
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct =>
             !string.IsNullOrEmpty(ct.DisputeResolutionStatus) || ct.TenantResponseStatus == "dispute" || ct.TenantResponseStatus == "refuted");
-        
+
         var bookingIdsWithCheckTimeDisputes = checkTimes.Select(ct => ct.BookingId).Distinct().ToList();
-        
+
         var allReportedBookingIds = new HashSet<Guid>();
         foreach (var booking in reportedBookings)
         {
@@ -4389,7 +4498,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         // Fetch full booking details
         var reportedBookingsList = new List<ReportedBookingDto>();
-        
+
         foreach (var bookingId in allReportedBookingIds)
         {
             var booking = await _bookingRepository.GetByIdAsync(bookingId);
@@ -4403,7 +4512,23 @@ public class BookingService : BaseService<Booking>, IBookingService
             // Count support tickets for this booking
             var ticketsForBooking = supportTickets
                 .Where(t => ExtractBookingIdFromSupportTicket(t) == bookingId)
-                .Count();
+                .OrderByDescending(t => t.CreatedAt ?? DateTime.MinValue)
+                .ToList();
+
+            var latestTicket = ticketsForBooking.FirstOrDefault();
+
+            List<string> attachmentUrls = new();
+            if (latestTicket != null)
+            {
+                // GetByIdAsync includes SupportTicketAttachments
+                var loadedTicket = await _supportTicketRepository.GetByIdAsync(latestTicket.TicketId);
+
+                attachmentUrls = loadedTicket?.SupportTicketAttachments
+                    .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
+                    .Select(a => a.FileUrl)
+                    .ToList()
+                    ?? new List<string>();
+            }
 
             var reportedDto = new ReportedBookingDto
             {
@@ -4419,13 +4544,15 @@ public class BookingService : BaseService<Booking>, IBookingService
                 Nights = booking.Nights,
                 TotalPrice = booking.TotalPrice,
                 BookingStatus = booking.Status,
-                HasCheckTimeDispute = checkTime != null && 
-                    (checkTime.TenantResponseStatus == "dispute" || 
+                HasCheckTimeDispute = checkTime != null &&
+                    (checkTime.TenantResponseStatus == "dispute" ||
                      !string.IsNullOrEmpty(checkTime.DisputeResolutionStatus)),
                 DisputeReason = checkTime?.TenantDisputeReason,
                 DisputeResolutionStatus = checkTime?.DisputeResolutionStatus,
                 DisputeCreatedAt = checkTime?.TenantRespondedAt,
-                SupportTicketCount = ticketsForBooking,
+                SupportTicketCount = ticketsForBooking.Count,
+                TicketId = latestTicket?.TicketId,
+                Images = attachmentUrls,
                 CreatedAt = booking.CreatedAt
             };
 
@@ -4466,7 +4593,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         reportedBookingsList = sortBy.ToLower() switch
         {
-            "tenantname" => isDescending 
+            "tenantname" => isDescending
                 ? reportedBookingsList.OrderByDescending(b => b.TenantFullName).ToList()
                 : reportedBookingsList.OrderBy(b => b.TenantFullName).ToList(),
             "landlordname" => isDescending

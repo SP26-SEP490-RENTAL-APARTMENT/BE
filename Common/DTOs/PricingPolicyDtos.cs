@@ -114,6 +114,7 @@ public class UpdateApartmentPricingPolicyApplicationOverridesDto
 
 public class TemplatePreviewDto
 {
+    public Guid ApplicationId { get; set; }
     public Guid TemplateId { get; set; }
     public string Name { get; set; } = null!;
     public string? Description { get; set; }

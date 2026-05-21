@@ -45,6 +45,12 @@ public class CreateBookingRequestDto : IValidatableObject
     [MaxLength(20)]
     public string? DevicePlatform { get; set; }
 
+    [MaxLength(2048)]
+    public string? ReturnUrl { get; set; }
+
+    [MaxLength(2048)]
+    public string? CancelUrl { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         var hasDateTimes = CheckInDateTime.HasValue || CheckOutDateTime.HasValue;
@@ -168,6 +174,8 @@ public class BookingResponseDto
     public DateTime? ActualCheckIn { get; set; }
     public DateTime? ActualCheckOut { get; set; }
     public Guid ApartmentId { get; set; }
+    public Guid? TicketId { get; set; }
+    public List<string> Images { get; set; } = new();
     public DateOnly CheckInDate { get; set; }
     public DateOnly CheckOutDate { get; set; }
     public int Nights { get; set; }

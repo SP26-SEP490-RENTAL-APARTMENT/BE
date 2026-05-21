@@ -1,10 +1,13 @@
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using Common.Enums;
+using Common.Settings;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using Microsoft.Extensions.Options;
 using MoMoApi;
+using PayOS;
+using PayOS.Models.V2.PaymentRequests;
 
 namespace BLL.Services.Implements;
 
@@ -14,11 +17,12 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
     private readonly IRepository<Landlord> _landlordRepository;
     private readonly ISubscriptionPlanService _subscriptionPlanService;
     private readonly IMomoService _momoService;
-    private readonly IPayOsService _payOsService;
+    private readonly PayOSClient _payOsClient;
     private readonly IPaymentService _paymentService;
     private readonly IMomoTransactionService _momoTransactionService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly MomoOptions _momoOptions;
+    private readonly StripeSettings _stripeSettings;
 
     public LandlordSubscriptionService(
         ILandlordSubscriptionRepository repository,
@@ -28,8 +32,9 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         IPaymentService paymentService,
         IMomoTransactionService momoTransactionService,
         ILandlordWalletService landlordWalletService,
-        IPayOsService payOsService,
-        IOptions<MomoOptions> momoOptions)
+        PayOSClient payOsClient,
+        IOptions<MomoOptions> momoOptions,
+        IOptions<StripeSettings> stripeSettings)
         : base(repository)
     {
         _repository = repository;
@@ -39,8 +44,9 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         _paymentService = paymentService;
         _momoTransactionService = momoTransactionService;
         _landlordWalletService = landlordWalletService;
-        _payOsService = payOsService;
+        _payOsClient = payOsClient;
         _momoOptions = momoOptions.Value;
+        _stripeSettings = stripeSettings.Value;
     }
 
     public async Task<(IEnumerable<LandlordSubscription> Items, int TotalCount)> GetHistoryForLandlordAsync(
@@ -254,35 +260,51 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             Status = PaymentStatus.pending.ToString()
         };
 
-        var payosRequest = new Common.DTOs.PayOsCreatePaymentRequest
+        var payosRequest = new CreatePaymentLinkRequest
         {
+            OrderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             Amount = (long)amount,
-            OrderInfo = $"Subscription {landlordSubscription.SubscriptionId} for landlord {landlord.LandlordId}",
-            ExtraData = landlordSubscription.SubscriptionId.ToString(),
-            PaymentType = payment.PaymentType,
-            PaymentPurpose = payment.PaymentPurpose,
-            RedirectUrl = "http://localhost:5173/landlord/my-subscriptions"
+            Description = "Subscription payment",
+            ReturnUrl = _stripeSettings.SuccessUrl,
+            CancelUrl = _stripeSettings.CancelUrl,
+            Items = new List<PaymentLinkItem>
+            {
+                new PaymentLinkItem
+                {
+                    Name = plan.Name,
+                    Quantity = 1,
+                    Price = (long)amount,
+                    Unit = "subscription"
+                }
+            }
         };
 
-        var payosResult = await _payOsService.CreateCheckoutAsync(payosRequest, cancellationToken);
-        if (!payosResult.Success)
+        CreatePaymentLinkResponse payosResult;
+        try
         {
-            throw new InvalidOperationException($"PayOS payment creation failed: {payosResult.Message}");
+            payosResult = await _payOsClient.PaymentRequests.CreateAsync(payosRequest);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"PayOS payment creation failed: {ex.Message}");
         }
 
         await _paymentService.CreateAsync(payment);
 
+        payment.TransactionId = payosResult.PaymentLinkId;
+        await _paymentService.UpdateAsync(payment);
+
         await _momoTransactionService.CreateAsync(new MomoTransaction
         {
-            RequestId = payosResult.OrderId,
+            RequestId = payosResult.PaymentLinkId ?? Guid.NewGuid().ToString(),
             PartnerCode = string.Empty,
             Amount = payosResult.Amount,
             Type = "create_subscription_payment_payos",
             RequestBody = System.Text.Json.JsonSerializer.Serialize(payosRequest),
-            ResponseBody = payosResult.ResponseRaw ?? string.Empty,
+            ResponseBody = System.Text.Json.JsonSerializer.Serialize(payosResult),
             Status = "pending",
             ResultCode = null,
-            Message = payosResult.Message,
+            Message = payosResult.Status.ToString(),
             PaymentId = payment.PaymentId,
             CreatedAt = Common.Utils.VietnamTime.Now,
             UpdatedAt = Common.Utils.VietnamTime.Now
@@ -292,7 +314,18 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         landlordSubscription.UpdatedAt = Common.Utils.VietnamTime.Now;
         await UpdateAsync(landlordSubscription);
 
-        return payosResult;
+        return new PayOsCreatePaymentResponse
+        {
+            Success = true,
+            Message = payosResult.Status.ToString(),
+            Url = payosResult.CheckoutUrl,
+            QrCodeUrl = payosResult.QrCode,
+            OrderId = payosResult.PaymentLinkId ?? string.Empty,
+            RequestId = payosResult.PaymentLinkId ?? string.Empty,
+            Amount = (long)amount,
+            RequestRaw = System.Text.Json.JsonSerializer.Serialize(payosRequest),
+            ResponseRaw = System.Text.Json.JsonSerializer.Serialize(payosResult)
+        };
     }
 
     public async Task<WalletSubscriptionPaymentResponseDto> PaySubscriptionByWalletAsync(

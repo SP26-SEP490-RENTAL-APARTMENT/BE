@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MoMoApi;
+using PayOS;
 using Short_termApartmentAPI.Controllers;
 using Short_termApartmentAPI.Services;
 
@@ -873,7 +874,6 @@ public class ControllerBehaviorTests
         IStripeService? stripeService = null,
         IMomoService? momoService = null,
         IMomoTransactionService? momoTransactionService = null,
-        IPayOsService? payOsService = null,
         IImageService? imageService = null,
         IResidenceReportPdfGenerator? residenceReportPdfGenerator = null,
         IResidenceReportDocxGenerator? residenceReportDocxGenerator = null)
@@ -885,7 +885,6 @@ public class ControllerBehaviorTests
             stripeService ?? new StripeServiceStub(),
             momoService ?? new MomoServiceStub(),
             momoTransactionService ?? new MomoTransactionServiceStub(),
-            payOsService ?? new PayOsServiceStub(),
             imageService ?? new ImageServiceStub(),
             Options.Create(new MomoOptions
             {
@@ -893,23 +892,23 @@ public class ControllerBehaviorTests
                 AccessKey = "ACCESS",
                 SecretKey = "SECRET"
             }),
+            Options.Create(new Common.Settings.StripeSettings
+            {
+                SuccessUrl = "https://frontend.example/payment/success",
+                CancelUrl = "https://frontend.example/payment/cancel"
+            }),
+            new PayOSClient(new PayOS.PayOSOptions
+            {
+                ClientId = "test-client",
+                ApiKey = "test-api-key",
+                ChecksumKey = "test-checksum-key",
+                LogLevel = Microsoft.Extensions.Logging.LogLevel.None
+            }),
             residenceReportPdfGenerator ?? new ResidenceReportPdfGeneratorStub(),
             residenceReportDocxGenerator ?? new ResidenceReportDocxGeneratorStub(),
             CreateMapper(),
             new PassportRecognitionServiceStub(),
             new IdRecognitionServiceStub());
-    }
-
-
-    internal sealed class PayOsServiceStub : IPayOsService
-    {
-        public Task<Common.DTOs.PayOsCreatePaymentResponse> CreateCheckoutAsync(Common.DTOs.PayOsCreatePaymentRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(new Common.DTOs.PayOsCreatePaymentResponse { Success = true, Url = "https://payos.example/checkout", OrderId = "order_123", Amount = request.Amount });
-
-        public Task<string> QueryPaymentStatusAsync(string orderId, CancellationToken cancellationToken = default)
-            => Task.FromResult("success");
-
-        public bool VerifyWebhookSignature(string requestBody, string signatureHeader) => true;
     }
 
     private sealed class PassportRecognitionServiceStub : IFptPassportRecognitionService
@@ -1178,6 +1177,8 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
 
     public Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto) => Task.FromResult(new BookingQuoteResponseDto());
     public Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId) => Task.FromResult(new Booking());
+    public Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
+        => Task.FromResult(new BookingResponseDto { BookingId = booking.BookingId, Images = new List<string>() });
     public Task<Booking> MarkDepositPaidAsync(Guid bookingId)
     {
         MarkDepositPaidCalls++;

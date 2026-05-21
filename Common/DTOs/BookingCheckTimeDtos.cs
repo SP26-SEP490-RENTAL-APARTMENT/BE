@@ -299,10 +299,7 @@ public class PayClaimFeeDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (string.IsNullOrWhiteSpace(PaymentReference) && string.IsNullOrWhiteSpace(Notes))
-        {
-            yield return new ValidationResult("Either PaymentReference or Notes is required.", new[] { nameof(PaymentReference), nameof(Notes) });
-        }
+        yield break;
     }
 }
 

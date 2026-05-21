@@ -14,7 +14,14 @@ public class BookingProfile : Profile
             .ForMember(dest => dest.ActualCheckIn,
                 opt => opt.MapFrom(src => src.BookingCheckTime != null ? src.BookingCheckTime.ActualCheckIn : null))
             .ForMember(dest => dest.ActualCheckOut,
-                opt => opt.MapFrom(src => src.BookingCheckTime != null ? src.BookingCheckTime.ActualCheckOut : null));
+                opt => opt.MapFrom(src => src.BookingCheckTime != null ? src.BookingCheckTime.ActualCheckOut : null))
+            .ForMember(dest => dest.Images,
+                opt => opt.MapFrom(src => src.Apartment != null && src.Apartment.ApartmentMedia != null
+                    ? src.Apartment.ApartmentMedia
+                        .Where(media => !string.IsNullOrWhiteSpace(media.Url))
+                        .Select(media => media.Url)
+                        .ToList()
+                    : new List<string>()));
         CreateMap<CreateBookingRequestDto, Booking>()
             .ForMember(dest => dest.BookingId, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => Common.Utils.VietnamTime.Now))

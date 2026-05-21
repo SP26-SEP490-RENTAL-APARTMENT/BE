@@ -1,4 +1,5 @@
 using BLL.Services.Interfaces;
+using Common.Enums;
 using DAL.Repository.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ public class PayOsController : ControllerBase
     private readonly IRepository<DAL.Models.Booking> _bookingRepository;
     private readonly IRepository<DAL.Models.BookingCheckTimeStateEvent> _checkTimeEventRepository;
     private readonly PayOS.PayOSClient? _paymentSdkClient;
+    private readonly IBookingService _bookingService;
     private readonly ILogger<PayOsController> _logger;
 
     public PayOsController(
@@ -29,7 +31,8 @@ public class PayOsController : ControllerBase
         IRepository<DAL.Models.Booking> bookingRepository,
         IRepository<DAL.Models.BookingCheckTimeStateEvent> checkTimeEventRepository,
         ILogger<PayOsController> logger,
-        [FromKeyedServices("PayOsPaymentClient")] PayOS.PayOSClient? paymentSdkClient = null)
+        IBookingService bookingService,
+        [FromKeyedServices("OrderClient")] PayOSClient? paymentSdkClient = null)
     {
         _payOsService = payOsService;
         _paymentRepository = paymentRepository;
@@ -38,6 +41,7 @@ public class PayOsController : ControllerBase
         _checkTimeEventRepository = checkTimeEventRepository;
         _logger = logger;
         _paymentSdkClient = paymentSdkClient;
+        _bookingService = bookingService;
     }
 
     [HttpPost("payos")]
@@ -58,8 +62,8 @@ public class PayOsController : ControllerBase
 
         try
         {
-    string? reference = null;
-    string? paymentLinkId = null;
+            string? reference = null;
+            string? paymentLinkId = null;
 
             if (_paymentSdkClient != null)
             {
@@ -72,7 +76,7 @@ public class PayOsController : ControllerBase
                     return BadRequest(new { error = "Failed to deserialize webhook data" });
                 }
 
-                _logger.LogInformation("[PayOS Webhook] Webhook model deserialized. Code: {Code}, HasSignature: {HasSig}", 
+                _logger.LogInformation("[PayOS Webhook] Webhook model deserialized. Code: {Code}, HasSignature: {HasSig}",
                     webhookModel.Code, !string.IsNullOrEmpty(webhookModel.Signature));
 
                 try
@@ -96,7 +100,7 @@ public class PayOsController : ControllerBase
                 catch (WebhookException wex)
                 {
                     _logger.LogWarning(wex, "[PayOS Webhook] SDK verification failed: {Message}. Attempting fallback verification", wex.Message);
-                    
+
                     // Fallback to service-based verification if SDK fails
                     if (string.IsNullOrEmpty(json))
                     {
@@ -152,22 +156,41 @@ public class PayOsController : ControllerBase
             if (payment != null)
             {
                 _logger.LogInformation("[PayOS Webhook] Found payment record. PaymentId: {PaymentId}, RelatedEntityId: {RelatedEntityId}", payment.PaymentId, payment.RelatedEntityId);
-                
+
                 payment.Status = "success";
                 payment.SettlementStatus = "settled";
                 payment.PaidAt = Common.Utils.VietnamTime.Now;
                 _paymentRepository.Update(payment);
                 await _paymentRepository.SaveChangesAsync();
 
-                // Update related booking check-time (mirror Stripe handler behaviour)
-                if (payment.RelatedEntityId.HasValue)
+                if (payment.RelatedEntityId.HasValue &&
+                    string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
                 {
                     var bookingId = payment.RelatedEntityId.Value;
+                    var paymentType = payment.PaymentType?.Trim().ToLowerInvariant();
+
+                    try
+                    {
+                        if (paymentType == Common.Enums.PaymentTypes.balance.ToString())
+                        {
+                            await _bookingService.MarkBalancePaidAsync(bookingId);
+                        }
+                        else if (paymentType == Common.Enums.PaymentTypes.deposit.ToString() ||
+                                 paymentType == Common.Enums.PaymentTypes.upfront.ToString())
+                        {
+                            await _bookingService.MarkDepositPaidAsync(bookingId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "[PayOS Webhook] Failed to apply booking payment status for booking {BookingId}", bookingId);
+                    }
+
                     var checkTime = (await _bookingCheckTimeRepository.FindAsync(ct => ct.BookingId == bookingId)).FirstOrDefault();
                     if (checkTime != null)
                     {
                         _logger.LogInformation("[PayOS Webhook] Updating check-time for booking {BookingId}", bookingId);
-                        
+
                         checkTime.FeeSettlementStatus = "paid";
                         checkTime.FeeSettledAt = Common.Utils.VietnamTime.Now;
                         checkTime.FeeDueAt = null;
@@ -210,9 +233,61 @@ public class PayOsController : ControllerBase
                         _logger.LogWarning("[PayOS Webhook] Check-time not found for booking {BookingId}", bookingId);
                     }
                 }
+                else if (payment.RelatedEntityId.HasValue &&
+                         string.Equals(payment.RelatedEntityType, "booking_check_time", StringComparison.OrdinalIgnoreCase))
+                {
+                    var bookingId = payment.RelatedEntityId.Value;
+                    var checkTime = (await _bookingCheckTimeRepository.FindAsync(ct => ct.BookingId == bookingId)).FirstOrDefault();
+
+                    if (checkTime != null)
+                    {
+                        _logger.LogInformation("[PayOS Webhook] Updating check-time fee for booking {BookingId}", bookingId);
+
+                        checkTime.FeeSettlementStatus = "paid";
+                        checkTime.FeeSettledAt = Common.Utils.VietnamTime.Now;
+                        checkTime.FeeDueAt = null;
+                        checkTime.ClaimLockedAt ??= Common.Utils.VietnamTime.Now;
+                        checkTime.ClaimStatus = "paid";
+                        _bookingCheckTimeRepository.Update(checkTime);
+                        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+                        try
+                        {
+                            var ev = new DAL.Models.BookingCheckTimeStateEvent
+                            {
+                                EventId = Guid.NewGuid(),
+                                BookingId = bookingId,
+                                CheckTimeId = checkTime.CheckTimeId,
+                                EventType = "payment_settled",
+                                EventData = JsonSerializer.Serialize(new { PaymentId = payment.PaymentId, TransactionId = payment.TransactionId, Amount = payment.Amount, Method = payment.Method }),
+                                CreatedBy = null,
+                                CreatedAt = Common.Utils.VietnamTime.Now
+                            };
+                            await _checkTimeEventRepository.AddAsync(ev);
+                            await _checkTimeEventRepository.SaveChangesAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "[PayOS Webhook] Failed to create check-time state event for booking {BookingId}", bookingId);
+                        }
+
+                        var booking = await _bookingRepository.GetByIdAsync(bookingId);
+                        if (booking != null && string.Equals(booking.Status, "disputed", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogInformation("[PayOS Webhook] Updating booking {BookingId} status from 'disputed' to 'completed'", bookingId);
+                            booking.Status = "completed";
+                            _bookingRepository.Update(booking);
+                            await _bookingRepository.SaveChangesAsync();
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[PayOS Webhook] Check-time not found for booking {BookingId}", bookingId);
+                    }
+                }
                 else
                 {
-                    _logger.LogInformation("[PayOS Webhook] Payment has no related entity");
+                    _logger.LogInformation("[PayOS Webhook] Payment has no related booking entity");
                 }
 
                 _logger.LogInformation("[PayOS Webhook] Successfully processed payment");
@@ -243,4 +318,5 @@ public class PayOsController : ControllerBase
 
         return null;
     }
+
 }

@@ -2,13 +2,17 @@ using AutoMapper;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using Common.Enums;
+using Common.Settings;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MoMoApi;
-using Short_termApartmentAPI.Middlewares;
+using PayOS;
+using PayOS.Models.V2.PaymentRequests;
 using System.Security.Claims;
+using Short_termApartmentAPI.Middlewares;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -23,11 +27,12 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IStripeService _stripeService;
         private readonly IMomoService _momoService;
         private readonly IMomoTransactionService _momoTransactionService;
-        private readonly IPayOsService _payOsService;
+        private readonly PayOSClient _payOsClient;
         private readonly IImageService _imageService;
         private readonly IFptPassportRecognitionService _passportRecognitionService;
         private readonly IFptIdRecognitionService _idRecognitionService;
         private readonly MomoOptions _momoOptions;
+        private readonly StripeSettings _stripeSettings;
         private readonly IResidenceReportPdfGenerator _residenceReportPdfGenerator;
         private readonly IResidenceReportDocxGenerator _residenceReportDocxGenerator;
         private readonly IMapper _mapper;
@@ -39,9 +44,10 @@ namespace Short_termApartmentAPI.Controllers
             IStripeService stripeService,
             IMomoService momoService,
             IMomoTransactionService momoTransactionService,
-            IPayOsService payOsService,
             IImageService imageService,
             IOptions<MomoOptions> momoOptions,
+            IOptions<StripeSettings> stripeSettings,
+            [FromKeyedServices("OrderClient")] PayOSClient payOsClient,
             IResidenceReportPdfGenerator residenceReportPdfGenerator,
             IResidenceReportDocxGenerator residenceReportDocxGenerator,
             IMapper mapper,
@@ -56,7 +62,8 @@ namespace Short_termApartmentAPI.Controllers
             _momoTransactionService = momoTransactionService;
             _imageService = imageService;
             _momoOptions = momoOptions.Value;
-            _payOsService = payOsService;
+            _stripeSettings = stripeSettings.Value;
+            _payOsClient = payOsClient;
             _residenceReportPdfGenerator = residenceReportPdfGenerator;
             _residenceReportDocxGenerator = residenceReportDocxGenerator;
             _mapper = mapper;
@@ -85,7 +92,8 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return NotFound(new ApiResponse<string>("Booking not found."));
             }
-            return Ok(new ApiResponse<BookingResponseDto>(_mapper.Map<BookingResponseDto>(result)));
+
+            return Ok(new ApiResponse<BookingResponseDto>(await _bookingService.MapBookingResponseAsync(result)));
         }
 
         [HttpGet]
@@ -99,7 +107,7 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] Dictionary<string, string>? filters = null)
         {
             var (items, totalCount) = await _bookingService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
-            var mappedItems = _mapper.Map<IEnumerable<BookingResponseDto>>(items);
+            var mappedItems = await Task.WhenAll(items.Select(_bookingService.MapBookingResponseAsync));
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }
 
@@ -152,14 +160,19 @@ namespace Short_termApartmentAPI.Controllers
             try
             {
                 var created = await _bookingService.CreateWithQuoteAsync(requestDto, userId);
-                var paymentLink = await CreatePaymentLinkIfRequestedAsync(created, requestDto.PaymentProvider, requestDto.DevicePlatform);
+                var paymentLink = await CreatePaymentLinkIfRequestedAsync(
+                    created,
+                    requestDto.PaymentProvider,
+                    requestDto.DevicePlatform,
+                    requestDto.ReturnUrl,
+                    requestDto.CancelUrl);
                 var paymentModeText = string.Equals(created.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase)
                     ? "full payment"
                     : "partial payment";
 
                 var response = new CreateBookingResponseDto
                 {
-                    Booking = _mapper.Map<BookingResponseDto>(created),
+                    Booking = await _bookingService.MapBookingResponseAsync(created),
                     PaymentLink = paymentLink
                 };
 
@@ -335,26 +348,29 @@ namespace Short_termApartmentAPI.Controllers
 
             if (normalized == "payos")
             {
-                var payosRequest = new PayOsCreatePaymentRequest
+                var orderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var payosRequest = new CreatePaymentLinkRequest
                 {
+                    OrderCode = orderCode,
                     Amount = (long)Math.Round(booking.RemainingAmount),
-                    OrderInfo = $"Booking balance payment {booking.BookingId}",
-                    ExtraData = booking.BookingId.ToString(),
-                    PaymentType = PaymentTypes.balance.ToString(),
-                    PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
-                    RedirectUrl = ResolveMomoRedirectUrl(platform),
-                    Items = new System.Collections.Generic.List<Common.DTOs.PayOsItemDto>
+                    Description = "string",
+                    ReturnUrl = _stripeSettings.SuccessUrl,
+                    CancelUrl = _stripeSettings.CancelUrl,
+                    Items = new List<PaymentLinkItem>
                     {
-                        new Common.DTOs.PayOsItemDto { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.RemainingAmount), Unit = "booking" }
+                        new PaymentLinkItem { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.RemainingAmount), Unit = "booking" }
                     }
                 };
 
-                var payosResponse = await _payOsService.CreateCheckoutAsync(payosRequest);
-
-                if (!payosResponse.Success || string.IsNullOrWhiteSpace(payosResponse.Url) || string.IsNullOrWhiteSpace(payosResponse.OrderId))
+                CreatePaymentLinkResponse payosResponse;
+                try
+                {
+                    payosResponse = await _payOsClient.PaymentRequests.CreateAsync(payosRequest);
+                }
+                catch (Exception ex)
                 {
                     return StatusCode(StatusCodes.Status502BadGateway,
-                        new ApiResponse<string>($"PayOS payment link creation failed: {payosResponse.Message}"));
+                        new ApiResponse<string>($"PayOS payment link creation failed: {ex.Message}"));
                 }
 
                 var payment = new Payment
@@ -366,22 +382,22 @@ namespace Short_termApartmentAPI.Controllers
                     RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "payos",
                     Status = PaymentStatus.pending.ToString(),
-                    TransactionId = payosResponse.OrderId
+                    TransactionId = payosResponse.PaymentLinkId
                 };
 
                 await _paymentService.CreateAsync(payment);
 
                 var requestLog = new MomoTransaction
                 {
-                    RequestId = payosResponse.OrderId ?? Guid.NewGuid().ToString(),
+                    RequestId = payosResponse.PaymentLinkId ?? Guid.NewGuid().ToString(),
                     PartnerCode = string.Empty,
                     Amount = payosResponse.Amount,
                     Type = "create_wallet_payment_payos",
                     RequestBody = System.Text.Json.JsonSerializer.Serialize(payosRequest),
-                    ResponseBody = payosResponse.ResponseRaw ?? string.Empty,
+                    ResponseBody = System.Text.Json.JsonSerializer.Serialize(payosResponse),
                     Status = "pending",
                     ResultCode = null,
-                    Message = payosResponse.Message,
+                    Message = payosResponse.Status.ToString(),
                     PaymentId = payment.PaymentId,
                     CreatedAt = Common.Utils.VietnamTime.Now,
                     UpdatedAt = Common.Utils.VietnamTime.Now
@@ -392,10 +408,10 @@ namespace Short_termApartmentAPI.Controllers
                 return Ok(new BookingPaymentLinkDto
                 {
                     Provider = "payos",
-                    Url = payosResponse.Url,
-                    Deeplink = payosResponse.Deeplink,
-                    QrCodeUrl = payosResponse.QrCodeUrl,
-                    TransactionId = payosResponse.OrderId,
+                    Url = payosResponse.CheckoutUrl,
+                    Deeplink = null,
+                    QrCodeUrl = payosResponse.QrCode,
+                    TransactionId = payosResponse.PaymentLinkId,
                     Status = PaymentStatus.pending.ToString(),
                     PaymentId = payment.PaymentId
                 });
@@ -516,7 +532,12 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
-        private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(Booking booking, string? paymentProvider, string? devicePlatform)
+        private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(
+            Booking booking,
+            string? paymentProvider,
+            string? devicePlatform,
+            string? returnUrl = null,
+            string? cancelUrl = null)
         {
             if (string.IsNullOrWhiteSpace(paymentProvider))
             {
@@ -629,26 +650,42 @@ namespace Short_termApartmentAPI.Controllers
 
             if (normalized == "payos")
             {
+                var isAndroid = string.Equals(devicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase);
                 var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
-                var payosRequest = new PayOsCreatePaymentRequest
+                var resolvedReturnUrl = string.IsNullOrWhiteSpace(returnUrl)
+                    ? isAndroid
+                        ? "VStay://payos-payment"
+                        : _stripeSettings.SuccessUrl
+                    : returnUrl;
+
+                var resolvedCancelUrl = string.IsNullOrWhiteSpace(cancelUrl)
+                ? isAndroid
+                    ? "VStay://payos-payment"
+                    : _stripeSettings.CancelUrl
+                : cancelUrl;
+
+                var orderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var payosRequest = new CreatePaymentLinkRequest
                 {
+                    OrderCode = orderCode,
                     Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
-                    OrderInfo = isFullPayment ? $"Booking full payment {booking.BookingId}" : $"Booking deposit {booking.BookingId}",
-                    ExtraData = booking.BookingId.ToString(),
-                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
-                    RedirectUrl = ResolveMomoRedirectUrl(devicePlatform),
-                    Items = new System.Collections.Generic.List<Common.DTOs.PayOsItemDto>
+                    Description = isFullPayment ? $"Full pay" : $"Deposit",
+                    ReturnUrl = resolvedReturnUrl,
+                    CancelUrl = resolvedCancelUrl,
+                    Items = new List<PaymentLinkItem>
                     {
-                        new Common.DTOs.PayOsItemDto { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.UpfrontPaymentAmount), Unit = "booking" }
+                        new PaymentLinkItem { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.UpfrontPaymentAmount), Unit = "booking" }
                     }
                 };
 
-                var payosResponse = await _payOsService.CreateCheckoutAsync(payosRequest);
-
-                if (!payosResponse.Success || string.IsNullOrWhiteSpace(payosResponse.Url) || string.IsNullOrWhiteSpace(payosResponse.OrderId))
+                CreatePaymentLinkResponse payosResponse;
+                try
                 {
-                    throw new InvalidOperationException($"PayOS payment link creation failed: {payosResponse.Message}");
+                    payosResponse = await _payOsClient.PaymentRequests.CreateAsync(payosRequest);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException($"PayOS payment link creation failed: {ex.Message}");
                 }
 
                 var payment = new Payment
@@ -660,22 +697,22 @@ namespace Short_termApartmentAPI.Controllers
                     RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "payos",
                     Status = PaymentStatus.pending.ToString(),
-                    TransactionId = payosResponse.OrderId
+                    TransactionId = payosResponse.PaymentLinkId
                 };
 
                 await _paymentService.CreateAsync(payment);
 
                 var requestLog = new MomoTransaction
                 {
-                    RequestId = payosResponse.OrderId ?? Guid.NewGuid().ToString(),
+                    RequestId = payosResponse.PaymentLinkId ?? Guid.NewGuid().ToString(),
                     PartnerCode = string.Empty,
                     Amount = payosResponse.Amount,
                     Type = "create_wallet_payment_payos",
                     RequestBody = System.Text.Json.JsonSerializer.Serialize(payosRequest),
-                    ResponseBody = payosResponse.ResponseRaw ?? string.Empty,
+                    ResponseBody = System.Text.Json.JsonSerializer.Serialize(payosResponse),
                     Status = "pending",
                     ResultCode = null,
-                    Message = payosResponse.Message,
+                    Message = payosResponse.Status.ToString(),
                     PaymentId = payment.PaymentId,
                     CreatedAt = Common.Utils.VietnamTime.Now,
                     UpdatedAt = Common.Utils.VietnamTime.Now
@@ -686,10 +723,10 @@ namespace Short_termApartmentAPI.Controllers
                 return new BookingPaymentLinkDto
                 {
                     Provider = "payos",
-                    Url = payosResponse.Url,
-                    Deeplink = payosResponse.Deeplink,
-                    QrCodeUrl = payosResponse.QrCodeUrl,
-                    TransactionId = payosResponse.OrderId,
+                    Url = payosResponse.CheckoutUrl,
+                    Deeplink = null,
+                    QrCodeUrl = payosResponse.QrCode,
+                    TransactionId = payosResponse.PaymentLinkId,
                     Status = PaymentStatus.pending.ToString(),
                     PaymentId = payment.PaymentId
                 };
@@ -697,8 +734,6 @@ namespace Short_termApartmentAPI.Controllers
 
             return null;
         }
-
-        
 
         private string ResolveMomoRedirectUrl(string? devicePlatform)
         {
@@ -1405,6 +1440,10 @@ namespace Short_termApartmentAPI.Controllers
 
             try
             {
+                dto.PaymentMethod = string.IsNullOrWhiteSpace(dto.PaymentMethod)
+                    ? "payos"
+                    : dto.PaymentMethod.Trim().ToLowerInvariant();
+
                 var checkTimeResponse = await _bookingService.PayClaimFeeAsync(id, tenantId, dto);
                 return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Claim fee paid successfully."));
             }

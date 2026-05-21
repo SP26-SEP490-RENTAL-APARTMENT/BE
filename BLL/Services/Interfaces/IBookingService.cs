@@ -7,6 +7,7 @@ public interface IBookingService : IBaseService<Booking>
 {
 	Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto);
 	Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId);
+	Task<BookingResponseDto> MapBookingResponseAsync(Booking booking);
 	Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null);
 	Task<Booking> MarkDepositPaidAsync(Guid bookingId);
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
