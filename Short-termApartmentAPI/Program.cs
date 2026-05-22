@@ -214,44 +214,44 @@ if (string.IsNullOrWhiteSpace(momoDisbursementIpnUrl))
     app.Logger.LogWarning("MoMo disbursement IPN URL is empty. Disbursement callbacks may fail.");
 }
 
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+// using (var scope = app.Services.CreateScope())
+// {
+//     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-    // Clean up any conflicting migrations from history
-    try
-    {
-        var connection = dbContext.Database.GetDbConnection();
-        await connection.OpenAsync();
+//     // Clean up any conflicting migrations from history
+//     try
+//     {
+//         var connection = dbContext.Database.GetDbConnection();
+//         await connection.OpenAsync();
 
-        using (var command = connection.CreateCommand())
-        {
-            // Remove any pending migrations that conflict with existing tables
-            command.CommandText = "DELETE FROM __EFMigrationsHistory WHERE MigrationId LIKE '20260409%';";
-            await command.ExecuteNonQueryAsync();
-        }
+//         using (var command = connection.CreateCommand())
+//         {
+//             // Remove any pending migrations that conflict with existing tables
+//             command.CommandText = "DELETE FROM __EFMigrationsHistory WHERE MigrationId LIKE '20260409%';";
+//             await command.ExecuteNonQueryAsync();
+//         }
 
-        // Add missing User columns if they don't exist
-        using (var command = connection.CreateCommand())
-        {
-            command.CommandText = @"
-                ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS token VARCHAR(500) NULL COMMENT 'User access token',
-                    ADD COLUMN IF NOT EXISTS token_expired DATETIME NULL COMMENT 'Token expiration time';";
-            await command.ExecuteNonQueryAsync();
-            app.Logger.LogInformation("Ensured token columns exist on users table");
-        }
+//         // Add missing User columns if they don't exist
+//         using (var command = connection.CreateCommand())
+//         {
+//             command.CommandText = @"
+//                 ALTER TABLE users
+//                     ADD COLUMN IF NOT EXISTS token VARCHAR(500) NULL COMMENT 'User access token',
+//                     ADD COLUMN IF NOT EXISTS token_expired DATETIME NULL COMMENT 'Token expiration time';";
+//             await command.ExecuteNonQueryAsync();
+//             app.Logger.LogInformation("Ensured token columns exist on users table");
+//         }
 
-        await connection.CloseAsync();
-        app.Logger.LogInformation("Cleaned up conflicting migrations from history and added missing columns");
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogWarning(ex, "Could not clean migrations history or add columns (tables may not exist yet)");
-    }
+//         await connection.CloseAsync();
+//         app.Logger.LogInformation("Cleaned up conflicting migrations from history and added missing columns");
+//     }
+//     catch (Exception ex)
+//     {
+//         app.Logger.LogWarning(ex, "Could not clean migrations history or add columns (tables may not exist yet)");
+//     }
 
-    await DbInitializer.SeedAsync(dbContext);
-}
+//     await DbInitializer.SeedAsync(dbContext);
+// }
 
 app.UseSwagger();
 app.UseSwaggerUI();

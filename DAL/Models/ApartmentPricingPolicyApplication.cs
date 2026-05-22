@@ -14,7 +14,7 @@ public partial class ApartmentPricingPolicyApplication
 
     public DateOnly EndDate { get; set; }
 
-    public bool IsEnabled { get; set; }
+    public bool? IsEnabled { get; set; }
 
     public string? OverridesJson { get; set; }
 

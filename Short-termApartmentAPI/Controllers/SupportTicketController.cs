@@ -129,7 +129,7 @@ namespace Short_termApartmentAPI.Controllers
                 created = await _supportTicketService.GetByIdAsync(created.TicketId);
             }
             
-            return CreatedAtAction(nameof(GetById), new { id = created.TicketId }, _mapper.Map<SupportTicketDto>(created));
+            return CreatedAtAction(nameof(GetById), new { id = created!.TicketId }, _mapper.Map<SupportTicketDto>(created));
         }
 
         [HttpPut("{id:guid}")]

@@ -222,7 +222,7 @@ public class LandlordPayoutService : ILandlordPayoutService
             else
             {
                 // Bank and other channels use PayOS
-                payosQuery = await _payOSService.QueryBankPayoutStatusAsync(payout.MomoOrderId, cancellationToken);
+                payosQuery = await _payOSService.QueryBankPayoutStatusAsync(payout.MomoOrderId!, cancellationToken);
             }
 
             var bankStatus = MapStatus(payosQuery.ResultCode);
@@ -289,7 +289,7 @@ public class LandlordPayoutService : ILandlordPayoutService
         {
             PayoutId = payout.PayoutId,
             Amount = payout.Amount,
-            Status = payout.Status,
+            Status = payout.Status!,
             Message = payout.Message,
             CreatedAt = payout.CreatedAt,
             UpdatedAt = payout.UpdatedAt

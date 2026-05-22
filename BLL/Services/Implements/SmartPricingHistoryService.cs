@@ -9,7 +9,7 @@ namespace BLL.Services.Implements;
 
 public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory>, ISmartPricingHistoryService
 {
-    private readonly IRepository<SmartPricingHistory> _repository;
+    private readonly new IRepository<SmartPricingHistory> _repository;
     private readonly IApartmentRepository _apartmentRepository;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IHolidaysEventRepository _holidaysEventRepository;

@@ -707,7 +707,7 @@ public class ControllerBehaviorTests
         var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
         var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<ResidenceReportOccupantDto>
             ?? throw new InvalidOperationException("Expected occupant response.");
-    var data = response.Data!;
+        var data = response.Data!;
         Assert.Equal(1, data.Order);
         Assert.Equal("New Occupant", data.FullName);
         Assert.Equal(new DateOnly(1997, 5, 10), data.DateOfBirth);
@@ -784,7 +784,7 @@ public class ControllerBehaviorTests
         var ok = result as OkObjectResult ?? throw new InvalidOperationException("Expected OK result.");
         var response = ok.Value as Short_termApartmentAPI.Middlewares.ApiResponse<ResidenceReportOccupantDto>
             ?? throw new InvalidOperationException("Expected occupant response.");
-    var data = response.Data!;
+        var data = response.Data!;
         Assert.Equal("Updated Name", data.FullName);
         Assert.True(data.IsPrimary);
         Assert.Equal("NEW", data.PassportId);
@@ -1314,6 +1314,14 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new LandlordOutstandingCheckTimeFeesResponseDto { LandlordId = landlordId });
     public Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetReportedBookingsAsync(int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
         => Task.FromResult((Enumerable.Empty<ReportedBookingDto>(), 0));
+
+    public Task<BookingRefundResponseDto> RefundBookingViaPayOsAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto)
+    => Task.FromResult(new BookingRefundResponseDto
+    {
+        BookingId = bookingId,
+        Status = "cancelled",
+        ProcessedAt = DateTime.UtcNow
+    });
 }
 
 internal sealed class MomoTransactionServiceStub : BaseServiceStub<MomoTransaction>, IMomoTransactionService

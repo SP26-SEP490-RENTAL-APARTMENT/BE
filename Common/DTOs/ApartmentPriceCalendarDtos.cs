@@ -15,7 +15,7 @@ public class PricingResultDto
 {
     public bool Success { get; set; }
     public Guid UpdatedId { get; set; }
-    public string Message { get; set; }
+    public string Message { get; set; } = string.Empty;
 }
 
 public class DailyPriceResolutionDto
@@ -23,7 +23,7 @@ public class DailyPriceResolutionDto
     public DateOnly Date { get; set; }
     public decimal FinalPricePerNight { get; set; }
     public decimal TotalNightlyCost { get; set; }
-    public string Source { get; set; } // e.g., "BaseRate", "CalendarOverride", "ManualInput"
+    public string? Source { get; set; } // e.g., "BaseRate", "CalendarOverride", "ManualInput"
     public string? Notes { get; set; }
 }
 public class BulkPriceUpdateDto

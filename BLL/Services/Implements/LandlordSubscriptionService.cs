@@ -13,7 +13,7 @@ namespace BLL.Services.Implements;
 
 public class LandlordSubscriptionService : BaseService<LandlordSubscription>, ILandlordSubscriptionService
 {
-    private readonly ILandlordSubscriptionRepository _repository;
+    private readonly new ILandlordSubscriptionRepository _repository;
     private readonly IRepository<Landlord> _landlordRepository;
     private readonly ISubscriptionPlanService _subscriptionPlanService;
     private readonly IMomoService _momoService;

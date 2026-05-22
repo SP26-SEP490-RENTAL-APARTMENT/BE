@@ -16,6 +16,6 @@ namespace Common.DTOs
 
     public class ResponseDTO<T> : ResponseDTO
     {
-        public T Data { get; set; }
+        public T? Data { get; set; }
     }
 }

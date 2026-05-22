@@ -150,7 +150,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(new ApiResponse<string>(ex.Message));
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
@@ -186,7 +186,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(new ApiResponse<string>(ex.Message));
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
@@ -227,7 +227,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(new ApiResponse<string>(ex.Message));
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }
@@ -263,7 +263,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 return BadRequest(new ApiResponse<string>(ex.Message));
             }
-            catch (UnauthorizedAccessException ex)
+            catch (UnauthorizedAccessException)
             {
                 return Forbid();
             }

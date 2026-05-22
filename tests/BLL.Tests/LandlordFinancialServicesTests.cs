@@ -13,7 +13,9 @@ using DAL.Repository.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.Geometries;
-
+using PayOS;
+using Microsoft.Extensions.Options;
+using Common.Settings;
 namespace BLL.Tests;
 
 public class LandlordPayoutServiceTests
@@ -47,13 +49,13 @@ public class LandlordPayoutServiceTests
         var momoService = new FakeMomoService();
 
         var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
-        var request = new CreateLandlordPayoutRequestDto 
-        { 
-            Amount = 1500, 
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 1500,
             Channel = "bank",
             ToBin = "970415",
             ToAccountNumber = "1234567890",
-            OrderInfo = "payout" 
+            OrderInfo = "payout"
         };
 
         var result = await sut.CreatePayoutAsync(landlordId, request, CancellationToken.None);
@@ -95,13 +97,13 @@ public class LandlordPayoutServiceTests
         var momoService = new FakeMomoService();
 
         var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
-        var request = new CreateLandlordPayoutRequestDto 
-        { 
-            Amount = 1500, 
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 1500,
             Channel = "bank",
             ToBin = "970415",
             ToAccountNumber = "1234567890",
-            OrderInfo = "payout" 
+            OrderInfo = "payout"
         };
 
         var result = await sut.CreatePayoutAsync(landlordId, request, CancellationToken.None);
@@ -211,6 +213,7 @@ public class LandlordPayoutServiceTests
         Assert.Single(walletService.RolledBackAmounts);
     }
 }
+
 
 public class LandlordWalletServiceTests
 {
@@ -499,21 +502,21 @@ public class BookingServiceResidenceReportTests
 
         var bookingRepo = new InMemoryBookingRepository(new[]
         {
-            new Booking
-            {
-                BookingId = bookingId,
-                TenantId = tenantId,
-                ApartmentId = apartmentId,
-                CheckInDate = new DateOnly(2026, 5, 1),
-                CheckOutDate = new DateOnly(2026, 5, 5),
-                Nights = 4,
-                TotalPrice = 4000000m,
-                DepositAmount = 1200000m,
-                UpfrontPaymentAmount = 1200000m,
-                BalanceDueDate = new DateOnly(2026, 4, 25),
-                Status = "confirmed"
-            }
-        });
+        new Booking
+        {
+            BookingId = bookingId,
+            TenantId = tenantId,
+            ApartmentId = apartmentId,
+            CheckInDate = new DateOnly(2026, 5, 1),
+            CheckOutDate = new DateOnly(2026, 5, 5),
+            Nights = 4,
+            TotalPrice = 4000000m,
+            DepositAmount = 1200000m,
+            UpfrontPaymentAmount = 1200000m,
+            BalanceDueDate = new DateOnly(2026, 4, 25),
+            Status = "confirmed"
+        }
+    });
 
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
         var reportRepo = new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId,
@@ -534,6 +537,12 @@ public class BookingServiceResidenceReportTests
             new User { UserId = landlordId, FullName = "Landlord User", Phone = "0900000001", Role = "landlord" },
             new User { UserId = tenantId, FullName = "Tenant User", Phone = "0900000002", Role = "tenant" });
 
+        // New dependencies required by the updated constructor
+        var payOsClient = new FakePayOSClient();
+        var stripeSettings = Options.Create(new StripeSettings());
+        var payOsPayoutService = new FakePayOSPayoutService();
+        var landlordWalletService = new RecordingWalletService(); // implements ILandlordWalletService
+
         var sut = new BookingService(
             bookingRepo,
             new InMemoryBookingOfferRepository(),
@@ -549,11 +558,18 @@ public class BookingServiceResidenceReportTests
             new InMemoryRepository<SupportTicket>(s => s.TicketId),
             new InMemoryRepository<Payment>(p => p.PaymentId),
             new StripeServiceStub(),
+            payOsClient,
             new FakeMomoService(),
+            stripeSettings,
+            payOsPayoutService,
             new NoOpIdentityVerificationService(),
-            new RecordingWalletService(),
+            landlordWalletService,
             new ConfigurationManager(),
-            new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper());
+            new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper(),
+            null,  // IRepository<BookingOccupant>?
+            null,  // ICheckTimeRequestRepository?
+            null   // IRepository<BookingCheckTimeStateEvent>?
+        );
 
         var details = await sut.GetResidenceReportDetailsAsync(bookingId, landlordId);
 
@@ -582,42 +598,60 @@ public class BookingServiceResidenceReportTests
 
         var bookingRepo = new InMemoryBookingRepository(new[]
         {
-            new Booking
-            {
-                BookingId = bookingId,
-                TenantId = tenantId,
-                ApartmentId = apartmentId,
-                CheckInDate = new DateOnly(2026, 5, 1),
-                CheckOutDate = new DateOnly(2026, 5, 5),
-                Nights = 4,
-                TotalPrice = 4000000m,
-                DepositAmount = 1200000m,
-                UpfrontPaymentAmount = 1200000m,
-                BalanceDueDate = new DateOnly(2026, 4, 25),
-                Status = "pending"
-            }
-        });
+        new Booking
+        {
+            BookingId = bookingId,
+            TenantId = tenantId,
+            ApartmentId = apartmentId,
+            CheckInDate = new DateOnly(2026, 5, 1),
+            CheckOutDate = new DateOnly(2026, 5, 5),
+            Nights = 4,
+            TotalPrice = 4000000m,
+            DepositAmount = 1200000m,
+            UpfrontPaymentAmount = 1200000m,
+            BalanceDueDate = new DateOnly(2026, 4, 25),
+            Status = "pending"
+        }
+    });
+
+        var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var reportRepo = new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId);
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
+        var userRepo = new InMemoryRepository<User>(u => u.UserId);
+
+        // New dependencies
+        var payOsClient = new FakePayOSClient();
+        var stripeSettings = Options.Create(new StripeSettings());
+        var payOsPayoutService = new FakePayOSPayoutService();
+        var landlordWalletService = new RecordingWalletService();
 
         var sut = new BookingService(
             bookingRepo,
             new InMemoryBookingOfferRepository(),
-            new InMemoryApartmentRepository(apartment),
+            apartmentRepo,
             new InMemoryApartmentPriceCalendarRepository(),
             new InMemoryRepository<Package>(p => p.PackageId),
             new InMemoryRepository<DAL.Models.Notification>(n => n.NotificationId),
             new InMemoryRepository<BookingCheckTime>(c => c.CheckTimeId),
-            new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId),
-            new InMemoryRepository<Tenant>(t => t.TenantId),
-            new InMemoryRepository<User>(u => u.UserId),
+            reportRepo,
+            tenantRepo,
+            userRepo,
             new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
             new InMemoryRepository<SupportTicket>(s => s.TicketId),
             new InMemoryRepository<Payment>(p => p.PaymentId),
             new StripeServiceStub(),
+            payOsClient,
             new FakeMomoService(),
+            stripeSettings,
+            payOsPayoutService,
             new NoOpIdentityVerificationService(),
-            new RecordingWalletService(),
+            landlordWalletService,
             new ConfigurationManager(),
-            new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper());
+            new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper(),
+            null,
+            null,
+            null
+        );
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetResidenceReportDetailsAsync(bookingId, landlordId));
 
@@ -749,6 +783,13 @@ internal static class FinancialTestHelpers
         var mapper = new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper();
         var momoService = new FakeMomoService();
 
+        // New stubs
+
+        var payOsClient = new FakePayOSClient();   // or whatever is required
+        var stripeSettings = Options.Create(new StripeSettings());
+        var payOsPayoutService = new FakePayOSPayoutService();
+        var landlordWalletService = new FakeLandlordWalletService();
+
         return new BookingService(
             bookingRepo,
             bookingOfferRepo,
@@ -764,11 +805,18 @@ internal static class FinancialTestHelpers
             supportTicketRepo,
             paymentRepo,
             new StripeServiceStub(),
+            payOsClient,
             momoService,
+            stripeSettings,
+            payOsPayoutService,
             identityVerificationService,
-            walletService,
+            landlordWalletService,
             configuration,
-            mapper);
+            mapper,
+            null,  // IRepository<BookingOccupant>? – can be null
+            null,  // ICheckTimeRequestRepository? – can be null
+            null   // IRepository<BookingCheckTimeStateEvent>? – can be null
+        );
     }
 
     public static LandlordPayoutService CreatePayoutService(Landlord? landlord = null)
@@ -861,16 +909,21 @@ internal sealed class InMemoryBookingRepository : IBookingRepository
     {
         return Task.FromResult(1);
     }
-    
-    
+
+
 
     public Task<(IEnumerable<Booking> Items, int TotalCount)> GetByLandlordAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null, IEnumerable<string>? allowedColumns = null)
     {
         return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
     }
+
+    public Task<(IEnumerable<ReportResultRowDto> Items, int TotalCount)> GetPagedGroupedReportRowsAsync(DateTime fromInclusive, DateTime toExclusive, IReadOnlyList<ReportDimensionRequestDto> dimensions, IReadOnlyList<ReportMetricRequestDto> metrics, string? searchTerm, int page, int pageSize)
+    {
+        return Task.FromResult((Items: Enumerable.Empty<ReportResultRowDto>(), TotalCount: 0));
+    }
 }
 
-    
+
 internal sealed class InMemoryBookingOfferRepository : IBookingOfferRepository
 {
     private readonly List<BookingOffer> _items = new();
@@ -971,7 +1024,7 @@ internal sealed class InMemoryApartmentPriceCalendarRepository : IApartmentPrice
     {
         return Task.FromResult(1);
     }
-    
+
     public void AddRange(IEnumerable<ApartmentPriceCalendar> newRecords)
     {
         _items.AddRange(newRecords);
@@ -1082,7 +1135,16 @@ internal sealed class FakeMomoService : IMomoService
         throw new NotImplementedException();
     }
 }
+public class FakePayOSClient : PayOSClient
+{
+    public FakePayOSClient() : base("fake_client_id", "fake_api_key", "fake_checksum_key")
+    {
+        // Minimal setup – you might also mock HttpClient if needed.
+    }
 
+    // Override any methods used by BookingService with fake implementations,
+    // or rely on the base if it's harmless.
+}
 internal sealed class FakePayOSPayoutService : IPayOSPayoutService
 {
     public PayOSPayoutResult CreateBankPayoutResult { get; set; } = new(
@@ -1164,6 +1226,53 @@ internal sealed class RecordingWalletService : ILandlordWalletService
         RolledBackAmounts.Add(amount);
         return Task.CompletedTask;
     }
+}
+
+public class FakeLandlordWalletService : ILandlordWalletService
+{
+    public Task<LandlordPenaltyApplicationResultDto> ApplyOccupiedIncidentPenaltyAsync(Guid landlordId, decimal amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task CreditPendingAsync(Guid landlordId, decimal amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task DebitAvailableAsync(Guid landlordId, decimal amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task FinalizePayoutSuccessAsync(Guid landlordId, long amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task<LandlordWalletBalanceDto> GetBalanceAsync(Guid landlordId)
+        => Task.FromResult(new LandlordWalletBalanceDto { AvailableBalance = 1000000m, PendingBalance = 500000m });
+
+    public Task<LandlordWallet> GetOrCreateAsync(Guid landlordId)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task ReserveForPayoutAsync(Guid landlordId, long amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RollbackPayoutAsync(Guid landlordId, long amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RollbackPendingAsync(Guid landlordId, decimal amount)
+    {
+        throw new NotImplementedException();
+    }
+    // implement other members as no-ops
 }
 
 internal sealed class StripeServiceStub : IStripeService

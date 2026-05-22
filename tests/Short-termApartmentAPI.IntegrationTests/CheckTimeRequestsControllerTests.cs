@@ -250,7 +250,7 @@ public class CheckTimeRequestsControllerTests
 public class CheckTimeRequestsTestFixture
 {
     private readonly HttpClient _client;
-    private readonly string _baseUrl = "http://localhost:5000";
+    private readonly string _baseUrl = "http://localhost:5288";
 
     public CheckTimeRequestsTestFixture()
     {

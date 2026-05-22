@@ -5,9 +5,11 @@ using AutoMapper;
 using BLL.Mappings;
 using BLL.Services.Implements;
 using Common.DTOs;
+using Common.Settings;
 using DAL.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 
 namespace BLL.Tests;
@@ -167,72 +169,44 @@ public class BookingAlternativeSearchTests
         var configuration = new ConfigurationManager();
         var mapper = new MapperConfiguration(cfg => cfg.AddProfile<ApartmentProfile>(), NullLoggerFactory.Instance).CreateMapper();
 
+        // New dependencies
+        var payOsClient = new FakePayOSClient();
+        var stripeSettings = Options.Create(new StripeSettings());
+        var payOsPayoutService = new FakePayOSPayoutService();
+        var landlordWalletService = new RecordingWalletService(); // implements ILandlordWalletService
+
         return new BookingService(
-            bookingRepo,
-            bookingOfferRepo,
-            apartmentRepo,
-            calendarRepo,
-            packageRepo,
-            notificationRepo,
-            bookingCheckTimeRepo,
-            temporaryResidenceRepo,
-            tenantRepo,
-            userRepo,
-            availabilityRepo,
-            supportTicketRepo,
-            paymentRepo,
-            new StripeServiceStub(),
-            new FakeMomoService(),
-            new NoOpIdentityVerificationService(),
-            new RecordingWalletService(),
-            configuration,
-            mapper,
-            null,
-            null,
-            checkTimeStateEventRepo);
+            bookingRepo,                // 1  IBookingRepository
+            bookingOfferRepo,           // 2  IBookingOfferRepository
+            apartmentRepo,              // 3  IApartmentRepository
+            calendarRepo,               // 4  IApartmentPriceCalendarRepository
+            packageRepo,                // 5  IRepository<Package>
+            notificationRepo,           // 6  IRepository<Notification>
+            bookingCheckTimeRepo,       // 7  IRepository<BookingCheckTime>
+            temporaryResidenceRepo,     // 8  IRepository<TemporaryResidenceReport>
+            tenantRepo,                 // 9  IRepository<Tenant>
+            userRepo,                   // 10 IRepository<User>
+            availabilityRepo,           // 11 IRepository<ApartmentAvailability>
+            supportTicketRepo,          // 12 IRepository<SupportTicket>
+            paymentRepo,                // 13 IRepository<Payment>
+            new StripeServiceStub(),    // 14 IStripeService
+            payOsClient,                // 15 PayOSClient
+            new FakeMomoService(),      // 16 IMomoService
+            stripeSettings,             // 17 IOptions<StripeSettings>
+            payOsPayoutService,         // 18 IPayOSPayoutService
+            new NoOpIdentityVerificationService(), // 19 IIdentityVerificationService
+            landlordWalletService,      // 20 ILandlordWalletService
+            configuration,              // 21 IConfiguration
+            mapper,                     // 22 IMapper
+            null,                       // 23 IRepository<BookingOccupant>?
+            null,                       // 24 ICheckTimeRequestRepository?
+            checkTimeStateEventRepo     // 25 IRepository<BookingCheckTimeStateEvent>?
+        );
     }
 
     private static BookingService CreateSut(Apartment sourceApartment, Apartment alternativeApartment, Booking booking)
     {
         var apartmentRepo = new InMemoryApartmentRepository(sourceApartment, alternativeApartment);
-        var bookingRepo = new InMemoryBookingRepository(new[] { booking });
-        var bookingOfferRepo = new InMemoryBookingOfferRepository();
-        var calendarRepo = new InMemoryApartmentPriceCalendarRepository();
-        var packageRepo = new InMemoryRepository<Package>(p => p.PackageId);
-        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
-        var bookingCheckTimeRepo = new InMemoryRepository<BookingCheckTime>(c => c.CheckTimeId);
-        var temporaryResidenceRepo = new InMemoryRepository<TemporaryResidenceReport>(r => r.ReportId);
-        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
-        var userRepo = new InMemoryRepository<User>(u => u.UserId);
-        var availabilityRepo = new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId);
-        var supportTicketRepo = new InMemoryRepository<SupportTicket>(s => s.TicketId);
-        var paymentRepo = new InMemoryRepository<Payment>(p => p.PaymentId);
-        var checkTimeStateEventRepo = new InMemoryRepository<BookingCheckTimeStateEvent>(e => e.EventId);
-        var configuration = new ConfigurationManager();
-        var mapper = new MapperConfiguration(cfg => cfg.AddProfile<ApartmentProfile>(), NullLoggerFactory.Instance).CreateMapper();
-
-        return new BookingService(
-            bookingRepo,
-            bookingOfferRepo,
-            apartmentRepo,
-            calendarRepo,
-            packageRepo,
-            notificationRepo,
-            bookingCheckTimeRepo,
-            temporaryResidenceRepo,
-            tenantRepo,
-            userRepo,
-            availabilityRepo,
-            supportTicketRepo,
-            paymentRepo,
-            new StripeServiceStub(),
-            new FakeMomoService(),
-            new NoOpIdentityVerificationService(),
-            new RecordingWalletService(),
-            configuration,
-            mapper,
-            null,
-            null,
-            checkTimeStateEventRepo);
+        return CreateSutWithRepos(apartmentRepo, booking);
     }
 }
