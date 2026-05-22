@@ -11,6 +11,7 @@ public interface IBookingService : IBaseService<Booking>
 	Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null);
 	Task<Booking> MarkDepositPaidAsync(Guid bookingId);
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
+	Task<BookingRefundResponseDto> RefundBookingViaPayOsAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto);
 	Task<BookingRefundResponseDto> RefundBookingAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto);
 	Task<TemporaryResidenceReport> SubmitResidenceReportAsync(Guid bookingId, Guid landlordUserId, SubmitResidenceReportDto dto);
 	Task<TemporaryResidenceReportDetailsDto> GetResidenceReportDetailsAsync(Guid bookingId, Guid requesterUserId);
@@ -28,7 +29,7 @@ public interface IBookingService : IBaseService<Booking>
 		string? search = null,
 		DateTime? fromDate = null,
 		DateTime? toDate = null);
-	
+
 	/// <summary>
 	/// Records the actual check-in time for a booking.
 	/// Validates time range (±1 day from booking check-in date), sets IsEarlyCheckIn flag,

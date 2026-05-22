@@ -238,6 +238,57 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/refund/payos")]
+        [Authorize(Roles = "tenant,staff,admin")]
+        public async Task<IActionResult> RefundViaPayOs(Guid id, [FromBody] RequestBookingRefundDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            // Require PayOS payout details
+            if (string.IsNullOrWhiteSpace(dto.PayOsAccountNumber) || string.IsNullOrWhiteSpace(dto.PayOsBankCode) || string.IsNullOrWhiteSpace(dto.PayOsReceiverName))
+            {
+                return BadRequest(new ApiResponse<string>("PayOS payout details are required: PayOsReceiverName, PayOsAccountNumber, PayOsBankCode."));
+            }
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+            {
+                return NotFound(new ApiResponse<string>("Booking not found."));
+            }
+
+            if (User.IsInRole("tenant") && booking.TenantId != requesterId)
+            {
+                return Forbid();
+            }
+
+            try
+            {
+                var result = await _bookingService.RefundBookingViaPayOsAsync(id, requesterId, dto);
+                return Ok(new ApiResponse<BookingRefundResponseDto>(result, result.Message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (NotSupportedException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
         [HttpPost("{id:guid}/pay-balance")]
         [Authorize(Roles = "tenant")]
         public async Task<IActionResult> PayBalance(Guid id, [FromQuery] string? paymentProvider, [FromQuery] string? devicePlatform)
@@ -1632,6 +1683,7 @@ namespace Short_termApartmentAPI.Controllers
             {
                 TicketId = Guid.NewGuid(),
                 UserId = tenantId,
+                BookingId = booking.BookingId,
                 Category = "booking_issue",
                 Priority = "urgent",
                 Subject = $"Occupied room incident for booking {booking.BookingId}",

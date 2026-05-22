@@ -8,7 +8,7 @@ public partial class SupportTicket
     public Guid TicketId { get; set; }
 
     public Guid UserId { get; set; }
-
+    public Guid? BookingId { get; set; }
     public string Subject { get; set; } = null!;
 
     public string Description { get; set; } = null!;
@@ -36,4 +36,5 @@ public partial class SupportTicket
     public virtual ICollection<SupportTicketAttachment> SupportTicketAttachments { get; set; } = new List<SupportTicketAttachment>();
 
     public virtual User User { get; set; } = null!;
+    public virtual Booking? Booking { get; set; }
 }

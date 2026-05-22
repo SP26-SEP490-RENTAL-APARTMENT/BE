@@ -9,6 +9,7 @@ namespace Common.DTOs
     {
         public Guid TicketId { get; set; }
         public Guid UserId { get; set; }
+        public Guid? BookingId { get; set; }
         public string Subject { get; set; } = null!;
         public string Description { get; set; } = null!;
         public string Category { get; set; } = null!;
@@ -64,6 +65,7 @@ namespace Common.DTOs
         [Required]
         [RegularExpression("^(low|medium|high|urgent)$", ErrorMessage = "Role must be 'low, medium, high, urgent'")]
         public string? Priority { get; set; }
+        public Guid? BookingId { get; set; }
         public List<IFormFile> Files { get; set; } = new();
     }
 

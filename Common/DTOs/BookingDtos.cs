@@ -117,37 +117,37 @@ public class UpdateBookingRequestDto : IValidatableObject
 {
     public DateOnly? CheckInDate { get; set; }
     public DateOnly? CheckOutDate { get; set; }
-    
+
     [Range(1, int.MaxValue, ErrorMessage = "Nights must be at least 1.")]
     public int? Nights { get; set; }
-    
+
     [Range(1, int.MaxValue, ErrorMessage = "At least 1 adult is required.")]
     public int? NoOfAdults { get; set; }
 
     [Range(0, int.MaxValue, ErrorMessage = "Number of children cannot be negative.")]
     public int? NoOfChildren { get; set; }
-    
+
     [Range(0, int.MaxValue, ErrorMessage = "Number of infants cannot be negative.")]
     public int? NoOfInfants { get; set; }
-    
+
     [Range(0, int.MaxValue, ErrorMessage = "Number of pets cannot be negative.")]
     public int? NoOfPets { get; set; }
-    
+
     [Range(0, double.MaxValue, ErrorMessage = "Total price must be a non-negative value.")]
     public decimal? TotalPrice { get; set; }
-    
+
     public Guid? PackageId { get; set; }
-    
+
     [Range(0, double.MaxValue, ErrorMessage = "Package price must be a non-negative value.")]
     public decimal? PackagePrice { get; set; }
-    
+
     [Range(0, double.MaxValue, ErrorMessage = "Deposit amount must be a non-negative value.")]
     public decimal? DepositAmount { get; set; }
-    
+
     public bool? DepositPaid { get; set; }
-    
+
     public DateOnly? BalanceDueDate { get; set; }
-    
+
     [MaxLength(50)]
     public string? Status { get; set; }
 
@@ -158,7 +158,7 @@ public class UpdateBookingRequestDto : IValidatableObject
         {
             yield return new ValidationResult("Check-in date cannot be earlier than today.", new[] { nameof(CheckInDate) });
         }
-        
+
         if (CheckInDate.HasValue && CheckOutDate.HasValue && CheckInDate.Value >= CheckOutDate.Value)
         {
             yield return new ValidationResult("Check-out date must be later than check-in date.", new[] { nameof(CheckOutDate) });
@@ -684,6 +684,7 @@ public class ReportedBookingDto
     /// URLs of images/attachments associated with the related support ticket (if any).
     /// </summary>
     public List<string> Images { get; set; } = new();
+    public List<string> CheckTimeImages { get; set; } = new();
 
     public DateTime? CreatedAt { get; set; }
 }

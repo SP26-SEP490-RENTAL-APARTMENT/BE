@@ -429,6 +429,26 @@ public class LandlordOutstandingCheckTimeFeesResponseDto
     public int OverdueCount { get; set; }
     public int DisputedCount { get; set; }
     public int UniqueTenantCount { get; set; }
+    public decimal WalletPenaltyTotalAmount { get; set; }
+    public int WalletPenaltyCount { get; set; }
     
     public List<OutstandingCheckTimeFeeByTenantDto> OutstandingFees { get; set; } = new();
+    public List<LandlordWalletPenaltyTransactionDto> WalletPenaltyTransactions { get; set; } = new();
+}
+
+public class LandlordWalletPenaltyTransactionDto
+{
+    public Guid PaymentId { get; set; }
+    public Guid BookingId { get; set; }
+    public Guid ApartmentId { get; set; }
+    public string? ApartmentAddress { get; set; }
+    public Guid TenantId { get; set; }
+    public string? TenantName { get; set; }
+    public decimal Amount { get; set; }
+    public string PaymentType { get; set; } = string.Empty;
+    public string PaymentPurpose { get; set; } = string.Empty;
+    public string Method { get; set; } = string.Empty;
+    public string? Status { get; set; }
+    public string? TransactionId { get; set; }
+    public DateTime? PaidAt { get; set; }
 }

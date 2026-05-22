@@ -1618,6 +1618,8 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => e.Category, "idx_category");
 
+            entity.HasIndex(e => e.BookingId, "idx_booking");
+
             entity.HasIndex(e => e.Priority, "idx_priority");
 
             entity.HasIndex(e => e.Status, "idx_status");
@@ -1627,6 +1629,7 @@ public partial class AppDbContext : DbContext
             entity.HasIndex(e => e.ResolvedBy, "resolved_by");
 
             entity.Property(e => e.TicketId).HasColumnName("ticket_id");
+            entity.Property(e => e.BookingId).HasColumnName("booking_id");
             entity.Property(e => e.Category)
                 .HasColumnType("enum('booking_issue','payment_problem','listing_problem','account_verification','cancellation','dispute','property_quality','other')")
                 .HasColumnName("category");
@@ -1660,6 +1663,11 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp")
                 .HasColumnName("updated_at");
             entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.Booking).WithMany()
+                .HasForeignKey(d => d.BookingId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("support_tickets_ibfk_booking");
 
             entity.HasOne(d => d.ResolvedByNavigation).WithMany(p => p.SupportTicketResolvedByNavigations)
                 .HasForeignKey(d => d.ResolvedBy)

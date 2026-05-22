@@ -17,6 +17,7 @@ public class LandlordPayoutService : ILandlordPayoutService
     private readonly IMomoTransactionService _momoTransactionService;
     private readonly IPayOSPayoutService _payOSService;
     private readonly ILogger<LandlordPayoutService>? ILogger;
+    private const int MaxDailyPayoutRequests = 5;
 
     public LandlordPayoutService(
         IRepository<LandlordPayout> payoutRepository,
@@ -50,6 +51,7 @@ public class LandlordPayoutService : ILandlordPayoutService
         if (string.IsNullOrWhiteSpace(request.ToAccountNumber))
             throw new ArgumentException("ToAccountNumber is required.");
 
+        await EnsureDailyPayoutLimitAsync(landlordId);
         await _walletService.ReserveForPayoutAsync(landlordId, request.Amount);
 
         try
@@ -292,5 +294,22 @@ public class LandlordPayoutService : ILandlordPayoutService
             CreatedAt = payout.CreatedAt,
             UpdatedAt = payout.UpdatedAt
         };
+    }
+
+    private async Task EnsureDailyPayoutLimitAsync(Guid landlordId)
+    {
+        var startOfDay = Common.Utils.VietnamTime.TodayDateTime;
+        var endOfDay = startOfDay.AddDays(1);
+
+        var todayPayouts = await _payoutRepository.FindAsync(p =>
+            p.LandlordId == landlordId &&
+            p.CreatedAt >= startOfDay &&
+            p.CreatedAt < endOfDay &&
+            p.Status != "failed"); // Only count non-failed attempts
+
+        if (todayPayouts.Count() >= MaxDailyPayoutRequests)
+        {
+            throw new InvalidOperationException("You can only create up to 5 payout requests per day.");
+        }
     }
 }
