@@ -917,7 +917,7 @@ internal sealed class InMemoryBookingRepository : IBookingRepository
         return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
     }
 
-    public Task<(IEnumerable<ReportResultRowDto> Items, int TotalCount)> GetPagedGroupedReportRowsAsync(DateTime fromInclusive, DateTime toExclusive, IReadOnlyList<ReportDimensionRequestDto> dimensions, IReadOnlyList<ReportMetricRequestDto> metrics, string? searchTerm, int page, int pageSize)
+    public Task<(IEnumerable<ReportResultRowDto> Items, int TotalCount)> GetPagedGroupedReportRowsAsync(DateTime fromInclusive, DateTime toExclusive, IReadOnlyList<ReportDimensionRequestDto> dimensions, IReadOnlyList<ReportMetricRequestDto> metrics, string? searchTerm, int page, int pageSize, Guid? landlordId = null)
     {
         return Task.FromResult((Items: Enumerable.Empty<ReportResultRowDto>(), TotalCount: 0));
     }

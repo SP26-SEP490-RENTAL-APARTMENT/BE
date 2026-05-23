@@ -36,53 +36,113 @@ public class ReportExportService : IReportExportService
         };
     }
 
+    public async Task StreamExportAsync(
+        string reportName,
+        ReportExportRequestDto request,
+        ReportResultDto? report,
+        ReportComparisonResultDto? comparison,
+        Stream output,
+        CancellationToken cancellationToken = default)
+    {
+        var format = Normalize(request.Format);
+        switch (format)
+        {
+            case "csv":
+                await StreamCsvAsync(request, report, comparison, output, cancellationToken).ConfigureAwait(false);
+                break;
+            case "pdf":
+                await StreamPdfAsync(reportName, request, report, comparison, output, cancellationToken).ConfigureAwait(false);
+                break;
+            case "excel":
+            case "xlsx":
+                // Excel streaming is not fully supported via OpenXML on non-seekable streams in this implementation.
+                // Fall back to buffered approach and write bytes to output to preserve behavior.
+                var content = ExportExcel(reportName, request, report, comparison).Content;
+                await output.WriteAsync(content, 0, content.Length, cancellationToken).ConfigureAwait(false);
+                break;
+            default:
+                throw new NotSupportedException("Unsupported export format for streaming. Use csv or pdf for streaming.");
+        }
+
+        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static ReportExportContentDto ExportCsv(
         string reportName,
         ReportExportRequestDto request,
         ReportResultDto? report,
         ReportComparisonResultDto? comparison)
     {
-        var sb = new StringBuilder();
-
+        // Keep existing behavior for callers that expect the full content
+        using var ms = new MemoryStream();
+        using var writer = new StreamWriter(ms, Encoding.UTF8, 1024, true);
         if (request.IncludeComparison)
         {
-            if (comparison == null)
-            {
-                throw new ArgumentException("Comparison data is required when IncludeComparison is true.");
-            }
-
+            if (comparison == null) throw new ArgumentException("Comparison data is required when IncludeComparison is true.");
             var headers = BuildComparisonHeaders(comparison);
-            sb.AppendLine(string.Join(",", headers.Select(EscapeCsv)));
-
+            writer.WriteLine(string.Join(",", headers.Select(EscapeCsv)));
             foreach (var row in comparison.Rows)
             {
                 var values = BuildComparisonRowValues(row, headers);
-                sb.AppendLine(string.Join(",", values.Select(EscapeCsv)));
+                writer.WriteLine(string.Join(",", values.Select(EscapeCsv)));
             }
         }
         else
         {
-            if (report == null)
-            {
-                throw new ArgumentException("Report data is required for non-comparison export.");
-            }
-
+            if (report == null) throw new ArgumentException("Report data is required for non-comparison export.");
             var headers = BuildReportHeaders(report);
-            sb.AppendLine(string.Join(",", headers.Select(EscapeCsv)));
-
+            writer.WriteLine(string.Join(",", headers.Select(EscapeCsv)));
             foreach (var row in report.Rows)
             {
                 var values = BuildReportRowValues(row, headers);
-                sb.AppendLine(string.Join(",", values.Select(EscapeCsv)));
+                writer.WriteLine(string.Join(",", values.Select(EscapeCsv)));
             }
         }
 
+        writer.Flush();
         return new ReportExportContentDto
         {
-            Content = Encoding.UTF8.GetBytes(sb.ToString()),
+            Content = ms.ToArray(),
             ContentType = "text/csv",
             FileName = BuildFileName(request, reportName, "csv")
         };
+    }
+
+    private static async Task StreamCsvAsync(
+        ReportExportRequestDto request,
+        ReportResultDto? report,
+        ReportComparisonResultDto? comparison,
+        Stream output,
+        CancellationToken cancellationToken)
+    {
+        await using var writer = new StreamWriter(output, Encoding.UTF8, 8192, leaveOpen: true);
+
+        if (request.IncludeComparison)
+        {
+            if (comparison == null) throw new ArgumentException("Comparison data is required when IncludeComparison is true.");
+            var headers = BuildComparisonHeaders(comparison);
+            await writer.WriteLineAsync(string.Join(",", headers.Select(EscapeCsv))).ConfigureAwait(false);
+            foreach (var row in comparison.Rows)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var values = BuildComparisonRowValues(row, headers);
+                await writer.WriteLineAsync(string.Join(",", values.Select(EscapeCsv))).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            if (report == null) throw new ArgumentException("Report data is required for non-comparison export.");
+            var headers = BuildReportHeaders(report);
+            await writer.WriteLineAsync(string.Join(",", headers.Select(EscapeCsv))).ConfigureAwait(false);
+            foreach (var row in report.Rows)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var values = BuildReportRowValues(row, headers);
+                await writer.WriteLineAsync(string.Join(",", values.Select(EscapeCsv))).ConfigureAwait(false);
+            }
+        }
+
+        await writer.FlushAsync().ConfigureAwait(false);
     }
 
     private static ReportExportContentDto ExportExcel(
@@ -165,7 +225,7 @@ public class ReportExportService : IReportExportService
             ? comparison!.Rows.Select(r => BuildComparisonRowValues(r, headers)).ToList()
             : report!.Rows.Select(r => BuildReportRowValues(r, headers)).ToList();
 
-        var pdfBytes = Document.Create(container =>
+        var documentDef = Document.Create(container =>
         {
             container.Page(page =>
             {
@@ -186,14 +246,60 @@ public class ReportExportService : IReportExportService
                     }
                 });
             });
-        }).GeneratePdf();
+        });
 
+        // Keep existing buffered API
+        var pdfBytes = documentDef.GeneratePdf();
         return new ReportExportContentDto
         {
             Content = pdfBytes,
             ContentType = "application/pdf",
             FileName = BuildFileName(request, reportName, "pdf")
         };
+    }
+
+    private static async Task StreamPdfAsync(
+        string reportName,
+        ReportExportRequestDto request,
+        ReportResultDto? report,
+        ReportComparisonResultDto? comparison,
+        Stream output,
+        CancellationToken cancellationToken)
+    {
+        var headers = request.IncludeComparison
+            ? BuildComparisonHeaders(comparison ?? throw new ArgumentException("Comparison data is required when IncludeComparison is true."))
+            : BuildReportHeaders(report ?? throw new ArgumentException("Report data is required for non-comparison export."));
+
+        var rows = request.IncludeComparison
+            ? comparison!.Rows.Select(r => BuildComparisonRowValues(r, headers)).ToList()
+            : report!.Rows.Select(r => BuildReportRowValues(r, headers)).ToList();
+
+        var doc = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(20);
+                page.DefaultTextStyle(x => x.FontSize(10));
+
+                page.Content().Column(column =>
+                {
+                    column.Item().Text($"Report Export: {reportName}").Bold().FontSize(14);
+                    column.Item().Text($"Generated at: {Common.Utils.VietnamTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    column.Item().PaddingVertical(8).LineHorizontal(1).LineColor(QuestPDF.Helpers.Colors.Grey.Lighten2);
+
+                    column.Item().Text(string.Join(" | ", headers)).SemiBold();
+                    foreach (var row in rows)
+                    {
+                        column.Item().Text(string.Join(" | ", row));
+                    }
+                });
+            });
+        });
+
+        // QuestPDF supports writing to stream via GeneratePdf(stream)
+        doc.GeneratePdf(output);
+        await output.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void AppendRow(SheetData sheetData, IEnumerable<string> values)

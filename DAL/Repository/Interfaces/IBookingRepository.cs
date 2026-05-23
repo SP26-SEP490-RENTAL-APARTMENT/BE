@@ -1,5 +1,6 @@
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Common.DTOs;
 
 namespace DAL.Repository.Interfaces
 {
@@ -15,5 +16,15 @@ namespace DAL.Repository.Interfaces
             DateTime? fromDate = null,
             DateTime? toDate = null,
             IEnumerable<string>? allowedColumns = null);
+
+        Task<(IEnumerable<ReportResultRowDto> Items, int TotalCount)> GetPagedGroupedReportRowsAsync(
+            DateTime fromInclusive,
+            DateTime toExclusive,
+            IReadOnlyList<ReportDimensionRequestDto> dimensions,
+            IReadOnlyList<ReportMetricRequestDto> metrics,
+            string? searchTerm,
+            int page,
+            int pageSize,
+            Guid? landlordId = null);
     }
 }

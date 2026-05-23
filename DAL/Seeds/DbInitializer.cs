@@ -39,7 +39,7 @@ public static class DbInitializer
         await SmartPricingHistorySeed.SeedAsync(context, cancellationToken);
         // TODO: Fix duplicate key constraint - data already seeded
         // await ApartmentPriceCalendarSeed.SeedAsync(context, cancellationToken);
-        // TODO: Debug ReportDefinitionSeed error
-        // await ReportDefinitionSeed.SeedAsync(context, cancellationToken);
+        await ReportDefinitionSeed.SeedAsync(context, cancellationToken);
+        await ScheduledReportSeed.SeedAsync(context, cancellationToken);
     }
 }

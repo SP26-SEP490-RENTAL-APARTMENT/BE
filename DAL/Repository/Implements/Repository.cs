@@ -317,6 +317,21 @@ namespace DAL.Repository.Implements
             return await _dbSet.Where(predicate).ToListAsync();
         }
 
+        public virtual async Task<(IEnumerable<T> Items, int TotalCount)> FindPagedAsync(
+            Expression<Func<T, bool>> predicate,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null)
+        {
+            var query = _dbSet.Where(predicate);
+            query = ApplySorting(query, sortBy, sortOrder);
+
+            var totalCount = await query.CountAsync();
+            var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+            return (items, totalCount);
+        }
+
         public virtual async Task AddAsync(T entity)
         {
             await _dbSet.AddAsync(entity);

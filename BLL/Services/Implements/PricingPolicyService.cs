@@ -94,7 +94,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
             a.ApartmentId == apartmentId &&
             a.StartDate <= endDate &&
             a.EndDate >= startDate &&
-            a.IsEnabled)).ToList();
+            a.IsEnabled == true)).ToList();
 
         var templateIds = applications.Select(a => a.TemplateId).Distinct().ToArray();
         var templates = templateIds.Length == 0
@@ -346,7 +346,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
             await _applicationRepository.AddAsync(application);
         }
 
-        if (application.IsEnabled)
+        if (application.IsEnabled == true)
         {
             await UpsertGeneratedCalendarRowsAsync(apartment, application, template, parameters, effectiveOverrides);
         }
@@ -441,7 +441,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
         application.UpdatedAt = DateTime.UtcNow;
         _applicationRepository.Update(application);
 
-        if (application.IsEnabled)
+        if (application.IsEnabled == true)
         {
             await UpsertGeneratedCalendarRowsAsync(apartment, application, template, parameters, effectiveOverrides);
         }
@@ -744,7 +744,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
             TemplateName = template.Name,
             StartDate = application.StartDate,
             EndDate = application.EndDate,
-            IsEnabled = application.IsEnabled,
+            IsEnabled = application.IsEnabled.GetValueOrDefault(),
             EffectiveMultiplier = effectiveMultiplier,
             EffectivePricePerNight = Math.Round(basePrice * effectiveMultiplier, 2, MidpointRounding.AwayFromZero),
             Overrides = overrides

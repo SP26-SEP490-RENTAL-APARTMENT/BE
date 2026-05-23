@@ -1,6 +1,5 @@
-using AutoMapper;
-using BLL.Services.Interfaces;
 using BLL.Services.Implements;
+using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
@@ -14,107 +13,62 @@ using System.Text;
 namespace Short_termApartmentAPI.Controllers;
 
 [ApiController]
-[Route("api/reports")]
-[Authorize(Roles = "admin")]
-public sealed class ReportsController : ControllerBase
+[Route("api/landlord/reports")]
+[Authorize(Roles = "landlord")]
+public sealed class LandlordReportsController : ControllerBase
 {
+    private static readonly HashSet<string> AllowedCatalogCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "booking",
+        "revenue",
+        "review",
+        "subscription",
+        "compliance"
+    };
+
     private readonly IRepository<ReportDefinition> _reportDefinitionRepository;
     private readonly IReportExecutionService _reportExecutionService;
     private readonly IReportExportService _reportExportService;
-    private readonly IAdminAnalyticsService _adminAnalyticsService;
-    private readonly IMapper _mapper;
+    private readonly ILandlordService _landlordService;
 
-    public ReportsController(
+    public LandlordReportsController(
         IRepository<ReportDefinition> reportDefinitionRepository,
         IReportExecutionService reportExecutionService,
         IReportExportService reportExportService,
-        IAdminAnalyticsService adminAnalyticsService,
-        IMapper mapper)
+        ILandlordService landlordService)
     {
         _reportDefinitionRepository = reportDefinitionRepository;
         _reportExecutionService = reportExecutionService;
         _reportExportService = reportExportService;
-        _adminAnalyticsService = adminAnalyticsService;
-        _mapper = mapper;
+        _landlordService = landlordService;
     }
 
     [HttpGet("catalog")]
-    public async Task<IActionResult> GetCatalog(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetCatalog([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var (items, totalCount) = await _reportDefinitionRepository.GetAllAsync(
-            page,
-            pageSize,
-            sortBy: null,
-            sortOrder: null,
-            search: null,
-            filters: null,
-            allowedColumns: new[] { "Name", "Category", "Type" });
+        var items = await _reportDefinitionRepository.FindAsync(r =>
+            r.IsActive &&
+            AllowedCatalogCategories.Contains(r.Category));
 
-        var dtos = _mapper.Map<IEnumerable<ReportDefinitionResponseDto>>(items);
-        return Ok(new { Items = dtos, TotalCount = totalCount });
-    }
+        var ordered = items
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] ReportDefinitionDto dto)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
+        var totalCount = ordered.Count;
+        var pageItems = ordered
+            .Skip(Math.Max(0, (page - 1) * pageSize))
+            .Take(pageSize)
+            .Select(MapDefinition)
+            .ToList();
 
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdClaim, out var userId))
-        {
-            return Unauthorized(new ApiResponse<string>("Invalid user token."));
-        }
-
-        var entity = new ReportDefinition
-        {
-            ReportId = Guid.NewGuid(),
-            Name = dto.Name,
-            Description = dto.Description,
-            Type = string.IsNullOrWhiteSpace(dto.Type) ? "custom" : dto.Type,
-            Category = dto.Category,
-            IsActive = dto.IsActive,
-            CreatedBy = userId,
-            CreatedAt = Common.Utils.VietnamTime.Now,
-            UpdatedAt = Common.Utils.VietnamTime.Now
-        };
-
-        await _reportDefinitionRepository.AddAsync(entity);
-        await _reportDefinitionRepository.SaveChangesAsync();
-
-        var createdDto = _mapper.Map<ReportDefinitionResponseDto>(entity);
-        return CreatedAtAction(nameof(GetCatalog), new { page = 1, pageSize = 1 }, createdDto);
-    }
-
-    [HttpPost("{id:guid}/run")]
-    public async Task<IActionResult> Run(Guid id, [FromBody] ReportRunRequestDto request)
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdClaim, out var userId))
-        {
-            return Unauthorized(new ApiResponse<string>("Invalid user token."));
-        }
-
-        try
-        {
-            var result = await _reportExecutionService.RunReportAsync(id, request, userId);
-            return Ok(new ApiResponse<ReportResultDto>(result));
-        }
-        catch (ArgumentException ex)
-        {
-            return NotFound(new ApiResponse<string>(ex.Message));
-        }
+        return Ok(new { Items = pageItems, TotalCount = totalCount });
     }
 
     [HttpGet("{id:guid}/schema")]
     public async Task<IActionResult> GetSchema(Guid id)
     {
         var definition = await _reportDefinitionRepository.GetByIdAsync(id);
-        if (definition == null)
+        if (definition == null || !AllowedCatalogCategories.Contains(definition.Category))
         {
             return NotFound(new ApiResponse<string>("Report definition not found."));
         }
@@ -123,18 +77,38 @@ public sealed class ReportsController : ControllerBase
         return Ok(new ApiResponse<ReportSchemaDto>(schema));
     }
 
-    [HttpPost("{id:guid}/compare")]
-    public async Task<IActionResult> Compare(Guid id, [FromBody] ReportComparisonRequestDto request)
+    [HttpPost("{id:guid}/run")]
+    public async Task<IActionResult> Run(Guid id, [FromBody] ReportRunRequestDto request)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdClaim, out var userId))
+        var (userId, landlord) = await ResolveLandlordContextAsync();
+        if (landlord is null)
         {
-            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            return Unauthorized(new ApiResponse<string>("Landlord profile not found."));
         }
 
         try
         {
-            var result = await _reportExecutionService.CompareReportAsync(id, request, userId);
+            var result = await _reportExecutionService.RunReportAsync(id, request, userId, landlord.LandlordId);
+            return Ok(new ApiResponse<ReportResultDto>(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpPost("{id:guid}/compare")]
+    public async Task<IActionResult> Compare(Guid id, [FromBody] ReportComparisonRequestDto request)
+    {
+        var (userId, landlord) = await ResolveLandlordContextAsync();
+        if (landlord is null)
+        {
+            return Unauthorized(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        try
+        {
+            var result = await _reportExecutionService.CompareReportAsync(id, request, userId, landlord.LandlordId);
             return Ok(new ApiResponse<ReportComparisonResultDto>(result));
         }
         catch (ArgumentException ex)
@@ -146,14 +120,14 @@ public sealed class ReportsController : ControllerBase
     [HttpPost("{id:guid}/export")]
     public async Task<IActionResult> Export(Guid id, [FromBody] ReportExportRequestDto request, CancellationToken cancellationToken)
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!Guid.TryParse(userIdClaim, out var userId))
+        var (userId, landlord) = await ResolveLandlordContextAsync();
+        if (landlord is null)
         {
-            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            return Unauthorized(new ApiResponse<string>("Landlord profile not found."));
         }
 
         var reportDefinition = await _reportDefinitionRepository.GetByIdAsync(id);
-        if (reportDefinition == null)
+        if (reportDefinition == null || !AllowedCatalogCategories.Contains(reportDefinition.Category))
         {
             return NotFound(new ApiResponse<string>("Report definition not found."));
         }
@@ -165,7 +139,6 @@ public sealed class ReportsController : ControllerBase
 
             if (request.IncludeComparison)
             {
-                // If streaming, we'll stream comparison pages instead of materializing the full comparison result.
                 if (!request.Stream)
                 {
                     var compareRequest = request.ComparisonRequest ?? new ReportComparisonRequestDto
@@ -174,18 +147,18 @@ public sealed class ReportsController : ControllerBase
                         RunRequest = request.RunRequest ?? new ReportRunRequestDto()
                     };
 
-                    comparisonResult = await _reportExecutionService.CompareReportAsync(id, compareRequest, userId);
+                    comparisonResult = await _reportExecutionService.CompareReportAsync(id, compareRequest, userId, landlord.LandlordId);
                 }
             }
             else
             {
-                reportResult = await _reportExecutionService.RunReportAsync(id, request.RunRequest ?? new ReportRunRequestDto(), userId);
+                reportResult = await _reportExecutionService.RunReportAsync(id, request.RunRequest ?? new ReportRunRequestDto(), userId, landlord.LandlordId);
             }
 
             if (request.Stream)
             {
                 var fileName = string.IsNullOrWhiteSpace(request.FileName)
-                    ? $"{reportDefinition.Name}_{Common.Utils.VietnamTime.Now:yyyyMMddHHmmss}.{(request.Format ?? "csv")}"
+                    ? $"{reportDefinition.Name}_{Common.Utils.VietnamTime.Now:yyyyMMddHHmmss}.{(request.Format ?? "csv")}" 
                     : request.FileName;
 
                 var fmt = (request.Format ?? "csv").Trim().ToLowerInvariant();
@@ -199,10 +172,8 @@ public sealed class ReportsController : ControllerBase
 
                 Response.Headers["Content-Disposition"] = $"attachment; filename=\"{fileName}\"";
 
-                // If comparison is requested and streaming, perform paged comparison merge-streaming
                 if (request.IncludeComparison)
                 {
-                    // Build current and previous run requests (replicating service's previous-period logic)
                     var compareRequest = request.ComparisonRequest ?? new ReportComparisonRequestDto
                     {
                         Mode = "custom",
@@ -248,10 +219,9 @@ public sealed class ReportsController : ControllerBase
                     var curPage = 1;
                     var prevPage = 1;
 
-                    var curResultPage = await _reportExecutionService.RunReportPageAsync(id, currentRun, curPage, compPageSize, userId);
-                    var prevResultPage = await _reportExecutionService.RunReportPageAsync(id, previousRun, prevPage, compPageSize, userId);
+                    var curResultPage = await _reportExecutionService.RunReportPageAsync(id, currentRun, curPage, compPageSize, userId, landlord.LandlordId);
+                    var prevResultPage = await _reportExecutionService.RunReportPageAsync(id, previousRun, prevPage, compPageSize, userId, landlord.LandlordId);
 
-                    // Build headers from first available rows
                     var compDimKeys = new List<string>();
                     var compMetricNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     if (curResultPage.Rows.Count > 0)
@@ -267,7 +237,6 @@ public sealed class ReportsController : ControllerBase
                         foreach (var m in r.Metrics.Keys) compMetricNames.Add(m);
                     }
 
-                    // If no rows at all, emit a simple header
                     if (compDimKeys.Count == 0 && compMetricNames.Count == 0)
                     {
                         await using var compWriterEmpty = new StreamWriter(Response.Body, Encoding.UTF8, 8192, leaveOpen: true);
@@ -287,7 +256,6 @@ public sealed class ReportsController : ControllerBase
                     await using var compWriter = new StreamWriter(Response.Body, Encoding.UTF8, 8192, leaveOpen: true);
                     await compWriter.WriteLineAsync(string.Join(",", compHeaders.Select(h => EscapeCsvForController(h)))).ConfigureAwait(false);
 
-                    // helper: build key from row
                     static string BuildKey(ReportResultRowDto r)
                     {
                         return string.Join("|", r.Dimensions.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase).Select(k => $"{k.Key}:{k.Value}"));
@@ -302,7 +270,7 @@ public sealed class ReportsController : ControllerBase
                         if (curRow == null && curPage * compPageSize < curResultPage.TotalCount)
                         {
                             curPage++;
-                            curResultPage = await _reportExecutionService.RunReportPageAsync(id, currentRun, curPage, compPageSize, userId);
+                            curResultPage = await _reportExecutionService.RunReportPageAsync(id, currentRun, curPage, compPageSize, userId, landlord.LandlordId);
                             curIdx = 0;
                             curRow = curIdx < curResultPage.Rows.Count ? curResultPage.Rows[curIdx] : null;
                         }
@@ -310,7 +278,7 @@ public sealed class ReportsController : ControllerBase
                         if (prevRow == null && prevPage * compPageSize < prevResultPage.TotalCount)
                         {
                             prevPage++;
-                            prevResultPage = await _reportExecutionService.RunReportPageAsync(id, previousRun, prevPage, compPageSize, userId);
+                            prevResultPage = await _reportExecutionService.RunReportPageAsync(id, previousRun, prevPage, compPageSize, userId, landlord.LandlordId);
                             prevIdx = 0;
                             prevRow = prevIdx < prevResultPage.Rows.Count ? prevResultPage.Rows[prevIdx] : null;
                         }
@@ -341,9 +309,7 @@ public sealed class ReportsController : ControllerBase
                             outCur = null; outPrev = prevRow; prevIdx++;
                         }
 
-                        // build merged row values
                         var values = new List<string>();
-                        // dimensions (prefer cur then prev)
                         var dims = outCur?.Dimensions ?? outPrev?.Dimensions ?? new Dictionary<string, object?>();
                         foreach (var key in compDimKeys)
                         {
@@ -381,11 +347,10 @@ public sealed class ReportsController : ControllerBase
                     return new EmptyResult();
                 }
 
-                // Non-comparison: page through results and stream CSV
                 var pageSize = Math.Max(1, request.PageSize <= 0 ? 1000 : request.PageSize);
                 var page = 1;
 
-                var firstPage = await _reportExecutionService.RunReportPageAsync(id, request.RunRequest ?? new ReportRunRequestDto(), page, pageSize, userId);
+                var firstPage = await _reportExecutionService.RunReportPageAsync(id, request.RunRequest ?? new ReportRunRequestDto(), page, pageSize, userId, landlord.LandlordId);
                 var headers = new List<string>();
                 if (firstPage.Rows.Count > 0)
                 {
@@ -407,7 +372,7 @@ public sealed class ReportsController : ControllerBase
                 while (page * pageSize < total)
                 {
                     page++;
-                    var p = await _reportExecutionService.RunReportPageAsync(id, request.RunRequest ?? new ReportRunRequestDto(), page, pageSize, userId);
+                    var p = await _reportExecutionService.RunReportPageAsync(id, request.RunRequest ?? new ReportRunRequestDto(), page, pageSize, userId, landlord.LandlordId);
                     foreach (var row in p.Rows)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
@@ -438,11 +403,28 @@ public sealed class ReportsController : ControllerBase
         }
     }
 
-    [HttpGet("streaming/snapshot")]
-    public async Task<IActionResult> GetStreamingSnapshot(CancellationToken cancellationToken)
+    private async Task<(Guid UserId, Landlord? Landlord)> ResolveLandlordContextAsync()
     {
-        var snapshot = await _adminAnalyticsService.GetSnapshotAsync(cancellationToken);
-        return Ok(new ApiResponse<AdminAnalyticsSnapshotDto>(snapshot));
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return (Guid.Empty, null);
+        }
+
+        return (userId, await _landlordService.GetByUserIdAsync(userId));
+    }
+
+    private static ReportDefinitionResponseDto MapDefinition(ReportDefinition definition)
+    {
+        return new ReportDefinitionResponseDto
+        {
+            ReportId = definition.ReportId,
+            Name = definition.Name,
+            Description = definition.Description,
+            Type = definition.Type,
+            Category = definition.Category,
+            IsActive = definition.IsActive
+        };
     }
 
     private static IEnumerable<string> BuildRowValuesForController(ReportResultRowDto row, IEnumerable<string> headers)

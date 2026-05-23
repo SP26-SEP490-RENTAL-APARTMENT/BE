@@ -45,7 +45,7 @@ public sealed class PricingPolicyMigrationService
     /// </summary>
     public async Task<MigrationResult> MigrateAllPricingPoliciesAsync()
     {
-        var applications = (await _applicationRepository.FindAsync(a => a.IsEnabled)).ToList();
+        var applications = (await _applicationRepository.FindAsync(a => a.IsEnabled == true)).ToList();
         var result = new MigrationResult
         {
             TotalApplications = applications.Count,

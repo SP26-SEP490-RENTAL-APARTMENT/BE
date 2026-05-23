@@ -46,6 +46,10 @@ public class ReportExportRequestDto
     public string? FileName { get; set; }
     public ReportRunRequestDto? RunRequest { get; set; }
     public ReportComparisonRequestDto? ComparisonRequest { get; set; }
+    // If true, the export should be streamed to the HTTP response instead of returned as a single byte array
+    public bool Stream { get; set; } = false;
+    // When streaming/paginating, page size to request from the server-side pagination
+    public int PageSize { get; set; } = 1000;
 }
 
 public class ReportExportContentDto
@@ -97,6 +101,16 @@ public class ReportResultDto
     public string Name { get; set; } = null!;
     public IReadOnlyList<ReportResultRowDto> Rows { get; set; } = Array.Empty<ReportResultRowDto>();
     public Dictionary<string, decimal> TotalMetrics { get; set; } = new();
+}
+
+public class ReportResultPageDto
+{
+    public Guid ReportId { get; set; }
+    public string Name { get; set; } = null!;
+    public IReadOnlyList<ReportResultRowDto> Rows { get; set; } = Array.Empty<ReportResultRowDto>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
 }
 
 public class ReportComparisonRowDto

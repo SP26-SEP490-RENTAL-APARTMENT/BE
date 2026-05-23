@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BLL.Tests", "tests\BLL.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Short-termApartmentAPI.IntegrationTests", "tests\Short-termApartmentAPI.IntegrationTests\Short-termApartmentAPI.IntegrationTests.csproj", "{0161A226-A807-4FD8-9C0A-625B9B79F4B5}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E-EAC7-C090-1BA3-A61EC2A24D84}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BookingGroupValidator", "tools\BookingGroupValidator\BookingGroupValidator.csproj", "{95D5A6B1-5745-42B7-9D65-2A295C517A3F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -161,6 +165,22 @@ Global
 		{0161A226-A807-4FD8-9C0A-625B9B79F4B5}.Release|x64.Build.0 = Release|x64
 		{0161A226-A807-4FD8-9C0A-625B9B79F4B5}.Release|x86.ActiveCfg = Release|Any CPU
 		{0161A226-A807-4FD8-9C0A-625B9B79F4B5}.Release|x86.Build.0 = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|ARM32.ActiveCfg = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|ARM32.Build.0 = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|x64.Build.0 = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Debug|x86.Build.0 = Debug|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|ARM32.ActiveCfg = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|ARM32.Build.0 = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|x64.ActiveCfg = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|x64.Build.0 = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|x86.ActiveCfg = Release|Any CPU
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -170,6 +190,7 @@ Global
 		{E18BA09C-1B4B-4F76-98C2-B6ECED7CA0B6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{4A211F66-88BF-44B4-9AB2-A7A1C9937E72} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{0161A226-A807-4FD8-9C0A-625B9B79F4B5} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{95D5A6B1-5745-42B7-9D65-2A295C517A3F} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {34D1B9A8-2C3D-4A9F-B844-A9653B85E1FC}
