@@ -19,6 +19,18 @@ namespace BLL.Services.Implements;
 
 public class ReportExportService : IReportExportService
 {
+    private enum ExportColumnKind
+    {
+        Index,
+        Dimension,
+        CurrentMetric,
+        PreviousMetric,
+        DeltaMetric,
+        DeltaPercentMetric
+    }
+
+    private sealed record ExportColumn(ExportColumnKind Kind, string Header, string LookupKey);
+
     public Task<ReportExportContentDto> ExportAsync(
         string reportName,
         ReportExportRequestDto request,
@@ -31,8 +43,7 @@ public class ReportExportService : IReportExportService
         {
             "csv" => Task.FromResult(ExportCsv(reportName, request, report, comparison)),
             "excel" or "xlsx" => Task.FromResult(ExportExcel(reportName, request, report, comparison)),
-            "pdf" => Task.FromResult(ExportPdf(reportName, request, report, comparison)),
-            _ => throw new NotSupportedException("Unsupported export format. Use csv, excel, or pdf.")
+            _ => throw new NotSupportedException("Unsupported export format. Use csv or excel (xlsx).")
         };
     }
 
@@ -45,24 +56,21 @@ public class ReportExportService : IReportExportService
         CancellationToken cancellationToken = default)
     {
         var format = Normalize(request.Format);
-        switch (format)
-        {
-            case "csv":
-                await StreamCsvAsync(request, report, comparison, output, cancellationToken).ConfigureAwait(false);
-                break;
-            case "pdf":
-                await StreamPdfAsync(reportName, request, report, comparison, output, cancellationToken).ConfigureAwait(false);
-                break;
-            case "excel":
-            case "xlsx":
-                // Excel streaming is not fully supported via OpenXML on non-seekable streams in this implementation.
-                // Fall back to buffered approach and write bytes to output to preserve behavior.
-                var content = ExportExcel(reportName, request, report, comparison).Content;
-                await output.WriteAsync(content, 0, content.Length, cancellationToken).ConfigureAwait(false);
-                break;
-            default:
-                throw new NotSupportedException("Unsupported export format for streaming. Use csv or pdf for streaming.");
-        }
+            switch (format)
+            {
+                case "csv":
+                    await StreamCsvAsync(request, report, comparison, output, cancellationToken).ConfigureAwait(false);
+                    break;
+                case "excel":
+                case "xlsx":
+                    // Excel streaming is not fully supported via OpenXML on non-seekable streams in this implementation.
+                    // Fall back to buffered approach and write bytes to output to preserve behavior.
+                    var content = ExportExcel(reportName, request, report, comparison).Content;
+                    await output.WriteAsync(content, 0, content.Length, cancellationToken).ConfigureAwait(false);
+                    break;
+                default:
+                    throw new NotSupportedException("Unsupported export format for streaming. Use csv or excel (xlsx) for streaming.");
+            }
 
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -79,23 +87,23 @@ public class ReportExportService : IReportExportService
         if (request.IncludeComparison)
         {
             if (comparison == null) throw new ArgumentException("Comparison data is required when IncludeComparison is true.");
-            var headers = BuildComparisonHeaders(comparison);
-            writer.WriteLine(string.Join(",", headers.Select(EscapeCsv)));
-            foreach (var row in comparison.Rows)
+            var headers = BuildComparisonColumns(request, comparison);
+            writer.WriteLine(string.Join(",", headers.Select(column => EscapeCsv(column.Header))));
+            for (var i = 0; i < comparison.Rows.Count; i++)
             {
-                var values = BuildComparisonRowValues(row, headers);
-                writer.WriteLine(string.Join(",", values.Select(EscapeCsv)));
+                var values = BuildComparisonRowValues(comparison.Rows[i], headers, i + 1);
+                writer.WriteLine(string.Join(",", values.Select(value => EscapeCsv(value))));
             }
         }
         else
         {
             if (report == null) throw new ArgumentException("Report data is required for non-comparison export.");
-            var headers = BuildReportHeaders(report);
-            writer.WriteLine(string.Join(",", headers.Select(EscapeCsv)));
-            foreach (var row in report.Rows)
+            var headers = BuildReportColumns(request, report);
+            writer.WriteLine(string.Join(",", headers.Select(column => EscapeCsv(column.Header))));
+            for (var i = 0; i < report.Rows.Count; i++)
             {
-                var values = BuildReportRowValues(row, headers);
-                writer.WriteLine(string.Join(",", values.Select(EscapeCsv)));
+                var values = BuildReportRowValues(report.Rows[i], headers, i + 1);
+                writer.WriteLine(string.Join(",", values.Select(value => EscapeCsv(value))));
             }
         }
 
@@ -120,25 +128,25 @@ public class ReportExportService : IReportExportService
         if (request.IncludeComparison)
         {
             if (comparison == null) throw new ArgumentException("Comparison data is required when IncludeComparison is true.");
-            var headers = BuildComparisonHeaders(comparison);
-            await writer.WriteLineAsync(string.Join(",", headers.Select(EscapeCsv))).ConfigureAwait(false);
-            foreach (var row in comparison.Rows)
+            var headers = BuildComparisonColumns(request, comparison);
+            await writer.WriteLineAsync(string.Join(",", headers.Select(column => EscapeCsv(column.Header)))).ConfigureAwait(false);
+            for (var i = 0; i < comparison.Rows.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var values = BuildComparisonRowValues(row, headers);
-                await writer.WriteLineAsync(string.Join(",", values.Select(EscapeCsv))).ConfigureAwait(false);
+                var values = BuildComparisonRowValues(comparison.Rows[i], headers, i + 1);
+                await writer.WriteLineAsync(string.Join(",", values.Select(value => EscapeCsv(value)))).ConfigureAwait(false);
             }
         }
         else
         {
             if (report == null) throw new ArgumentException("Report data is required for non-comparison export.");
-            var headers = BuildReportHeaders(report);
-            await writer.WriteLineAsync(string.Join(",", headers.Select(EscapeCsv))).ConfigureAwait(false);
-            foreach (var row in report.Rows)
+            var headers = BuildReportColumns(request, report);
+            await writer.WriteLineAsync(string.Join(",", headers.Select(column => EscapeCsv(column.Header)))).ConfigureAwait(false);
+            for (var i = 0; i < report.Rows.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var values = BuildReportRowValues(row, headers);
-                await writer.WriteLineAsync(string.Join(",", values.Select(EscapeCsv))).ConfigureAwait(false);
+                var values = BuildReportRowValues(report.Rows[i], headers, i + 1);
+                await writer.WriteLineAsync(string.Join(",", values.Select(value => EscapeCsv(value)))).ConfigureAwait(false);
             }
         }
 
@@ -180,8 +188,9 @@ public class ReportExportService : IReportExportService
                     throw new ArgumentException("Comparison data is required when IncludeComparison is true.");
                 }
 
-                headers = BuildComparisonHeaders(comparison);
-                rows = comparison.Rows.Select(r => BuildComparisonRowValues(r, headers)).ToList();
+                headers = BuildComparisonColumns(request, comparison).Select(c => c.Header).ToList();
+                rows = comparison.Rows.Select((ReportComparisonRowDto r, int index) =>
+                    BuildComparisonRowValues(r, BuildComparisonColumns(request, comparison), index + 1)).ToList();
             }
             else
             {
@@ -190,8 +199,9 @@ public class ReportExportService : IReportExportService
                     throw new ArgumentException("Report data is required for non-comparison export.");
                 }
 
-                headers = BuildReportHeaders(report);
-                rows = report.Rows.Select(r => BuildReportRowValues(r, headers)).ToList();
+                headers = BuildReportColumns(request, report).Select(c => c.Header).ToList();
+                rows = report.Rows.Select((ReportResultRowDto r, int index) =>
+                    BuildReportRowValues(r, BuildReportColumns(request, report), index + 1)).ToList();
             }
 
             AppendRow(sheetData, headers);
@@ -218,12 +228,14 @@ public class ReportExportService : IReportExportService
         ReportComparisonResultDto? comparison)
     {
         var headers = request.IncludeComparison
-            ? BuildComparisonHeaders(comparison ?? throw new ArgumentException("Comparison data is required when IncludeComparison is true."))
-            : BuildReportHeaders(report ?? throw new ArgumentException("Report data is required for non-comparison export."));
+            ? BuildComparisonColumns(request, comparison ?? throw new ArgumentException("Comparison data is required when IncludeComparison is true."))
+            : BuildReportColumns(request, report ?? throw new ArgumentException("Report data is required for non-comparison export."));
 
         var rows = request.IncludeComparison
-            ? comparison!.Rows.Select(r => BuildComparisonRowValues(r, headers)).ToList()
-            : report!.Rows.Select(r => BuildReportRowValues(r, headers)).ToList();
+            ? comparison!.Rows.Select((ReportComparisonRowDto r, int index) =>
+                BuildComparisonRowValues(r, headers, index + 1)).ToList()
+            : report!.Rows.Select((ReportResultRowDto r, int index) =>
+                BuildReportRowValues(r, headers, index + 1)).ToList();
 
         var documentDef = Document.Create(container =>
         {
@@ -267,12 +279,14 @@ public class ReportExportService : IReportExportService
         CancellationToken cancellationToken)
     {
         var headers = request.IncludeComparison
-            ? BuildComparisonHeaders(comparison ?? throw new ArgumentException("Comparison data is required when IncludeComparison is true."))
-            : BuildReportHeaders(report ?? throw new ArgumentException("Report data is required for non-comparison export."));
+            ? BuildComparisonColumns(request, comparison ?? throw new ArgumentException("Comparison data is required when IncludeComparison is true."))
+            : BuildReportColumns(request, report ?? throw new ArgumentException("Report data is required for non-comparison export."));
 
         var rows = request.IncludeComparison
-            ? comparison!.Rows.Select(r => BuildComparisonRowValues(r, headers)).ToList()
-            : report!.Rows.Select(r => BuildReportRowValues(r, headers)).ToList();
+            ? comparison!.Rows.Select((ReportComparisonRowDto r, int index) =>
+                BuildComparisonRowValues(r, headers, index + 1)).ToList()
+            : report!.Rows.Select((ReportResultRowDto r, int index) =>
+                BuildReportRowValues(r, headers, index + 1)).ToList();
 
         var doc = Document.Create(container =>
         {
@@ -298,7 +312,8 @@ public class ReportExportService : IReportExportService
         });
 
         // QuestPDF supports writing to stream via GeneratePdf(stream)
-        doc.GeneratePdf(output);
+        var pdfBytes = doc.GeneratePdf();  // generates bytes synchronously in memory
+        await output.WriteAsync(pdfBytes, cancellationToken).ConfigureAwait(false);
         await output.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -316,53 +331,91 @@ public class ReportExportService : IReportExportService
         sheetData.Append(row);
     }
 
-    private static List<string> BuildReportHeaders(ReportResultDto report)
+    private static List<ExportColumn> BuildReportColumns(ReportExportRequestDto request, ReportResultDto report)
     {
+        var columns = new List<ExportColumn> { new(ExportColumnKind.Index, "#", "__index") };
         var first = report.Rows.FirstOrDefault();
-        if (first == null)
-        {
-            return ["No data"];
-        }
 
-        var headers = new List<string>();
-        headers.AddRange(first.Dimensions.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"dim_{k}"));
-        headers.AddRange(first.Metrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"metric_{k}"));
-        return headers;
+        var dimensions = request.RunRequest?.Dimensions?.Count > 0
+            ? request.RunRequest.Dimensions.Select(d => new ExportColumn(ExportColumnKind.Dimension, GetColumnHeader(d.Field, d.Alias), GetColumnKey(d.Field, d.Alias))).ToList()
+            : first == null
+                ? new List<ExportColumn>()
+                : first.Dimensions.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .Select(k => new ExportColumn(ExportColumnKind.Dimension, GetColumnHeader(k, null), k))
+                    .ToList();
+
+        var metrics = request.RunRequest?.Metrics?.Count > 0
+            ? request.RunRequest.Metrics.Select(m =>
+            {
+                var key = string.IsNullOrWhiteSpace(m.Alias) ? BuildMetricKey(m.Field, m.Aggregation) : m.Alias!;
+                return new ExportColumn(ExportColumnKind.CurrentMetric, GetColumnHeader(m.Field, m.Alias), key);
+            }).ToList()
+            : first == null
+                ? new List<ExportColumn>()
+                : first.Metrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .Select(k => new ExportColumn(ExportColumnKind.CurrentMetric, GetColumnHeader(k, null), k))
+                    .ToList();
+
+        columns.AddRange(dimensions);
+        columns.AddRange(metrics);
+        return columns;
     }
 
-    private static List<string> BuildComparisonHeaders(ReportComparisonResultDto comparison)
+    private static List<ExportColumn> BuildComparisonColumns(ReportExportRequestDto request, ReportComparisonResultDto comparison)
     {
+        var columns = new List<ExportColumn> { new(ExportColumnKind.Index, "#", "__index") };
         var first = comparison.Rows.FirstOrDefault();
-        if (first == null)
-        {
-            return ["No data"];
-        }
 
-        var headers = new List<string>();
-        headers.AddRange(first.Dimensions.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"dim_{k}"));
-        headers.AddRange(first.CurrentMetrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"current_{k}"));
-        headers.AddRange(first.PreviousMetrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"previous_{k}"));
-        headers.AddRange(first.DeltaMetrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"delta_{k}"));
-        headers.AddRange(first.DeltaPercentMetrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).Select(k => $"delta_pct_{k}"));
-        return headers;
+        var comparisonRunRequest = request.ComparisonRequest?.RunRequest ?? request.RunRequest;
+
+        var dimensions = comparisonRunRequest?.Dimensions?.Count > 0
+            ? comparisonRunRequest.Dimensions.Select(d => new ExportColumn(ExportColumnKind.Dimension, GetColumnHeader(d.Field, d.Alias), GetColumnKey(d.Field, d.Alias))).ToList()
+            : first == null
+                ? new List<ExportColumn>()
+                : first.Dimensions.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .Select(k => new ExportColumn(ExportColumnKind.Dimension, GetColumnHeader(k, null), k))
+                    .ToList();
+
+        var metrics = comparisonRunRequest?.Metrics?.Count > 0
+            ? comparisonRunRequest.Metrics.Select(m =>
+            {
+                var key = string.IsNullOrWhiteSpace(m.Alias) ? BuildMetricKey(m.Field, m.Aggregation) : m.Alias!;
+                return new ExportColumn(ExportColumnKind.CurrentMetric, GetColumnHeader(m.Field, m.Alias), key);
+            }).ToList()
+            : first == null
+                ? new List<ExportColumn>()
+                : first.CurrentMetrics.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .Select(k => new ExportColumn(ExportColumnKind.CurrentMetric, GetColumnHeader(k, null), k))
+                    .ToList();
+
+        columns.AddRange(dimensions);
+        columns.AddRange(metrics.Select(m => m with { Kind = ExportColumnKind.CurrentMetric, Header = $"current_{m.Header}" }));
+        columns.AddRange(metrics.Select(m => m with { Kind = ExportColumnKind.PreviousMetric, Header = $"previous_{m.Header}" }));
+        columns.AddRange(metrics.Select(m => m with { Kind = ExportColumnKind.DeltaMetric, Header = $"delta_{m.Header}" }));
+        columns.AddRange(metrics.Select(m => m with { Kind = ExportColumnKind.DeltaPercentMetric, Header = $"delta_pct_{m.Header}" }));
+        return columns;
     }
 
-    private static List<string> BuildReportRowValues(ReportResultRowDto row, IEnumerable<string> headers)
+    private static List<string> BuildReportRowValues(ReportResultRowDto row, IReadOnlyList<ExportColumn> columns, int rowNumber)
     {
         var values = new List<string>();
-        foreach (var header in headers)
+        foreach (var column in columns)
         {
-            if (header.StartsWith("dim_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.Index)
             {
-                var key = header[4..];
-                values.Add(row.Dimensions.TryGetValue(key, out var v) ? (v?.ToString() ?? string.Empty) : string.Empty);
+                values.Add(rowNumber.ToString(CultureInfo.InvariantCulture));
                 continue;
             }
 
-            if (header.StartsWith("metric_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.Dimension)
             {
-                var key = header[7..];
-                values.Add(row.Metrics.TryGetValue(key, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                values.Add(row.Dimensions.TryGetValue(column.LookupKey, out var v) ? FormatDimensionValue(v) : string.Empty);
+                continue;
+            }
+
+            if (column.Kind == ExportColumnKind.CurrentMetric)
+            {
+                values.Add(row.Metrics.TryGetValue(column.LookupKey, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
                 continue;
             }
 
@@ -372,43 +425,44 @@ public class ReportExportService : IReportExportService
         return values;
     }
 
-    private static List<string> BuildComparisonRowValues(ReportComparisonRowDto row, IEnumerable<string> headers)
+    private static List<string> BuildComparisonRowValues(ReportComparisonRowDto row, IReadOnlyList<ExportColumn> columns, int rowNumber)
     {
         var values = new List<string>();
-        foreach (var header in headers)
+        foreach (var column in columns)
         {
-            if (header.StartsWith("dim_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.Index)
             {
-                var key = header[4..];
-                values.Add(row.Dimensions.TryGetValue(key, out var v) ? (v?.ToString() ?? string.Empty) : string.Empty);
+                values.Add(rowNumber.ToString(CultureInfo.InvariantCulture));
                 continue;
             }
 
-            if (header.StartsWith("current_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.Dimension)
             {
-                var key = header[8..];
-                values.Add(row.CurrentMetrics.TryGetValue(key, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                values.Add(row.Dimensions.TryGetValue(column.LookupKey, out var v) ? FormatDimensionValue(v) : string.Empty);
                 continue;
             }
 
-            if (header.StartsWith("previous_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.CurrentMetric)
             {
-                var key = header[9..];
-                values.Add(row.PreviousMetrics.TryGetValue(key, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                values.Add(row.CurrentMetrics.TryGetValue(column.LookupKey, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
                 continue;
             }
 
-            if (header.StartsWith("delta_pct_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.PreviousMetric)
             {
-                var key = header[10..];
-                values.Add(row.DeltaPercentMetrics.TryGetValue(key, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                values.Add(row.PreviousMetrics.TryGetValue(column.LookupKey, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
                 continue;
             }
 
-            if (header.StartsWith("delta_", StringComparison.OrdinalIgnoreCase))
+            if (column.Kind == ExportColumnKind.DeltaPercentMetric)
             {
-                var key = header[6..];
-                values.Add(row.DeltaMetrics.TryGetValue(key, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                values.Add(row.DeltaPercentMetrics.TryGetValue(column.LookupKey, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                continue;
+            }
+
+            if (column.Kind == ExportColumnKind.DeltaMetric)
+            {
+                values.Add(row.DeltaMetrics.TryGetValue(column.LookupKey, out var v) ? v.ToString(CultureInfo.InvariantCulture) : string.Empty);
                 continue;
             }
 
@@ -426,6 +480,52 @@ public class ReportExportService : IReportExportService
         }
 
         return value;
+    }
+
+    private static string GetColumnKey(string field, string? alias)
+        => string.IsNullOrWhiteSpace(alias) ? field : alias;
+
+    private static string GetColumnHeader(string field, string? alias)
+        => string.IsNullOrWhiteSpace(alias) ? field : alias;
+
+    private static string BuildMetricKey(string field, string? aggregation)
+    {
+        var f = (field ?? string.Empty).Trim().ToLowerInvariant();
+        var a = (aggregation ?? string.Empty).Trim().ToLowerInvariant();
+        return a == "count" && f == "booking_count" ? f : $"{a}_{f}";
+    }
+
+    private static string FormatDimensionValue(object? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        if (value is DateTime dateTime)
+        {
+            return dateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        if (value is DateTimeOffset dateTimeOffset)
+        {
+            return dateTimeOffset.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        if (value is string text)
+        {
+            if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedOffset))
+            {
+                return parsedOffset.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            }
+
+            if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsedDateTime))
+            {
+                return parsedDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            }
+        }
+
+        return value.ToString() ?? string.Empty;
     }
 
     private static string BuildFileName(ReportExportRequestDto request, string reportName, string extension)

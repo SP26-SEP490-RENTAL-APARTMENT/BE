@@ -42,6 +42,34 @@ public sealed class LandlordController : ControllerBase
     [HttpGet("ping")]
     public IActionResult Ping() => Ok(new { message = "landlord ok" });
 
+    [HttpGet("dashboard/summary")]
+    public async Task<IActionResult> GetDashboardSummary(CancellationToken cancellationToken)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var (_, propertyCount) = await _landlordService.GetOwnApartmentsAsync(landlord.LandlordId, 1, 1);
+        var (_, bookingCount) = await _bookingService.GetLandlordBookingHistoryAsync(landlord.LandlordId, 1, 1);
+        var revenue = await _paymentService.GetLandlordRevenueTotalAsync(landlord.LandlordId);
+
+        return Ok(new ApiResponse<LandlordDashboardSummaryDto>(new LandlordDashboardSummaryDto
+        {
+            GeneratedAt = Common.Utils.VietnamTime.Now,
+            TotalProperties = propertyCount,
+            TotalBookings = bookingCount,
+            TotalRevenue = revenue,
+        }));
+    }
+
     [HttpGet("me")]
     public async Task<IActionResult> GetMyProfile()
     {

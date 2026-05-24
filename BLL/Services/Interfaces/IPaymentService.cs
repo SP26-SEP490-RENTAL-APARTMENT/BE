@@ -4,6 +4,11 @@ namespace BLL.Services.Interfaces;
 
 public interface IPaymentService : IBaseService<Payment>
 {
+	Task<decimal> GetLandlordRevenueTotalAsync(
+		Guid landlordId,
+		DateTime? fromDate = null,
+		DateTime? toDate = null);
+
 	Task<(IEnumerable<Payment> Items, int TotalCount)> GetLandlordPaymentsAsync(
 		Guid landlordId,
 		int page,

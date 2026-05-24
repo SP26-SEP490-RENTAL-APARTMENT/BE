@@ -11,6 +11,33 @@ namespace DAL.Repository.Implements
         {
         }
 
+        public async Task<decimal> GetLandlordRevenueTotalAsync(
+            Guid landlordId,
+            DateTime? fromDate = null,
+            DateTime? toDate = null)
+        {
+            var bookingRevenueQuery =
+                from p in _context.Payments
+                join b in _context.Bookings on p.RelatedEntityId equals (Guid?)b.BookingId
+                join a in _context.Apartments on b.ApartmentId equals a.ApartmentId
+                where p.RelatedEntityType == "booking" && a.LandlordId == landlordId
+                select p;
+
+            if (fromDate.HasValue)
+            {
+                bookingRevenueQuery = bookingRevenueQuery.Where(p => p.PaidAt >= fromDate.Value);
+            }
+
+            if (toDate.HasValue)
+            {
+                bookingRevenueQuery = bookingRevenueQuery.Where(p => p.PaidAt <= toDate.Value);
+            }
+
+            return await bookingRevenueQuery
+                .Where(p => p.Status == "success" || p.Status == "completed")
+                .SumAsync(p => (decimal?)p.LandlordAmount) ?? 0m;
+        }
+
         public async Task<(IEnumerable<Payment> Items, int TotalCount)> GetByLandlordAsync(
             Guid landlordId,
             int page,

@@ -13,6 +13,14 @@ public sealed class PaymentService : BaseService<Payment>, IPaymentService
         _paymentRepository = paymentRepository;
     }
 
+    public Task<decimal> GetLandlordRevenueTotalAsync(
+        Guid landlordId,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        return _paymentRepository.GetLandlordRevenueTotalAsync(landlordId, fromDate, toDate);
+    }
+
     public Task<(IEnumerable<Payment> Items, int TotalCount)> GetLandlordPaymentsAsync(
         Guid landlordId,
         int page,

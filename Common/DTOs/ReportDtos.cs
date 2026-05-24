@@ -30,6 +30,8 @@ public class ReportRunRequestDto
     public IReadOnlyList<ReportDimensionRequestDto>? Dimensions { get; set; }
     public IReadOnlyList<ReportMetricRequestDto>? Metrics { get; set; }
     public IReadOnlyList<ReportFilterRequestDto>? Filters { get; set; }
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 100;
 }
 
 public class ReportComparisonRequestDto
@@ -108,6 +110,7 @@ public class ReportResultPageDto
     public Guid ReportId { get; set; }
     public string Name { get; set; } = null!;
     public IReadOnlyList<ReportResultRowDto> Rows { get; set; } = Array.Empty<ReportResultRowDto>();
+    public Dictionary<string, decimal> TotalMetrics { get; set; } = new();
     public int TotalCount { get; set; }
     public int Page { get; set; }
     public int PageSize { get; set; }

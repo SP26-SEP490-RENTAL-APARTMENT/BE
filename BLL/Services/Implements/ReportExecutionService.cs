@@ -22,8 +22,18 @@ public class ReportExecutionService : IReportExecutionService
         "apartment_name",
         "tenant_id",
         "tenant_name",
-        "nights"
+        "nights",
+        "city",
+        "guest_nationality",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "payment_method",
+        "day_of_week",
+        "holiday_period"
     ];
+
 
     private static readonly HashSet<string> AllowedMetricFields =
     [
@@ -39,6 +49,10 @@ public class ReportExecutionService : IReportExecutionService
         "occupancy_percent",
         "adr",
         "avg_length_of_stay",
+        "total_booked_nights",
+        "total_available_nights",
+        "peak_occupancy_days",
+        "low_occupancy_days",
         "review_avg_rating",
         "review_count",
         "package_revenue",
@@ -49,7 +63,17 @@ public class ReportExecutionService : IReportExecutionService
         "subscription_churn_rate",
         "avg_sold_price",
         "avg_base_price",
-        "avg_price_delta"
+        "avg_price_delta",
+        "confirmed_booking_count",
+        "cancelled_booking_count",
+        "net_revenue",
+        "deposit_collected",
+        "balance_collected",
+        "refunded_amount",
+        "revpar",
+        "five_star_review_percent",
+        "one_star_review_percent",
+        "response_rate"
     ];
 
     private static readonly HashSet<string> AllowedAggregations =
@@ -90,6 +114,7 @@ public class ReportExecutionService : IReportExecutionService
     private readonly IRepository<ApartmentPriceCalendar> _priceCalendarRepository;
     private readonly IRepository<ApartmentAvailability> _availabilityRepository;
     private readonly IRepository<SmartPricingHistory> _smartPricingRepository;
+    private readonly IHolidayService _holidayService;
 
     public ReportExecutionService(
         IRepository<ReportDefinition> reportDefinitionRepository,
@@ -103,7 +128,8 @@ public class ReportExecutionService : IReportExecutionService
         IRepository<Payment> paymentRepository,
         IRepository<ApartmentPriceCalendar> priceCalendarRepository,
         IRepository<ApartmentAvailability> availabilityRepository,
-        IRepository<SmartPricingHistory> smartPricingRepository)
+        IRepository<SmartPricingHistory> smartPricingRepository,
+        IHolidayService holidayService)
     {
         _reportDefinitionRepository = reportDefinitionRepository;
         _generatedReportRepository = generatedReportRepository;
@@ -117,6 +143,7 @@ public class ReportExecutionService : IReportExecutionService
         _priceCalendarRepository = priceCalendarRepository;
         _availabilityRepository = availabilityRepository;
         _smartPricingRepository = smartPricingRepository;
+        _holidayService = holidayService;
     }
 
     public async Task<ReportResultDto> RunReportAsync(Guid reportId, ReportRunRequestDto request, Guid requestedByUserId, Guid? landlordId = null)
@@ -138,7 +165,7 @@ public class ReportExecutionService : IReportExecutionService
             ?? throw new ArgumentException("Report definition not found.");
 
         var currentRequest = request.RunRequest;
-    var previousRequest = request.PreviousRunRequest ?? BuildPreviousRequest(currentRequest, request.Mode);
+        var previousRequest = request.PreviousRunRequest ?? BuildPreviousRequest(currentRequest, request.Mode);
 
         var currentResult = await BuildReportAsync(definition, reportId, currentRequest, requestedByUserId, persistGenerated: false, landlordId);
         var previousResult = await BuildReportAsync(definition, reportId, previousRequest, requestedByUserId, persistGenerated: false, landlordId);
@@ -191,19 +218,19 @@ public class ReportExecutionService : IReportExecutionService
         if (rows.Count > 0)
         {
             var firstRow = rows[0];
-            
+
             // Sum all current metrics
             foreach (var metricKey in firstRow.CurrentMetrics.Keys)
             {
                 totalCurrentMetrics[metricKey] = rows.Sum(r => r.CurrentMetrics.TryGetValue(metricKey, out var v) ? v : 0m);
             }
-            
+
             // Sum all previous metrics
             foreach (var metricKey in firstRow.PreviousMetrics.Keys)
             {
                 totalPreviousMetrics[metricKey] = rows.Sum(r => r.PreviousMetrics.TryGetValue(metricKey, out var v) ? v : 0m);
             }
-            
+
             // Calculate total deltas
             foreach (var metricKey in firstRow.DeltaMetrics.Keys)
             {
@@ -211,7 +238,7 @@ public class ReportExecutionService : IReportExecutionService
                 var totalPrevious = totalPreviousMetrics.TryGetValue(metricKey, out var tp) ? tp : 0m;
                 var delta = totalCurrent - totalPrevious;
                 var deltaPercent = totalPrevious == 0m ? 0m : Math.Round((delta / totalPrevious) * 100m, 2, MidpointRounding.AwayFromZero);
-                
+
                 totalDeltaMetrics[metricKey] = delta;
                 totalDeltaPercentMetrics[metricKey] = deltaPercent;
             }
@@ -254,6 +281,24 @@ public class ReportExecutionService : IReportExecutionService
         var metrics = ResolveMetrics(request);
         var filters = request.Filters ?? Array.Empty<ReportFilterRequestDto>();
 
+        if (IsReviewReport(metrics, dimensions))
+        {
+            var reviewResult = await BuildReviewReportAsync(definition, reportId, request, requestedByUserId, persistGenerated: false, landlordId);
+            var reviewTotalCount = reviewResult.Rows.Count;
+            var reviewSkip = Math.Max(0, (page - 1) * pageSize);
+            var reviewPageRows = reviewResult.Rows.Skip(reviewSkip).Take(pageSize).ToList();
+            return new ReportResultPageDto
+            {
+                ReportId = reportId,
+                Name = definition.Name,
+                Rows = reviewPageRows,
+                TotalMetrics = CalculateTotalMetrics(reviewResult.Rows),
+                TotalCount = reviewTotalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+        }
+
         if (CanUseDbGroupedBookingQuery(dimensions, metrics, filters))
         {
             var groupedFrom = request.From ?? Common.Utils.VietnamTime.Now.AddDays(-30);
@@ -269,11 +314,14 @@ public class ReportExecutionService : IReportExecutionService
                 pageSize,
                 landlordId);
 
+            var materializedRows = rows.ToList();
+
             return new ReportResultPageDto
             {
                 ReportId = reportId,
                 Name = definition.Name,
-                Rows = rows.ToList(),
+                Rows = materializedRows,
+                TotalMetrics = CalculateTotalMetrics(materializedRows),
                 TotalCount = groupedTotalCount,
                 Page = page,
                 PageSize = pageSize
@@ -334,15 +382,18 @@ public class ReportExecutionService : IReportExecutionService
 
         var ordered = groupedQuery.OrderBy(r => r.Dimensions.TryGetValue(dimensions[0].Alias ?? dimensions[0].Field, out var v) ? v?.ToString() : string.Empty);
 
-        var totalCount = ordered.Count();
+        var orderedList = ordered.ToList();
+        var totalCount = orderedList.Count;
         var skip = Math.Max(0, (page - 1) * pageSize);
-        var pageRows = ordered.Skip(skip).Take(pageSize).ToList();
+        var pageRows = orderedList.Skip(skip).Take(pageSize).ToList();
+        var totalMetrics = CalculateTotalMetrics(orderedList);
 
         var result = new ReportResultPageDto
         {
             ReportId = reportId,
             Name = definition.Name,
             Rows = pageRows,
+            TotalMetrics = totalMetrics,
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize
@@ -364,6 +415,11 @@ public class ReportExecutionService : IReportExecutionService
         var dimensions = ResolveDimensions(request);
         var metrics = ResolveMetrics(request);
         var filters = request.Filters ?? Array.Empty<ReportFilterRequestDto>();
+
+        if (IsReviewReport(metrics, dimensions))
+        {
+            return await BuildReviewReportAsync(definition, reportId, request, requestedByUserId, persistGenerated, landlordId);
+        }
 
         if (CanUseDbGroupedBookingQuery(dimensions, metrics, filters))
         {
@@ -412,9 +468,9 @@ public class ReportExecutionService : IReportExecutionService
             {
                 var firstRow = groupedRows[0];
                 foreach (var metricKey in firstRow.Metrics.Keys)
-            {
+                {
                     groupedTotalMetrics[metricKey] = groupedRows.Sum(r => r.Metrics.TryGetValue(metricKey, out var v) ? v : 0m);
-            }
+                }
             }
 
             var groupedResult = new ReportResultDto
@@ -438,8 +494,8 @@ public class ReportExecutionService : IReportExecutionService
         }
 
         // For initial implementation, support booking-based analytics with configurable dimensions/metrics.
-            var from = request.From ?? Common.Utils.VietnamTime.Now.AddDays(-30);
-            var to = request.To ?? Common.Utils.VietnamTime.Now;
+        var from = request.From ?? Common.Utils.VietnamTime.Now.AddDays(-30);
+        var to = request.To ?? Common.Utils.VietnamTime.Now;
 
         var normalizedFrom = DateOnly.FromDateTime(from.Date);
         var normalizedTo = DateOnly.FromDateTime(to.Date.AddDays(1));
@@ -506,6 +562,245 @@ public class ReportExecutionService : IReportExecutionService
         return result;
     }
 
+    private async Task<ReportResultDto> BuildReviewReportAsync(
+    ReportDefinition definition,
+    Guid reportId,
+    ReportRunRequestDto request,
+    Guid requestedByUserId,
+    bool persistGenerated,
+    Guid? landlordId)
+    {
+        var dimensions = ResolveDimensions(request);
+        var metrics = ResolveMetrics(request);
+        var filters = request.Filters ?? Array.Empty<ReportFilterRequestDto>();
+
+        var from = request.From ?? Common.Utils.VietnamTime.Now.AddDays(-30);
+        var to = request.To ?? Common.Utils.VietnamTime.Now;
+        var normalizedFrom = DateOnly.FromDateTime(from.Date);
+        var normalizedTo = DateOnly.FromDateTime(to.Date.AddDays(1));
+
+        // 1. Load reviews
+        IEnumerable<Review> reviews;
+        if (landlordId.HasValue)
+        {
+            var landlordApartmentIds = (await _apartmentRepository.FindAsync(a => a.LandlordId == landlordId.Value))
+                .Select(a => a.ApartmentId)
+                .ToList();
+
+            if (!landlordApartmentIds.Any())
+            {
+                reviews = Array.Empty<Review>();
+            }
+            else
+            {
+                reviews = await _reviewRepository.FindAsync(r =>
+                    r.CreatedAt >= normalizedFrom.ToDateTime(TimeOnly.MinValue) &&
+                    r.CreatedAt < normalizedTo.ToDateTime(TimeOnly.MinValue) &&
+                    r.ApartmentId.HasValue &&
+                    landlordApartmentIds.Contains(r.ApartmentId.Value));
+            }
+        }
+        else
+        {
+            reviews = await _reviewRepository.FindAsync(r =>
+                r.CreatedAt >= normalizedFrom.ToDateTime(TimeOnly.MinValue) &&
+                r.CreatedAt < normalizedTo.ToDateTime(TimeOnly.MinValue));
+        }
+
+        var reviewList = reviews.ToList();
+
+        // 2. Build lookup context
+        var context = await BuildReviewLookupContextAsync(reviewList);
+
+        // 3. Apply dimension filters (if any)
+        var filteredReviews = reviewList
+            .Where(r => MatchAllReviewDimensionFilters(r, filters, dimensions, context))
+            .ToList();
+
+        // 4. Group by dimensions
+        var grouped = filteredReviews
+            .GroupBy(r => BuildReviewDimensionKey(r, dimensions, context))
+            .Select(g => new ReportResultRowDto
+            {
+                Dimensions = dimensions.ToDictionary(
+                    d => d.Alias ?? d.Field,
+                    d => (object?)GetReviewDimensionValue(g.First(), d.Field, context)),
+                Metrics = metrics.ToDictionary(
+                    m => m.Alias ?? BuildMetricAlias(m.Field, m.Aggregation),
+                    m => CalculateReviewMetric(g.ToList(), m.Field, m.Aggregation))
+            })
+            .Where(row => MatchAllMetricFilters(row, filters, metrics)) // re-use existing metric filter logic
+            .ToList();
+
+        // 5. Handle search term
+        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        {
+            grouped = grouped.Where(r =>
+                r.Dimensions.Values.Any(v =>
+                    v?.ToString()?.Contains(request.SearchTerm, StringComparison.OrdinalIgnoreCase) ?? false)
+            ).ToList();
+        }
+
+        // 6. Order and total metrics
+        var primaryDim = dimensions[0].Alias ?? dimensions[0].Field;
+        grouped = grouped.OrderBy(r => r.Dimensions[primaryDim]?.ToString()).ToList();
+
+        var totalMetrics = CalculateTotalMetrics(grouped);
+
+        var result = new ReportResultDto
+        {
+            ReportId = reportId,
+            Name = definition.Name,
+            Rows = grouped,
+            TotalMetrics = totalMetrics
+        };
+
+        if (persistGenerated)
+        {
+            await SaveGeneratedReportAsync(reportId, requestedByUserId,
+                JsonSerializer.Serialize(result), $"{{\"rowCount\":{grouped.Count}}}");
+        }
+
+        return result;
+    }
+
+    private static string BuildReviewDimensionKey(Review review, IReadOnlyList<ReportDimensionRequestDto> dimensions, ReviewDimensionLookupContext context)
+    {
+        return string.Join("|", dimensions.Select(d => GetReviewDimensionValue(review, d.Field, context)?.ToString() ?? "null"));
+    }
+
+    private static bool MatchAllReviewDimensionFilters(
+        Review review,
+        IReadOnlyList<ReportFilterRequestDto> filters,
+        IReadOnlyList<ReportDimensionRequestDto> dimensions,
+        ReviewDimensionLookupContext context)
+    {
+        var dimensionMap = dimensions.ToDictionary(
+            d => NormalizeKey(d.Alias ?? d.Field),
+            d => GetReviewDimensionValue(review, d.Field, context),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var filter in filters)
+        {
+            var target = string.IsNullOrWhiteSpace(filter.Target) ? "dimension" : NormalizeKey(filter.Target);
+            if (target == "metric")
+            {
+                continue;
+            }
+
+            var key = NormalizeKey(filter.Field);
+            if (!dimensionMap.TryGetValue(key, out var value))
+            {
+                return false;
+            }
+
+            if (!Evaluate(value, filter))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static object? GetReviewDimensionValue(
+        Review review,
+        string dimensionField,
+        ReviewDimensionLookupContext context)
+    {
+        var date = review.CreatedAt?.Date;
+        return NormalizeKey(dimensionField) switch
+        {
+            "date" => review.CreatedAt?.Date,
+            "week" => date.HasValue ? StartOfWeek(date.Value) : null,
+            "month" => date.HasValue ? new DateTime(date.Value.Year, date.Value.Month, 1) : null,
+            "quarter" => date.HasValue ? new DateTime(date.Value.Year, ((date.Value.Month - 1) / 3) * 3 + 1, 1) : null,
+            "year" => date.HasValue ? new DateTime(date.Value.Year, 1, 1) : null,
+            "day_of_week" => review.CreatedAt?.DayOfWeek.ToString(),
+            "holiday_period" => review.CreatedAt.HasValue && context.IsHoliday(DateOnly.FromDateTime(review.CreatedAt.Value)) ? "Holiday" : "Regular",
+            "apartment_id" => review.ApartmentId,
+            "apartment_name" => review.ApartmentId.HasValue ? context.GetApartmentName(review.ApartmentId.Value) : "Unknown",
+            "city" => review.ApartmentId.HasValue ? context.GetApartmentCity(review.ApartmentId.Value) : "Unknown",
+            "guest_nationality" => context.GetGuestNationality(review.ReviewerId),
+            _ => throw new ArgumentException($"Unsupported dimension '{dimensionField}' for reviews.")
+        };
+    }
+
+    private async Task<ReviewDimensionLookupContext> BuildReviewLookupContextAsync(IEnumerable<Review> reviews)
+    {
+        var apartmentIds = reviews.Where(r => r.ApartmentId.HasValue).Select(r => r.ApartmentId!.Value).Distinct().ToList();
+        var reviewerIds = reviews.Select(r => r.ReviewerId).Distinct().ToList();
+
+        var apartments = apartmentIds.Count > 0
+            ? (await _apartmentRepository.FindAsync(a => apartmentIds.Contains(a.ApartmentId))).ToList()
+            : new List<Apartment>();
+
+        var users = reviewerIds.Count > 0
+            ? (await _userRepository.FindAsync(u => reviewerIds.Contains(u.UserId))).ToList()
+            : new List<User>();
+
+        var apartmentNames = apartments
+            .GroupBy(a => a.ApartmentId)
+            .ToDictionary(g => g.Key, g => g.First().Title ?? "Unknown");
+
+        var apartmentCities = apartments
+            .GroupBy(a => a.ApartmentId)
+            .ToDictionary(g => g.Key, g => g.First().City ?? "Unknown");
+
+        var guestNationalities = users
+            .GroupBy(u => u.UserId)
+            .ToDictionary(g => g.Key, g => g.First().Nationality ?? "Unknown");
+
+        var reviewDates = reviews
+            .Where(r => r.CreatedAt.HasValue)
+            .Select(r => DateOnly.FromDateTime(r.CreatedAt!.Value))
+            .Distinct()
+            .ToList();
+
+        var holidayChecks = reviewDates.Select(date => _holidayService.IsHolidayAsync(date)).ToList();
+        var holidayResults = await Task.WhenAll(holidayChecks);
+        var holidayDates = reviewDates
+            .Zip(holidayResults, (date, isHoliday) => (date, isHoliday))
+            .Where(tuple => tuple.isHoliday)
+            .Select(tuple => tuple.date)
+            .ToHashSet();
+
+        return new ReviewDimensionLookupContext(apartmentNames, apartmentCities, guestNationalities, holidayDates);
+    }
+
+    private sealed class ReviewDimensionLookupContext
+    {
+        private readonly IReadOnlyDictionary<Guid, string> _apartmentNames;
+        private readonly IReadOnlyDictionary<Guid, string> _apartmentCities;
+        private readonly IReadOnlyDictionary<Guid, string> _guestNationalities;
+
+        public string GetApartmentName(Guid apartmentId) =>
+            _apartmentNames.TryGetValue(apartmentId, out var name) ? name : apartmentId.ToString();
+
+        public string GetApartmentCity(Guid apartmentId) =>
+            _apartmentCities.TryGetValue(apartmentId, out var city) ? city : "Unknown";
+
+        public string GetGuestNationality(Guid userId) =>
+            _guestNationalities.TryGetValue(userId, out var nationality) ? nationality : "Unknown";
+
+        public bool IsHoliday(DateOnly date) =>
+            _holidayDates.Contains(date);
+
+        private readonly IReadOnlySet<DateOnly> _holidayDates;
+
+        public ReviewDimensionLookupContext(
+            IReadOnlyDictionary<Guid, string> apartmentNames,
+            IReadOnlyDictionary<Guid, string> apartmentCities,
+            IReadOnlyDictionary<Guid, string> guestNationalities,
+            IReadOnlySet<DateOnly> holidayDates)
+        {
+            _apartmentNames = apartmentNames;
+            _apartmentCities = apartmentCities;
+            _guestNationalities = guestNationalities;
+            _holidayDates = holidayDates;
+        }
+    }
+
     private static bool CanUseDbGroupedBookingQuery(
         IReadOnlyList<ReportDimensionRequestDto> dimensions,
         IReadOnlyList<ReportMetricRequestDto> metrics,
@@ -519,25 +814,25 @@ public class ReportExecutionService : IReportExecutionService
         foreach (var dimension in dimensions)
         {
             var field = NormalizeKey(dimension.Field);
-            if (field is not ("date" or "status" or "payment_mode" or "apartment_id" or "apartment_name" or "tenant_id" or "tenant_name" or "nights"))
+            if (field is not ("date" or "status" or "payment_mode" or "apartment_id" or "apartment_name" or "tenant_id" or "tenant_name" or "nights" or "city" or "guest_nationality" or "week" or "month" or "quarter" or "year"))
             {
                 return false;
             }
         }
 
-            foreach (var metric in metrics)
+        foreach (var metric in metrics)
+        {
+            var field = NormalizeKey(metric.Field);
+            if (field is not (
+                "booking_count" or "total_revenue" or "avg_booking_value" or "min_booking_value" or "max_booking_value" or
+                "paid_booking_count" or "unique_tenant_count" or "unique_apartment_count" or "unique_paid_tenant_count" or
+                "avg_length_of_stay" or "package_revenue" or "package_count" or "adr" or "avg_sold_price" or
+                "occupancy_percent" or
+                "review_avg_rating" or "review_count" or "avg_base_price" or "avg_price_delta" or "confirmed_booking_count" or "cancelled_booking_count"))
             {
-                var field = NormalizeKey(metric.Field);
-                if (field is not (
-                    "booking_count" or "total_revenue" or "avg_booking_value" or "min_booking_value" or "max_booking_value" or
-                    "paid_booking_count" or "unique_tenant_count" or "unique_apartment_count" or "unique_paid_tenant_count" or
-                    "avg_length_of_stay" or "package_revenue" or "package_count" or "adr" or "avg_sold_price" or
-                    "occupancy_percent" or
-                    "review_avg_rating" or "review_count" or "avg_base_price" or "avg_price_delta"))
-                {
-                    return false;
-                }
+                return false;
             }
+        }
 
         return true;
     }
@@ -603,6 +898,25 @@ public class ReportExecutionService : IReportExecutionService
         previous.To = currentFrom;
         previous.From = currentFrom - duration;
         return previous;
+    }
+
+    private static Dictionary<string, decimal> CalculateTotalMetrics(IEnumerable<ReportResultRowDto> rows)
+    {
+        var materialized = rows as IReadOnlyCollection<ReportResultRowDto> ?? rows.ToList();
+        var totalMetrics = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        if (materialized.Count == 0)
+        {
+            return totalMetrics;
+        }
+
+        var firstRow = materialized.First();
+        foreach (var metricKey in firstRow.Metrics.Keys)
+        {
+            totalMetrics[metricKey] = materialized.Sum(r => r.Metrics.TryGetValue(metricKey, out var v) ? v : 0m);
+        }
+
+        return totalMetrics;
     }
 
     private static string BuildDimensionKeyFromRow(ReportResultRowDto row)
@@ -837,6 +1151,7 @@ public class ReportExecutionService : IReportExecutionService
 
     private static object? GetDimensionValue(Booking booking, string dimensionField, DimensionLookupContext lookupContext)
     {
+        var date = booking.CreatedAt?.Date;
         return NormalizeKey(dimensionField) switch
         {
             "date" => booking.CreatedAt?.Date,
@@ -847,8 +1162,25 @@ public class ReportExecutionService : IReportExecutionService
             "tenant_id" => booking.TenantId,
             "tenant_name" => lookupContext.GetTenantName(booking.TenantId),
             "nights" => booking.Nights,
+
+            "city" => lookupContext.GetApartmentCity(booking.ApartmentId),
+            "guest_nationality" => lookupContext.GetTenantNationality(booking.TenantId),
+
+            "week" => date.HasValue ? StartOfWeek(date.Value) : null,
+            "month" => date.HasValue ? new DateTime(date.Value.Year, date.Value.Month, 1) : null,
+            "quarter" => date.HasValue ? new DateTime(date.Value.Year, ((date.Value.Month - 1) / 3) * 3 + 1, 1) : null,
+            "year" => date.HasValue ? new DateTime(date.Value.Year, 1, 1) : null,
+            "payment_method" => lookupContext.GetPaymentMethod(booking.BookingId),
+            "day_of_week" => booking.CreatedAt?.DayOfWeek.ToString(),
+            "holiday_period" => booking.CreatedAt.HasValue && lookupContext.IsHoliday(DateOnly.FromDateTime(booking.CreatedAt.Value)) ? "Holiday" : "Regular",
             _ => throw new ArgumentException($"Unsupported dimension field '{dimensionField}'.")
         };
+    }
+
+    private static DateTime StartOfWeek(DateTime dt)
+    {
+        int diff = (7 + (dt.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return dt.AddDays(-diff).Date;
     }
 
     private async Task<DimensionLookupContext> BuildDimensionLookupContextAsync(
@@ -860,6 +1192,12 @@ public class ReportExecutionService : IReportExecutionService
 
         var apartmentNames = new Dictionary<Guid, string>();
         var tenantNames = new Dictionary<Guid, string>();
+
+        var needsCity = dimensions.Any(d => NormalizeKey(d.Field) == "city");
+        var apartmentCities = new Dictionary<Guid, string>();
+
+        var needsNationality = dimensions.Any(d => NormalizeKey(d.Field) == "guest_nationality");
+        var tenantNationalities = new Dictionary<Guid, string>();
 
         if (needsApartmentName)
         {
@@ -889,7 +1227,63 @@ public class ReportExecutionService : IReportExecutionService
             }
         }
 
-        return new DimensionLookupContext(apartmentNames, tenantNames);
+        if (needsCity)
+        {
+            var apartmentIds = filteredBookings.Select(b => b.ApartmentId).Distinct().ToList();
+            if (apartmentIds.Count > 0)
+            {
+                var apartments = await _apartmentRepository.FindAsync(a => apartmentIds.Contains(a.ApartmentId));
+                // Assume Apartment has a City property – adjust to your actual model
+                apartmentCities = apartments
+                    .GroupBy(a => a.ApartmentId)
+                    .ToDictionary(g => g.Key, g => g.First().City ?? "Unknown");
+            }
+        }
+
+        if (needsNationality)
+        {
+            var tenantIds = filteredBookings.Select(b => b.TenantId).Distinct().ToList();
+            if (tenantIds.Count > 0)
+            {
+                var users = await _userRepository.FindAsync(u => tenantIds.Contains(u.UserId));
+                tenantNationalities = users
+                    .GroupBy(u => u.UserId)
+                    .ToDictionary(g => g.Key, g => g.First().Nationality ?? "Unknown");
+            }
+        }
+
+        var needsPaymentMethod = dimensions.Any(d => NormalizeKey(d.Field) == "payment_method");
+        var paymentsByBooking = new Dictionary<Guid, List<Payment>>();
+        if (needsPaymentMethod)
+        {
+            var bookingIds = filteredBookings.Select(b => b.BookingId).Distinct().ToList();
+            if (bookingIds.Count > 0)
+            {
+                // Try to load payments that reference bookings via RelatedEntityId (or equivalent)
+                var payments = (await _paymentRepository.FindAsync(p => bookingIds.Contains(p.RelatedEntityId ?? Guid.Empty))).ToList();
+                paymentsByBooking = payments.GroupBy(p => p.RelatedEntityId ?? Guid.Empty).ToDictionary(g => g.Key, g => g.ToList());
+            }
+        }
+
+        var needsHolidayPeriod = dimensions.Any(d => NormalizeKey(d.Field) == "holiday_period");
+        var holidayDates = new HashSet<DateOnly>();
+        if (needsHolidayPeriod)
+        {
+            var bookingDates = filteredBookings
+                .Where(b => b.CreatedAt.HasValue)
+                .Select(b => DateOnly.FromDateTime(b.CreatedAt!.Value))
+                .Distinct()
+                .ToList();
+
+            var holidayTasks = bookingDates.Select(date => _holidayService.IsHolidayAsync(date)).ToList();
+            var holidayResults = await Task.WhenAll(holidayTasks);
+            for (int i = 0; i < bookingDates.Count; i++)
+            {
+                if (holidayResults[i]) holidayDates.Add(bookingDates[i]);
+            }
+        }
+
+        return new DimensionLookupContext(apartmentNames, tenantNames, apartmentCities, tenantNationalities, paymentsByBooking, holidayDates);
     }
 
     private async Task<AuxiliaryDataContext> BuildAuxiliaryDataContextAsync(
@@ -932,6 +1326,11 @@ public class ReportExecutionService : IReportExecutionService
             ? (await _subscriptionRepository.FindAsync(s => landlordIds.Contains(s.LandlordId))).ToList()
             : new List<LandlordSubscription>();
 
+        var bookingIds = filteredBookings.Select(b => b.BookingId).Distinct().ToList();
+
+        var paymentsByBooking = payments.GroupBy(p => p.RelatedEntityId ?? Guid.Empty)
+                                        .ToDictionary(g => g.Key, g => g.ToList());
+
         var reviewsByApartment = reviews.GroupBy(r => r.ApartmentId ?? Guid.Empty).ToDictionary(g => g.Key, g => g.ToList());
         var packagesByApartment = packages.GroupBy(p => p.ApartmentId).ToDictionary(g => g.Key, g => g.ToList());
         var priceCalendarsByApartment = priceCalendars.GroupBy(pc => pc.ApartmentId).ToDictionary(g => g.Key, g => g.ToList());
@@ -948,7 +1347,8 @@ public class ReportExecutionService : IReportExecutionService
             pricingHistoriesByApartment,
             subscriptionsByLandlord,
             paymentsByLandlord,
-            apartmentsById);
+            apartmentsById,
+            paymentsByBooking);
     }
 
     private async Task<List<Booking>> LoadBookingsAsync(
@@ -1009,7 +1409,8 @@ public class ReportExecutionService : IReportExecutionService
             IReadOnlyDictionary<Guid, List<SmartPricingHistory>> pricingHistoriesByApartment,
             IReadOnlyDictionary<Guid, List<LandlordSubscription>> subscriptionsByLandlord,
             IReadOnlyDictionary<Guid, List<Payment>> paymentsByLandlord,
-            IReadOnlyDictionary<Guid, Apartment> apartmentsById)
+            IReadOnlyDictionary<Guid, Apartment> apartmentsById,
+            IReadOnlyDictionary<Guid, List<Payment>> paymentsByBooking)
         {
             ReviewsByApartment = reviewsByApartment;
             PackagesByApartment = packagesByApartment;
@@ -1019,6 +1420,7 @@ public class ReportExecutionService : IReportExecutionService
             SubscriptionsByLandlord = subscriptionsByLandlord;
             PaymentsByLandlord = paymentsByLandlord;
             ApartmentsById = apartmentsById;
+            PaymentsByBooking = paymentsByBooking;
         }
 
         public IReadOnlyDictionary<Guid, List<Review>> ReviewsByApartment { get; }
@@ -1029,21 +1431,33 @@ public class ReportExecutionService : IReportExecutionService
         public IReadOnlyDictionary<Guid, List<LandlordSubscription>> SubscriptionsByLandlord { get; }
         public IReadOnlyDictionary<Guid, List<Payment>> PaymentsByLandlord { get; }
         public IReadOnlyDictionary<Guid, Apartment> ApartmentsById { get; }
+        public IReadOnlyDictionary<Guid, List<Payment>> PaymentsByBooking { get; }
     }
 
     private sealed class DimensionLookupContext
     {
         private readonly IReadOnlyDictionary<Guid, string> _apartmentNames;
         private readonly IReadOnlyDictionary<Guid, string> _tenantNames;
+        private readonly IReadOnlyDictionary<Guid, string> _apartmentCities;   // new
+        private readonly IReadOnlyDictionary<Guid, string> _tenantNationalities;// new
+        private readonly IReadOnlyDictionary<Guid, List<Payment>> _paymentsByBooking;
+        private readonly IReadOnlySet<DateOnly> _holidayDates;
 
         public DimensionLookupContext(
             IReadOnlyDictionary<Guid, string> apartmentNames,
-            IReadOnlyDictionary<Guid, string> tenantNames)
+            IReadOnlyDictionary<Guid, string> tenantNames,
+            IReadOnlyDictionary<Guid, string> apartmentCities,
+            IReadOnlyDictionary<Guid, string> tenantNationalities,
+            IReadOnlyDictionary<Guid, List<Payment>> paymentsByBooking,
+            IReadOnlySet<DateOnly> holidayDates)
         {
             _apartmentNames = apartmentNames;
             _tenantNames = tenantNames;
+            _apartmentCities = apartmentCities;
+            _tenantNationalities = tenantNationalities;
+            _paymentsByBooking = paymentsByBooking;
+            _holidayDates = holidayDates;
         }
-
         public string GetApartmentName(Guid apartmentId)
         {
             return _apartmentNames.TryGetValue(apartmentId, out var value)
@@ -1056,6 +1470,59 @@ public class ReportExecutionService : IReportExecutionService
             return _tenantNames.TryGetValue(tenantId, out var value)
                 ? value
                 : tenantId.ToString();
+        }
+
+        public string GetApartmentCity(Guid apartmentId) =>
+            _apartmentCities.TryGetValue(apartmentId, out var city) ? city : "Unknown";
+
+        public string GetTenantNationality(Guid tenantId) =>
+            _tenantNationalities.TryGetValue(tenantId, out var nat) ? nat : "Unknown";
+
+        public bool IsHoliday(DateOnly date) => _holidayDates.Contains(date);
+
+        public string GetPaymentMethod(Guid bookingId)
+        {
+            if (_paymentsByBooking != null && _paymentsByBooking.TryGetValue(bookingId, out var payments) && payments.Count > 0)
+            {
+                var first = payments.FirstOrDefault(p => string.Equals(p.Status, "success", StringComparison.OrdinalIgnoreCase));
+                if (first != null && !string.IsNullOrWhiteSpace(first.Method)) return first.Method;
+                if (payments[0] != null && !string.IsNullOrWhiteSpace(payments[0].Method)) return payments[0].Method;
+            }
+
+            return "unknown";
+        }
+    }
+
+    private decimal CalculateReviewMetric(
+    IReadOnlyList<Review> reviews,
+    string metricField,
+    string aggregation)
+    {
+        var normalizedMetric = NormalizeKey(metricField);
+        // aggregation is ignored for most review metrics (they are ratios or counts)
+
+        int total = reviews.Count;
+        if (total == 0) return 0m;
+
+        switch (normalizedMetric)
+        {
+            case "review_count":
+                return total;
+            case "review_avg_rating":
+                return Math.Round((decimal)reviews.Average(r => (double)(r.Rating ?? 0)), 2);
+            case "five_star_review_percent":
+                int fiveStar = reviews.Count(r => r.Rating == 5);
+                return Math.Round((decimal)fiveStar / total * 100m, 2);
+            case "one_star_review_percent":
+                int oneStar = reviews.Count(r => r.Rating == 1);
+                return Math.Round((decimal)oneStar / total * 100m, 2);
+            case "response_rate":
+                int withResponse = reviews.Count(r =>
+                    !string.IsNullOrWhiteSpace(r.CommentEn) ||
+                    !string.IsNullOrWhiteSpace(r.CommentVi));
+                return Math.Round((decimal)withResponse / total * 100m, 2);
+            default:
+                throw new ArgumentException($"Unsupported review metric '{metricField}'.");
         }
     }
 
@@ -1100,255 +1567,366 @@ public class ReportExecutionService : IReportExecutionService
                     .Distinct()
                     .Count();
             case "occupancy_percent":
-            {
-                var bookedNights = totalNights;
-                var totalAvailableRoomNights = 0;
-                var totalDays = (int)(periodToDt - periodFromDt).TotalDays;
-                if (totalDays <= 0) return 0m;
-
-                foreach (var aptId in apartmentIds)
                 {
-                    var blockedDays = 0;
-                    if (auxiliaryContext.AvailabilitiesByApartment.TryGetValue(aptId, out var avails))
-                    {
-                        var blockedDates = new HashSet<DateOnly>();
-                        foreach (var av in avails)
-                        {
-                            var overlapStart = av.StartDate > periodFrom ? av.StartDate : periodFrom;
-                            var overlapEnd = av.EndDate < periodTo ? av.EndDate : periodTo;
-
-                            if (overlapEnd < overlapStart)
-                            {
-                                continue;
-                            }
-
-                            var cursor = overlapStart;
-                            while (cursor <= overlapEnd)
-                            {
-                                blockedDates.Add(cursor);
-                                cursor = cursor.AddDays(1);
-                            }
-                        }
-
-                        blockedDays = blockedDates.Count;
-                    }
-
-                    var availableDays = Math.Max(0, totalDays - blockedDays);
-                    totalAvailableRoomNights += availableDays;
+                    var bookedNights = totalNights;
+                    var totalAvailableRoomNights = CalculateTotalAvailableNights(bookings, auxiliaryContext, periodFrom, periodTo);
+                    return totalAvailableRoomNights == 0
+                        ? 0m
+                        : Math.Min(100m, Math.Round((decimal)bookedNights / totalAvailableRoomNights * 100m, 2));
                 }
-
-                return totalAvailableRoomNights == 0
-                    ? 0m
-                    : Math.Min(100m, Math.Round((decimal)bookedNights / totalAvailableRoomNights * 100m, 2));
-            }
             case "adr":
-            {
-                var nights = totalNights;
-                return nights == 0 ? 0m : Math.Round(totalRevenue / nights, 2, MidpointRounding.AwayFromZero);
-            }
+                {
+                    var nights = totalNights;
+                    return nights == 0 ? 0m : Math.Round(totalRevenue / nights, 2, MidpointRounding.AwayFromZero);
+                }
             case "avg_length_of_stay":
                 return bookings.Count == 0 ? 0m : Math.Round((decimal)bookings.Average(b => b.Nights), 2);
             case "review_avg_rating":
-            {
-                var allReviews = new List<Review>();
-                foreach (var aptId in apartmentIds)
                 {
-                    if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var revs) && revs.Count > 0)
+                    var allReviews = new List<Review>();
+                    foreach (var aptId in apartmentIds)
                     {
-                        allReviews.AddRange(revs.Where(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt));
+                        if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var revs) && revs.Count > 0)
+                        {
+                            allReviews.AddRange(revs.Where(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt));
+                        }
                     }
+                    if (allReviews.Count == 0) return 0m;
+                    var avg = allReviews.Average(r => r.Rating ?? 0);
+                    return Math.Round((decimal)avg, 2);
                 }
-                if (allReviews.Count == 0) return 0m;
-                var avg = allReviews.Average(r => r.Rating ?? 0);
-                return Math.Round((decimal)avg, 2);
-            }
             case "review_count":
-            {
-                var cnt = 0;
-                foreach (var aptId in apartmentIds)
                 {
-                    if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var rr))
+                    var cnt = 0;
+                    foreach (var aptId in apartmentIds)
                     {
-                        cnt += rr.Count(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt);
+                        if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var rr))
+                        {
+                            cnt += rr.Count(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt);
+                        }
                     }
+                    return cnt;
                 }
-                return cnt;
-            }
             case "package_revenue":
                 return bookings.Sum(b => b.PackagePrice ?? 0m);
             case "package_count":
                 return bookings.Count(b => b.PackageId != null);
             case "subscription_active_count":
-            {
-                var landlordSet = new HashSet<Guid>();
-                foreach (var aptId in apartmentIds)
                 {
-                    if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
+                    var landlordSet = new HashSet<Guid>();
+                    foreach (var aptId in apartmentIds)
+                    {
+                        if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
+                    }
+                    var total = 0;
+                    foreach (var landlordId in landlordSet)
+                    {
+                        if (auxiliaryContext.SubscriptionsByLandlord.TryGetValue(landlordId, out var subs)) total += subs.Count;
+                    }
+                    return total;
                 }
-                var total = 0;
-                foreach (var landlordId in landlordSet)
-                {
-                    if (auxiliaryContext.SubscriptionsByLandlord.TryGetValue(landlordId, out var subs)) total += subs.Count;
-                }
-                return total;
-            }
             case "subscription_revenue":
-            {
-                var landlordSet = new HashSet<Guid>();
-                foreach (var aptId in apartmentIds)
                 {
-                    if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
-                }
-
-                decimal total = 0m;
-                foreach (var landlordId in landlordSet)
-                {
-                    if (!auxiliaryContext.PaymentsByLandlord.TryGetValue(landlordId, out var landlordPayments))
+                    var landlordSet = new HashSet<Guid>();
+                    foreach (var aptId in apartmentIds)
                     {
-                        continue;
+                        if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
                     }
 
-                    total += landlordPayments.Count == 0
-                        ? 0m
-                        : landlordPayments
-                            .Where(p =>
-                                string.Equals(p.RelatedEntityType, "host_subscription", StringComparison.OrdinalIgnoreCase) &&
-                                p.PaidAt.HasValue &&
-                                p.PaidAt.Value >= periodFromDt &&
-                                p.PaidAt.Value < periodToDt &&
-                                string.Equals(p.Status, "success", StringComparison.OrdinalIgnoreCase))
-                            .Sum(p => p.Amount);
-                }
-
-                return total;
-            }
-            case "subscription_churn_count":
-            {
-                var landlordSet = new HashSet<Guid>();
-                foreach (var aptId in apartmentIds)
-                {
-                    if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
-                }
-
-                var churnCount = 0;
-                foreach (var landlordId in landlordSet)
-                {
-                    if (!auxiliaryContext.SubscriptionsByLandlord.TryGetValue(landlordId, out var subs))
+                    decimal total = 0m;
+                    foreach (var landlordId in landlordSet)
                     {
-                        continue;
-                    }
-
-                    churnCount += subs.Count(s =>
-                        (string.Equals(s.Status, "expired", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(s.Status, "cancelled", StringComparison.OrdinalIgnoreCase)) &&
-                        s.EndDate >= periodFrom && s.EndDate < periodTo);
-                }
-
-                return churnCount;
-            }
-            case "subscription_churn_rate":
-            {
-                var landlordSet = new HashSet<Guid>();
-                foreach (var aptId in apartmentIds)
-                {
-                    if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
-                }
-
-                var activeBase = 0;
-                var churnCount = 0;
-                foreach (var landlordId in landlordSet)
-                {
-                    if (!auxiliaryContext.SubscriptionsByLandlord.TryGetValue(landlordId, out var subs))
-                    {
-                        continue;
-                    }
-
-                    activeBase += subs.Count(s =>
-                        string.Equals(s.Status, "active", StringComparison.OrdinalIgnoreCase) &&
-                        s.StartDate <= periodFrom &&
-                        (!s.EndDate.HasValue || s.EndDate.Value >= periodFrom));
-
-                    churnCount += subs.Count(s =>
-                        (string.Equals(s.Status, "expired", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(s.Status, "cancelled", StringComparison.OrdinalIgnoreCase)) &&
-                        s.EndDate >= periodFrom && s.EndDate < periodTo);
-                }
-
-                return activeBase == 0 ? 0m : Math.Round((decimal)churnCount / activeBase * 100m, 2);
-            }
-            case "avg_sold_price":
-            {
-                var nights = totalNights;
-                return nights == 0 ? 0m : Math.Round(totalRevenue / nights, 2, MidpointRounding.AwayFromZero);
-            }
-            case "avg_base_price":
-            {
-                // Compute weighted average base price across apartments using booking nights as weight
-                var aptNights = bookings.GroupBy(b => b.ApartmentId).ToDictionary(g => g.Key, g => g.Sum(b => b.Nights));
-                var weightedPrices = new List<(decimal price, int nights)>();
-
-                foreach (var aptId in apartmentIds)
-                {
-                    decimal? aptBase = null;
-                    // smart pricing history
-                    if (auxiliaryContext.PricingHistoriesByApartment.TryGetValue(aptId, out var phs) && phs.Count > 0)
-                    {
-                        var entries = phs.Where(p => p.Date.ToDateTime(TimeOnly.MinValue) >= periodFromDt && p.Date.ToDateTime(TimeOnly.MinValue) < periodToDt).ToList();
-                        if (entries.Count > 0) aptBase = Math.Round(entries.Average(p => p.BasePrice), 2);
-                    }
-
-                    // fallback to price calendar fixed price (use average across overlapping days)
-                    if (!aptBase.HasValue && auxiliaryContext.PriceCalendarsByApartment.TryGetValue(aptId, out var pcs) && pcs.Count > 0)
-                    {
-                        var prices = new List<decimal>();
-                        foreach (var pc in pcs)
+                        if (!auxiliaryContext.PaymentsByLandlord.TryGetValue(landlordId, out var landlordPayments))
                         {
-                            var pcStart = pc.StartDate.ToDateTime(TimeOnly.MinValue);
-                            var pcEndExclusive = pc.EndDate.ToDateTime(TimeOnly.MinValue).AddDays(1);
-                            var overlapStart = pcStart > periodFromDt ? pcStart : periodFromDt;
-                            var overlapEnd = pcEndExclusive < periodToDt ? pcEndExclusive : periodToDt;
-                            var overlapDays = (int)Math.Max(0, (overlapEnd - overlapStart).TotalDays);
-                            if (overlapDays > 0 && pc.FixedPricePerNight.HasValue)
-                            {
-                                for (int i = 0; i < overlapDays; i++) prices.Add(pc.FixedPricePerNight.Value);
-                            }
+                            continue;
                         }
-                        if (prices.Count > 0) aptBase = Math.Round(prices.Average(), 2);
+
+                        total += landlordPayments.Count == 0
+                            ? 0m
+                            : landlordPayments
+                                .Where(p =>
+                                    string.Equals(p.RelatedEntityType, "host_subscription", StringComparison.OrdinalIgnoreCase) &&
+                                    p.PaidAt.HasValue &&
+                                    p.PaidAt.Value >= periodFromDt &&
+                                    p.PaidAt.Value < periodToDt &&
+                                    string.Equals(p.Status, "success", StringComparison.OrdinalIgnoreCase))
+                                .Sum(p => p.Amount);
                     }
 
-                    // final fallback to apartment base price
-                    if (!aptBase.HasValue && auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apartment))
-                    {
-                        aptBase = Math.Round(apartment.BasePricePerNight, 2);
-                    }
-
-                    if (aptBase.HasValue)
-                    {
-                        var nights = aptNights.TryGetValue(aptId, out var n) ? n : 0;
-                        weightedPrices.Add((aptBase.Value, nights));
-                    }
+                    return total;
                 }
-
-                if (weightedPrices.Count == 0) return 0m;
-                var totalNightsWeight = weightedPrices.Sum(w => w.nights);
-                if (totalNightsWeight > 0)
+            case "subscription_churn_count":
                 {
-                    var weightedSum = weightedPrices.Sum(w => w.price * w.nights);
-                    return Math.Round(weightedSum / totalNightsWeight, 2);
-                }
+                    var landlordSet = new HashSet<Guid>();
+                    foreach (var aptId in apartmentIds)
+                    {
+                        if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
+                    }
 
-                // if no nights weighting applicable, return simple average
-                return Math.Round(weightedPrices.Average(w => w.price), 2);
-            }
+                    var churnCount = 0;
+                    foreach (var landlordId in landlordSet)
+                    {
+                        if (!auxiliaryContext.SubscriptionsByLandlord.TryGetValue(landlordId, out var subs))
+                        {
+                            continue;
+                        }
+
+                        churnCount += subs.Count(s =>
+                            (string.Equals(s.Status, "expired", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(s.Status, "cancelled", StringComparison.OrdinalIgnoreCase)) &&
+                            s.EndDate >= periodFrom && s.EndDate < periodTo);
+                    }
+
+                    return churnCount;
+                }
+            case "subscription_churn_rate":
+                {
+                    var landlordSet = new HashSet<Guid>();
+                    foreach (var aptId in apartmentIds)
+                    {
+                        if (auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apt)) landlordSet.Add(apt.LandlordId);
+                    }
+
+                    var activeBase = 0;
+                    var churnCount = 0;
+                    foreach (var landlordId in landlordSet)
+                    {
+                        if (!auxiliaryContext.SubscriptionsByLandlord.TryGetValue(landlordId, out var subs))
+                        {
+                            continue;
+                        }
+
+                        activeBase += subs.Count(s =>
+                            string.Equals(s.Status, "active", StringComparison.OrdinalIgnoreCase) &&
+                            s.StartDate <= periodFrom &&
+                            (!s.EndDate.HasValue || s.EndDate.Value >= periodFrom));
+
+                        churnCount += subs.Count(s =>
+                            (string.Equals(s.Status, "expired", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(s.Status, "cancelled", StringComparison.OrdinalIgnoreCase)) &&
+                            s.EndDate >= periodFrom && s.EndDate < periodTo);
+                    }
+
+                    return activeBase == 0 ? 0m : Math.Round((decimal)churnCount / activeBase * 100m, 2);
+                }
+            case "avg_sold_price":
+                {
+                    var nights = totalNights;
+                    return nights == 0 ? 0m : Math.Round(totalRevenue / nights, 2, MidpointRounding.AwayFromZero);
+                }
+            case "avg_base_price":
+                {
+                    // Compute weighted average base price across apartments using booking nights as weight
+                    var aptNights = bookings.GroupBy(b => b.ApartmentId).ToDictionary(g => g.Key, g => g.Sum(b => b.Nights));
+                    var weightedPrices = new List<(decimal price, int nights)>();
+
+                    foreach (var aptId in apartmentIds)
+                    {
+                        decimal? aptBase = null;
+                        // smart pricing history
+                        if (auxiliaryContext.PricingHistoriesByApartment.TryGetValue(aptId, out var phs) && phs.Count > 0)
+                        {
+                            var entries = phs.Where(p => p.Date.ToDateTime(TimeOnly.MinValue) >= periodFromDt && p.Date.ToDateTime(TimeOnly.MinValue) < periodToDt).ToList();
+                            if (entries.Count > 0) aptBase = Math.Round(entries.Average(p => p.BasePrice), 2);
+                        }
+
+                        // fallback to price calendar fixed price (use average across overlapping days)
+                        if (!aptBase.HasValue && auxiliaryContext.PriceCalendarsByApartment.TryGetValue(aptId, out var pcs) && pcs.Count > 0)
+                        {
+                            var prices = new List<decimal>();
+                            foreach (var pc in pcs)
+                            {
+                                var pcStart = pc.StartDate.ToDateTime(TimeOnly.MinValue);
+                                var pcEndExclusive = pc.EndDate.ToDateTime(TimeOnly.MinValue).AddDays(1);
+                                var overlapStart = pcStart > periodFromDt ? pcStart : periodFromDt;
+                                var overlapEnd = pcEndExclusive < periodToDt ? pcEndExclusive : periodToDt;
+                                var overlapDays = (int)Math.Max(0, (overlapEnd - overlapStart).TotalDays);
+                                if (overlapDays > 0 && pc.FixedPricePerNight.HasValue)
+                                {
+                                    for (int i = 0; i < overlapDays; i++) prices.Add(pc.FixedPricePerNight.Value);
+                                }
+                            }
+                            if (prices.Count > 0) aptBase = Math.Round(prices.Average(), 2);
+                        }
+
+                        // final fallback to apartment base price
+                        if (!aptBase.HasValue && auxiliaryContext.ApartmentsById.TryGetValue(aptId, out var apartment))
+                        {
+                            aptBase = Math.Round(apartment.BasePricePerNight, 2);
+                        }
+
+                        if (aptBase.HasValue)
+                        {
+                            var nights = aptNights.TryGetValue(aptId, out var n) ? n : 0;
+                            weightedPrices.Add((aptBase.Value, nights));
+                        }
+                    }
+
+                    if (weightedPrices.Count == 0) return 0m;
+                    var totalNightsWeight = weightedPrices.Sum(w => w.nights);
+                    if (totalNightsWeight > 0)
+                    {
+                        var weightedSum = weightedPrices.Sum(w => w.price * w.nights);
+                        return Math.Round(weightedSum / totalNightsWeight, 2);
+                    }
+
+                    // if no nights weighting applicable, return simple average
+                    return Math.Round(weightedPrices.Average(w => w.price), 2);
+                }
             case "avg_price_delta":
-            {
-                var avgSold = (decimal)CalculateMetric(bookings, "avg_sold_price", "avg", auxiliaryContext, periodFrom, periodTo);
-                var avgBase = (decimal)CalculateMetric(bookings, "avg_base_price", "avg", auxiliaryContext, periodFrom, periodTo);
-                return Math.Round(avgSold - avgBase, 2);
-            }
+                {
+                    var avgSold = (decimal)CalculateMetric(bookings, "avg_sold_price", "avg", auxiliaryContext, periodFrom, periodTo);
+                    var avgBase = (decimal)CalculateMetric(bookings, "avg_base_price", "avg", auxiliaryContext, periodFrom, periodTo);
+                    return Math.Round(avgSold - avgBase, 2);
+                }
+            case "confirmed_booking_count":
+                return bookings.Count(b => string.Equals(b.Status, "confirmed", StringComparison.OrdinalIgnoreCase));
+            case "cancelled_booking_count":
+                return bookings.Count(b => string.Equals(b.Status, "cancelled", StringComparison.OrdinalIgnoreCase));
+            case "net_revenue":
+                {
+                    var gross = bookings.Sum(b => b.TotalPrice);
+                    var refunds = bookings.Sum(b => GetRefundAmountForBooking(b.BookingId, auxiliaryContext));
+                    return gross - refunds;
+                }
+            case "deposit_collected":
+                return bookings.Sum(b => GetPaymentAmountByType(b.BookingId, auxiliaryContext, "deposit"));
+            case "balance_collected":
+                return bookings.Sum(b => GetPaymentAmountByType(b.BookingId, auxiliaryContext, "balance"));
+            case "refunded_amount":
+                return bookings.Sum(b => GetRefundAmountForBooking(b.BookingId, auxiliaryContext));
+            case "revpar":
+                {
+                    var totalRev = bookings.Sum(b => b.TotalPrice);
+                    var totalAvailableRoomNights = CalculateTotalAvailableNights(bookings, auxiliaryContext, periodFrom, periodTo);
+                    return totalAvailableRoomNights == 0 ? 0m : Math.Round(totalRev / totalAvailableRoomNights, 2);
+                }
+            case "total_booked_nights":
+                return totalNights;
+            case "total_available_nights":
+                return CalculateTotalAvailableNights(bookings, auxiliaryContext, periodFrom, periodTo);
+            case "peak_occupancy_days":
+                {
+                    var dailyBookedNights = new Dictionary<DateOnly, int>();
+                    foreach (var booking in bookings)
+                    {
+                        if (booking.Nights <= 0) continue;
+                        var checkIn = booking.CheckInDate;
+                        for (int i = 0; i < booking.Nights; i++)
+                        {
+                            var day = checkIn.AddDays(i);
+                            if (dailyBookedNights.ContainsKey(day))
+                                dailyBookedNights[day]++;
+                            else
+                                dailyBookedNights[day] = 1;
+                        }
+                    }
+                    return dailyBookedNights.Values.Any() ? dailyBookedNights.Values.Max() : 0;
+                }
+            case "low_occupancy_days":
+                {
+                    var dailyBookedNights = new Dictionary<DateOnly, int>();
+                    foreach (var booking in bookings)
+                    {
+                        if (booking.Nights <= 0) continue;
+                        var checkIn = booking.CheckInDate;
+                        for (int i = 0; i < booking.Nights; i++)
+                        {
+                            var day = checkIn.AddDays(i);
+                            if (dailyBookedNights.ContainsKey(day))
+                                dailyBookedNights[day]++;
+                            else
+                                dailyBookedNights[day] = 1;
+                        }
+                    }
+                    var nonZero = dailyBookedNights.Values.Where(v => v > 0).ToList();
+                    return nonZero.Any() ? nonZero.Min() : 0;
+                }
             default:
                 throw new ArgumentException($"Unsupported metric field '{metricField}'.");
         }
+    }
+    private static decimal GetPaymentAmountByType(Guid bookingId, AuxiliaryDataContext ctx, string paymentType)
+    {
+        if (!ctx.PaymentsByBooking.TryGetValue(bookingId, out var payments))
+            return 0m;
+
+        return payments
+            .Where(p => string.Equals(p.PaymentType, paymentType, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(p.Status, "success", StringComparison.OrdinalIgnoreCase))
+            .Sum(p => p.Amount);
+    }
+
+    private static decimal GetRefundAmountForBooking(Guid bookingId, AuxiliaryDataContext ctx)
+    {
+        if (!ctx.PaymentsByBooking.TryGetValue(bookingId, out var payments))
+            return 0m;
+
+        return payments
+            .Where(p => string.Equals(p.PaymentType, "refund", StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(p.Status, "success", StringComparison.OrdinalIgnoreCase))
+            .Sum(p => p.Amount);
+    }
+    private static bool IsReviewReport(
+    IReadOnlyList<ReportMetricRequestDto> metrics,
+    IReadOnlyList<ReportDimensionRequestDto> dimensions)
+    {
+        // Metrics that are exclusively review-based (they don't depend on bookings)
+        var reviewOnlyMetrics = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "review_avg_rating", "review_count",
+            "five_star_review_percent", "one_star_review_percent",
+            "response_rate"
+        };
+
+        var reviewableDimensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "date", "week", "month", "quarter", "year",
+            "apartment_id", "apartment_name", "city",
+            "guest_nationality", "day_of_week", "holiday_period"
+        };
+
+        return metrics.All(m => reviewOnlyMetrics.Contains(NormalizeKey(m.Field)))
+            && dimensions.All(d => reviewableDimensions.Contains(NormalizeKey(d.Field)));
+    }
+    private static int CalculateTotalAvailableNights(
+        IReadOnlyList<Booking> bookings,
+        AuxiliaryDataContext auxiliaryContext,
+        DateOnly periodFrom,
+        DateOnly periodTo)
+    {
+        var apartmentIds = bookings.Select(b => b.ApartmentId).Distinct().ToList();
+        var totalDays = (int)(periodTo.ToDateTime(TimeOnly.MinValue) - periodFrom.ToDateTime(TimeOnly.MinValue)).TotalDays;
+        if (totalDays <= 0) return 0;
+
+        var totalAvailableRoomNights = 0;
+        foreach (var aptId in apartmentIds)
+        {
+            var blockedDays = 0;
+            if (auxiliaryContext.AvailabilitiesByApartment.TryGetValue(aptId, out var avails))
+            {
+                var blockedDates = new HashSet<DateOnly>();
+                foreach (var av in avails)
+                {
+                    var overlapStart = av.StartDate > periodFrom ? av.StartDate : periodFrom;
+                    var overlapEnd = av.EndDate < periodTo ? av.EndDate : periodTo;
+                    if (overlapEnd < overlapStart) continue;
+
+                    var cursor = overlapStart;
+                    while (cursor <= overlapEnd)
+                    {
+                        blockedDates.Add(cursor);
+                        cursor = cursor.AddDays(1);
+                    }
+                }
+                blockedDays = blockedDates.Count;
+            }
+
+            var availableDays = Math.Max(0, totalDays - blockedDays);
+            totalAvailableRoomNights += availableDays;
+        }
+
+        return totalAvailableRoomNights;
     }
 
     private static decimal Aggregate(IEnumerable<decimal> values, string aggregation)

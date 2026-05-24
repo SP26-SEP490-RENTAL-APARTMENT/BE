@@ -147,6 +147,10 @@ namespace DAL.Repository.Implements
             }
 
             var useDate = dimensions.Any(d => string.Equals(d.Field, "date", StringComparison.OrdinalIgnoreCase));
+            var useWeek = dimensions.Any(d => string.Equals(d.Field, "week", StringComparison.OrdinalIgnoreCase));
+            var useMonth = dimensions.Any(d => string.Equals(d.Field, "month", StringComparison.OrdinalIgnoreCase));
+            var useQuarter = dimensions.Any(d => string.Equals(d.Field, "quarter", StringComparison.OrdinalIgnoreCase));
+            var useYear = dimensions.Any(d => string.Equals(d.Field, "year", StringComparison.OrdinalIgnoreCase));
             var useStatus = dimensions.Any(d => string.Equals(d.Field, "status", StringComparison.OrdinalIgnoreCase));
             var usePaymentMode = dimensions.Any(d => string.Equals(d.Field, "payment_mode", StringComparison.OrdinalIgnoreCase));
             var useApartmentId = dimensions.Any(d => string.Equals(d.Field, "apartment_id", StringComparison.OrdinalIgnoreCase));
@@ -154,25 +158,35 @@ namespace DAL.Repository.Implements
             var useTenantId = dimensions.Any(d => string.Equals(d.Field, "tenant_id", StringComparison.OrdinalIgnoreCase));
             var useTenantName = dimensions.Any(d => string.Equals(d.Field, "tenant_name", StringComparison.OrdinalIgnoreCase));
             var useNights = dimensions.Any(d => string.Equals(d.Field, "nights", StringComparison.OrdinalIgnoreCase));
+            var useCity = dimensions.Any(d => string.Equals(d.Field, "city", StringComparison.OrdinalIgnoreCase));
+            var useGuestNationality = dimensions.Any(d => string.Equals(d.Field, "guest_nationality", StringComparison.OrdinalIgnoreCase));
 
             var groupedQuery = query
                 .Select(b => new
                 {
                     Booking = b,
-                    Key = new BookingReportGroupKey
+                    Key = new BookingReportGroupKeyParts
                     {
                         Date = useDate && b.CreatedAt.HasValue ? b.CreatedAt.Value.Date : null,
+                        Week = useWeek && b.CreatedAt.HasValue ? b.CreatedAt.Value.AddDays(-((int)b.CreatedAt.Value.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7).Date : null,
+                        MonthYear = useMonth && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
+                        MonthMonth = useMonth && b.CreatedAt.HasValue ? b.CreatedAt.Value.Month : null,
+                        QuarterYear = useQuarter && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
+                        QuarterMonth = useQuarter && b.CreatedAt.HasValue ? ((b.CreatedAt.Value.Month - 1) / 3) * 3 + 1 : null,
+                        YearYear = useYear && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
                         Status = useStatus ? b.Status : null,
                         PaymentMode = usePaymentMode ? b.PaymentMode : null,
                         ApartmentId = useApartmentId ? b.ApartmentId : null,
                         ApartmentName = useApartmentName ? b.Apartment.Title : null,
                         TenantId = useTenantId ? b.TenantId : null,
                         TenantName = useTenantName ? b.Tenant.TenantNavigation.FullName : null,
-                        Nights = useNights ? b.Nights : null
+                        Nights = useNights ? b.Nights : null,
+                        City = useCity ? b.Apartment.City : null,
+                        GuestNationality = useGuestNationality ? b.Tenant.TenantNavigation.Nationality : null
                     }
                 })
                 .GroupBy(x => x.Key)
-                .Select(g => new BookingReportAggregateRow
+                .Select(g => new
                 {
                     Key = g.Key,
                     BookingCount = g.Count(),
@@ -181,6 +195,8 @@ namespace DAL.Repository.Implements
                     MinBookingValue = g.Min(x => x.Booking.TotalPrice),
                     MaxBookingValue = g.Max(x => x.Booking.TotalPrice),
                     PaidBookingCount = g.Count(x => x.Booking.Status != null && (x.Booking.Status.ToLower() == "paid" || x.Booking.Status.ToLower() == "completed")),
+                    ConfirmedBookingCount = g.Count(x => x.Booking.Status != null && x.Booking.Status.ToLower() == "confirmed"),
+                    CancelledBookingCount = g.Count(x => x.Booking.Status != null && x.Booking.Status.ToLower() == "cancelled"),
                     UniqueTenantCount = g.Select(x => x.Booking.TenantId).Distinct().Count(),
                     UniqueApartmentCount = g.Select(x => x.Booking.ApartmentId).Distinct().Count(),
                     UniquePaidTenantCount = g.Where(x => x.Booking.Status != null && (x.Booking.Status.ToLower() == "paid" || x.Booking.Status.ToLower() == "completed")).Select(x => x.Booking.TenantId).Distinct().Count(),
@@ -200,10 +216,29 @@ namespace DAL.Repository.Implements
                 .ThenBy(x => x.Key.TenantId)
                 .ThenBy(x => x.Key.Nights);
 
-            var pageItems = await orderedGrouped
+            var groupedPage = await orderedGrouped
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+            var pageItems = groupedPage.Select(item => new BookingReportAggregateRow
+            {
+                Key = BuildBookingReportGroupKey(item.Key),
+                BookingCount = item.BookingCount,
+                TotalRevenue = item.TotalRevenue,
+                AvgBookingValue = item.AvgBookingValue,
+                MinBookingValue = item.MinBookingValue,
+                MaxBookingValue = item.MaxBookingValue,
+                PaidBookingCount = item.PaidBookingCount,
+                ConfirmedBookingCount = item.ConfirmedBookingCount,
+                CancelledBookingCount = item.CancelledBookingCount,
+                UniqueTenantCount = item.UniqueTenantCount,
+                UniqueApartmentCount = item.UniqueApartmentCount,
+                UniquePaidTenantCount = item.UniquePaidTenantCount,
+                AvgLengthOfStay = item.AvgLengthOfStay,
+                PackageRevenue = item.PackageRevenue,
+                PackageCount = item.PackageCount,
+                TotalNights = item.TotalNights
+            }).ToList();
             // Enrich review aggregates for apartments referenced in the page
             var apartmentIds = pageItems
                 .Select(pi => pi.Key.ApartmentId)
@@ -251,6 +286,33 @@ namespace DAL.Repository.Implements
             return (rows, totalCount);
         }
 
+        private static BookingReportGroupKey BuildBookingReportGroupKey(BookingReportGroupKeyParts parts)
+        {
+            return new BookingReportGroupKey
+            {
+                Date = parts.Date,
+                Week = parts.Week,
+                Month = parts.MonthYear.HasValue && parts.MonthMonth.HasValue
+                    ? new DateTime(parts.MonthYear.Value, parts.MonthMonth.Value, 1)
+                    : null,
+                Quarter = parts.QuarterYear.HasValue && parts.QuarterMonth.HasValue
+                    ? new DateTime(parts.QuarterYear.Value, parts.QuarterMonth.Value, 1)
+                    : null,
+                Year = parts.YearYear.HasValue
+                    ? new DateTime(parts.YearYear.Value, 1, 1)
+                    : null,
+                Status = parts.Status,
+                PaymentMode = parts.PaymentMode,
+                ApartmentId = parts.ApartmentId,
+                ApartmentName = parts.ApartmentName,
+                TenantId = parts.TenantId,
+                TenantName = parts.TenantName,
+                Nights = parts.Nights,
+                City = parts.City,
+                GuestNationality = parts.GuestNationality
+            };
+        }
+
         private static ReportResultRowDto BuildReportRow(
             BookingReportAggregateRow aggregateRow,
             IReadOnlyList<ReportDimensionRequestDto> dimensions,
@@ -277,6 +339,10 @@ namespace DAL.Repository.Implements
         {
             return dimensionField.ToLowerInvariant() switch
             {
+                "week" => key.Week,
+                "month" => key.Month,
+                "quarter" => key.Quarter,
+                "year" => key.Year,
                 "date" => key.Date,
                 "status" => key.Status,
                 "payment_mode" => key.PaymentMode,
@@ -285,6 +351,8 @@ namespace DAL.Repository.Implements
                 "tenant_id" => key.TenantId,
                 "tenant_name" => key.TenantName,
                 "nights" => key.Nights,
+                "city" => key.City,
+                "guest_nationality" => key.GuestNationality,
                 _ => null
             };
         }
@@ -321,6 +389,8 @@ namespace DAL.Repository.Implements
                 "avg_base_price" => row.AvgBasePrice,
                 "avg_price_delta" => row.AvgPriceDelta,
                 "occupancy_percent" => row.OccupancyPercent,
+                "confirmed_booking_count" => row.ConfirmedBookingCount,
+                "cancelled_booking_count" => row.CancelledBookingCount,
                 _ => 0m
             };
         }
@@ -397,6 +467,10 @@ namespace DAL.Repository.Implements
             IReadOnlyList<ReportDimensionRequestDto> dimensions)
         {
             var useDate = dimensions.Any(d => string.Equals(d.Field, "date", StringComparison.OrdinalIgnoreCase));
+            var useWeek = dimensions.Any(d => string.Equals(d.Field, "week", StringComparison.OrdinalIgnoreCase));
+            var useMonth = dimensions.Any(d => string.Equals(d.Field, "month", StringComparison.OrdinalIgnoreCase));
+            var useQuarter = dimensions.Any(d => string.Equals(d.Field, "quarter", StringComparison.OrdinalIgnoreCase));
+            var useYear = dimensions.Any(d => string.Equals(d.Field, "year", StringComparison.OrdinalIgnoreCase));
             var useStatus = dimensions.Any(d => string.Equals(d.Field, "status", StringComparison.OrdinalIgnoreCase));
             var usePaymentMode = dimensions.Any(d => string.Equals(d.Field, "payment_mode", StringComparison.OrdinalIgnoreCase));
             var useApartmentId = dimensions.Any(d => string.Equals(d.Field, "apartment_id", StringComparison.OrdinalIgnoreCase));
@@ -404,22 +478,32 @@ namespace DAL.Repository.Implements
             var useTenantId = dimensions.Any(d => string.Equals(d.Field, "tenant_id", StringComparison.OrdinalIgnoreCase));
             var useTenantName = dimensions.Any(d => string.Equals(d.Field, "tenant_name", StringComparison.OrdinalIgnoreCase));
             var useNights = dimensions.Any(d => string.Equals(d.Field, "nights", StringComparison.OrdinalIgnoreCase));
+            var useCity = dimensions.Any(d => string.Equals(d.Field, "city", StringComparison.OrdinalIgnoreCase));
+            var useGuestNationality = dimensions.Any(d => string.Equals(d.Field, "guest_nationality", StringComparison.OrdinalIgnoreCase));
 
-            return await _context.Bookings
+            var rows = await _context.Bookings
                 .AsNoTracking()
                 .Where(b => b.CreatedAt.HasValue && b.CreatedAt.Value >= fromInclusive && b.CreatedAt.Value < toExclusive)
-                .Select(b => new GroupApartmentNightRow
+                .Select(b => new
                 {
-                    Key = new BookingReportGroupKey
+                    Key = new BookingReportGroupKeyParts
                     {
                         Date = useDate && b.CreatedAt.HasValue ? b.CreatedAt.Value.Date : null,
+                        Week = useWeek && b.CreatedAt.HasValue ? b.CreatedAt.Value.AddDays(-((int)b.CreatedAt.Value.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7).Date : null,
+                        MonthYear = useMonth && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
+                        MonthMonth = useMonth && b.CreatedAt.HasValue ? b.CreatedAt.Value.Month : null,
+                        QuarterYear = useQuarter && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
+                        QuarterMonth = useQuarter && b.CreatedAt.HasValue ? ((b.CreatedAt.Value.Month - 1) / 3) * 3 + 1 : null,
+                        YearYear = useYear && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
                         Status = useStatus ? b.Status : null,
                         PaymentMode = usePaymentMode ? b.PaymentMode : null,
                         ApartmentId = useApartmentId ? b.ApartmentId : null,
                         ApartmentName = useApartmentName ? b.Apartment.Title : null,
                         TenantId = useTenantId ? b.TenantId : null,
                         TenantName = useTenantName ? b.Tenant.TenantNavigation.FullName : null,
-                        Nights = useNights ? b.Nights : null
+                        Nights = useNights ? b.Nights : null,
+                        City = useCity ? b.Apartment.City : null,
+                        GuestNationality = useGuestNationality ? b.Tenant.TenantNavigation.Nationality : null
                     },
                     ApartmentId = b.ApartmentId,
                     Nights = b.Nights
@@ -427,6 +511,12 @@ namespace DAL.Repository.Implements
                 .GroupBy(x => new
                 {
                     x.Key.Date,
+                    x.Key.Week,
+                    x.Key.MonthYear,
+                    x.Key.MonthMonth,
+                    x.Key.QuarterYear,
+                    x.Key.QuarterMonth,
+                    x.Key.YearYear,
                     x.Key.Status,
                     x.Key.PaymentMode,
                     DimensionApartmentId = x.Key.ApartmentId,
@@ -434,25 +524,44 @@ namespace DAL.Repository.Implements
                     x.Key.TenantId,
                     x.Key.TenantName,
                     x.Key.Nights,
+                    x.Key.City,
+                    x.Key.GuestNationality,
                     BookingApartmentId = x.ApartmentId
                 })
-                .Select(g => new GroupApartmentNightRow
+                .Select(g => new
                 {
-                    Key = new BookingReportGroupKey
-                    {
-                        Date = g.Key.Date,
-                        Status = g.Key.Status,
-                        PaymentMode = g.Key.PaymentMode,
-                        ApartmentId = g.Key.DimensionApartmentId,
-                        ApartmentName = g.Key.ApartmentName,
-                        TenantId = g.Key.TenantId,
-                        TenantName = g.Key.TenantName,
-                        Nights = g.Key.Nights
-                    },
+                    Key = g.Key,
                     ApartmentId = g.Key.BookingApartmentId,
                     Nights = g.Sum(x => x.Nights)
                 })
                 .ToListAsync();
+
+            return rows
+                .Select(row => new GroupApartmentNightRow
+                {
+                    Key = BuildBookingReportGroupKey(new BookingReportGroupKeyParts
+                    {
+                        Date = row.Key.Date,
+                        Week = row.Key.Week,
+                        MonthYear = row.Key.MonthYear,
+                        MonthMonth = row.Key.MonthMonth,
+                        QuarterYear = row.Key.QuarterYear,
+                        QuarterMonth = row.Key.QuarterMonth,
+                        YearYear = row.Key.YearYear,
+                        Status = row.Key.Status,
+                        PaymentMode = row.Key.PaymentMode,
+                        ApartmentId = row.Key.DimensionApartmentId,
+                        ApartmentName = row.Key.ApartmentName,
+                        TenantId = row.Key.TenantId,
+                        TenantName = row.Key.TenantName,
+                        Nights = row.Key.Nights,
+                        City = row.Key.City,
+                        GuestNationality = row.Key.GuestNationality
+                    }),
+                    ApartmentId = row.ApartmentId,
+                    Nights = row.Nights
+                })
+                .ToList();
         }
 
         private async Task<Dictionary<Guid, decimal>> QueryEffectiveBasePriceByApartmentAsync(
@@ -631,6 +740,10 @@ namespace DAL.Repository.Implements
             IReadOnlyList<ReportDimensionRequestDto> dimensions)
         {
             var useDate = dimensions.Any(d => string.Equals(d.Field, "date", StringComparison.OrdinalIgnoreCase));
+            var useWeek = dimensions.Any(d => string.Equals(d.Field, "week", StringComparison.OrdinalIgnoreCase));
+            var useMonth = dimensions.Any(d => string.Equals(d.Field, "month", StringComparison.OrdinalIgnoreCase));
+            var useQuarter = dimensions.Any(d => string.Equals(d.Field, "quarter", StringComparison.OrdinalIgnoreCase));
+            var useYear = dimensions.Any(d => string.Equals(d.Field, "year", StringComparison.OrdinalIgnoreCase));
             var useStatus = dimensions.Any(d => string.Equals(d.Field, "status", StringComparison.OrdinalIgnoreCase));
             var usePaymentMode = dimensions.Any(d => string.Equals(d.Field, "payment_mode", StringComparison.OrdinalIgnoreCase));
             var useApartmentId = dimensions.Any(d => string.Equals(d.Field, "apartment_id", StringComparison.OrdinalIgnoreCase));
@@ -638,28 +751,44 @@ namespace DAL.Repository.Implements
             var useTenantId = dimensions.Any(d => string.Equals(d.Field, "tenant_id", StringComparison.OrdinalIgnoreCase));
             var useTenantName = dimensions.Any(d => string.Equals(d.Field, "tenant_name", StringComparison.OrdinalIgnoreCase));
             var useNights = dimensions.Any(d => string.Equals(d.Field, "nights", StringComparison.OrdinalIgnoreCase));
+            var useCity = dimensions.Any(d => string.Equals(d.Field, "city", StringComparison.OrdinalIgnoreCase));
+            var useGuestNationality = dimensions.Any(d => string.Equals(d.Field, "guest_nationality", StringComparison.OrdinalIgnoreCase));
 
             var rows = await _context.Bookings
                 .AsNoTracking()
                 .Where(b => b.CreatedAt.HasValue && b.CreatedAt.Value >= fromInclusive && b.CreatedAt.Value < toExclusive)
                 .Select(b => new
                 {
-                    Key = new BookingReportGroupKey
+                    Key = new BookingReportGroupKeyParts
                     {
                         Date = useDate && b.CreatedAt.HasValue ? b.CreatedAt.Value.Date : null,
+                        Week = useWeek && b.CreatedAt.HasValue ? b.CreatedAt.Value.AddDays(-((int)b.CreatedAt.Value.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7).Date : null,
+                        MonthYear = useMonth && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
+                        MonthMonth = useMonth && b.CreatedAt.HasValue ? b.CreatedAt.Value.Month : null,
+                        QuarterYear = useQuarter && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
+                        QuarterMonth = useQuarter && b.CreatedAt.HasValue ? ((b.CreatedAt.Value.Month - 1) / 3) * 3 + 1 : null,
+                        YearYear = useYear && b.CreatedAt.HasValue ? b.CreatedAt.Value.Year : null,
                         Status = useStatus ? b.Status : null,
                         PaymentMode = usePaymentMode ? b.PaymentMode : null,
                         ApartmentId = useApartmentId ? b.ApartmentId : null,
                         ApartmentName = useApartmentName ? b.Apartment.Title : null,
                         TenantId = useTenantId ? b.TenantId : null,
                         TenantName = useTenantName ? b.Tenant.TenantNavigation.FullName : null,
-                        Nights = useNights ? b.Nights : null
+                        Nights = useNights ? b.Nights : null,
+                        City = useCity ? b.Apartment.City : null,
+                        GuestNationality = useGuestNationality ? b.Tenant.TenantNavigation.Nationality : null
                     },
                     b.ApartmentId
                 })
                 .GroupBy(x => new
                 {
                     x.Key.Date,
+                    x.Key.Week,
+                    x.Key.MonthYear,
+                    x.Key.MonthMonth,
+                    x.Key.QuarterYear,
+                    x.Key.QuarterMonth,
+                    x.Key.YearYear,
                     x.Key.Status,
                     x.Key.PaymentMode,
                     DimensionApartmentId = x.Key.ApartmentId,
@@ -667,26 +796,41 @@ namespace DAL.Repository.Implements
                     x.Key.TenantId,
                     x.Key.TenantName,
                     x.Key.Nights,
+                    x.Key.City,
+                    x.Key.GuestNationality,
                     x.ApartmentId
                 })
                 .Select(g => new
                 {
-                    Key = new BookingReportGroupKey
-                    {
-                        Date = g.Key.Date,
-                        Status = g.Key.Status,
-                        PaymentMode = g.Key.PaymentMode,
-                        ApartmentId = g.Key.DimensionApartmentId,
-                        ApartmentName = g.Key.ApartmentName,
-                        TenantId = g.Key.TenantId,
-                        TenantName = g.Key.TenantName,
-                        Nights = g.Key.Nights
-                    },
+                    Key = g.Key,
                     g.Key.ApartmentId
                 })
                 .ToListAsync();
 
             return rows
+                .Select(row => new
+                {
+                    Key = BuildBookingReportGroupKey(new BookingReportGroupKeyParts
+                    {
+                        Date = row.Key.Date,
+                        Week = row.Key.Week,
+                        MonthYear = row.Key.MonthYear,
+                        MonthMonth = row.Key.MonthMonth,
+                        QuarterYear = row.Key.QuarterYear,
+                        QuarterMonth = row.Key.QuarterMonth,
+                        YearYear = row.Key.YearYear,
+                        Status = row.Key.Status,
+                        PaymentMode = row.Key.PaymentMode,
+                        ApartmentId = row.Key.DimensionApartmentId,
+                        ApartmentName = row.Key.ApartmentName,
+                        TenantId = row.Key.TenantId,
+                        TenantName = row.Key.TenantName,
+                        Nights = row.Key.Nights,
+                        City = row.Key.City,
+                        GuestNationality = row.Key.GuestNationality
+                    }),
+                    row.ApartmentId
+                })
                 .GroupBy(r => BuildGroupKey(r.Key))
                 .ToDictionary(
                     g => g.Key,
@@ -762,7 +906,7 @@ WITH RECURSIVE dates AS (
         FROM dates
         WHERE d < DATE_SUB(DATE({periodEnd}), INTERVAL 1 DAY)
 )
-SELECT COUNT(DISTINCT d.d)
+SELECT COUNT(DISTINCT d.d) AS Value
 FROM apartment_availability aa
 JOIN dates d ON d.d BETWEEN aa.start_date AND aa.end_date
 WHERE aa.apartment_id = {apartmentId}
@@ -781,13 +925,19 @@ WHERE aa.apartment_id = {apartmentId}
             return string.Join("|", new object?[]
             {
                 key.Date,
+                key.Week,
+                key.Month,
+                key.Quarter,
+                key.Year,
                 key.Status,
                 key.PaymentMode,
                 key.ApartmentId,
                 key.ApartmentName,
                 key.TenantId,
                 key.TenantName,
-                key.Nights
+                key.Nights,
+                key.City,
+                key.GuestNationality
             }.Select(value => value?.ToString() ?? "null"));
         }
 
@@ -799,6 +949,10 @@ WHERE aa.apartment_id = {apartmentId}
         private sealed record BookingReportGroupKey
         {
             public DateTime? Date { get; init; }
+            public DateTime? Week { get; init; }
+            public DateTime? Month { get; init; }
+            public DateTime? Quarter { get; init; }
+            public DateTime? Year { get; init; }
             public string? Status { get; init; }
             public string? PaymentMode { get; init; }
             public Guid? ApartmentId { get; init; }
@@ -806,6 +960,28 @@ WHERE aa.apartment_id = {apartmentId}
             public Guid? TenantId { get; init; }
             public string? TenantName { get; init; }
             public int? Nights { get; init; }
+            public string? City { get; init; }
+            public string? GuestNationality { get; init; }
+        }
+
+        private sealed record BookingReportGroupKeyParts
+        {
+            public DateTime? Date { get; init; }
+            public DateTime? Week { get; init; }
+            public int? MonthYear { get; init; }
+            public int? MonthMonth { get; init; }
+            public int? QuarterYear { get; init; }
+            public int? QuarterMonth { get; init; }
+            public int? YearYear { get; init; }
+            public string? Status { get; init; }
+            public string? PaymentMode { get; init; }
+            public Guid? ApartmentId { get; init; }
+            public string? ApartmentName { get; init; }
+            public Guid? TenantId { get; init; }
+            public string? TenantName { get; init; }
+            public int? Nights { get; init; }
+            public string? City { get; init; }
+            public string? GuestNationality { get; init; }
         }
 
         private sealed class BookingReportAggregateRow
@@ -817,6 +993,8 @@ WHERE aa.apartment_id = {apartmentId}
             public decimal MinBookingValue { get; init; }
             public decimal MaxBookingValue { get; init; }
             public int PaidBookingCount { get; init; }
+            public int ConfirmedBookingCount { get; init; }
+            public int CancelledBookingCount { get; init; }
             public int UniqueTenantCount { get; init; }
             public int UniqueApartmentCount { get; init; }
             public int UniquePaidTenantCount { get; init; }

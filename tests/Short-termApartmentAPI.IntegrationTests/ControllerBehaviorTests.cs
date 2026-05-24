@@ -1153,6 +1153,11 @@ internal sealed class PaymentServiceStub : BaseServiceStub<Payment>, IPaymentSer
     public List<Payment> TenantPayments { get; set; } = new();
     public Dictionary<Guid, Payment> PaymentsById { get; } = new();
 
+    public Task<decimal> GetLandlordRevenueTotalAsync(Guid landlordId, DateTime? fromDate = null, DateTime? toDate = null)
+        => Task.FromResult(LandlordPayments
+            .Where(payment => payment.RelatedEntityType == "booking" && (payment.Status == "success" || payment.Status == "completed"))
+            .Sum(payment => payment.LandlordAmount));
+
     public override Task<Payment?> GetByIdAsync(Guid id)
         => Task.FromResult(PaymentsById.TryGetValue(id, out var payment) ? payment : null);
 
