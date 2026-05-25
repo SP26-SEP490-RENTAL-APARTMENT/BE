@@ -55,18 +55,19 @@ namespace BLL.Services.Implements
             var occupants = GetNormalizedOccupants(details);
             var isVietnameseTemplate = string.Equals(details.TenantNationality, "VN", StringComparison.OrdinalIgnoreCase);
 
-            if (isVietnameseTemplate && occupants.Count > 1)
+            if (occupants.Count > 1)
             {
-                var zipBytes = BuildVietnameseOccupantZip(details, occupants);
+                var zipBytes = BuildOccupantZip(details, occupants, isVietnameseTemplate);
                 return Task.FromResult(zipBytes);
             }
 
             var primaryDetails = CreateDetailsForOccupant(details, occupants[0]);
-            var docxBytes = GenerateSingleDocx(primaryDetails, isVietnameseTemplate ? null : occupants, isVietnameseTemplate);
+            // For single-occupant file we pass null for `occupants` so placeholders in the template are used.
+            var docxBytes = GenerateSingleDocx(primaryDetails, null, isVietnameseTemplate);
             return Task.FromResult(docxBytes);
         }
 
-        private static byte[] BuildVietnameseOccupantZip(TemporaryResidenceReportDetailsDto baseDetails, IReadOnlyList<ResidenceReportOccupantDto> occupants)
+        private static byte[] BuildOccupantZip(TemporaryResidenceReportDetailsDto baseDetails, IReadOnlyList<ResidenceReportOccupantDto> occupants, bool isVietnameseTemplate)
         {
             using var zipStream = new MemoryStream();
             using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
@@ -74,7 +75,7 @@ namespace BLL.Services.Implements
                 foreach (var occupant in occupants)
                 {
                     var occupantDetails = CreateDetailsForOccupant(baseDetails, occupant);
-                    var docxBytes = GenerateSingleDocx(occupantDetails, null, isVietnameseTemplate: true);
+                    var docxBytes = GenerateSingleDocx(occupantDetails, null, isVietnameseTemplate: isVietnameseTemplate);
                     var entryName = $"residence-report-{baseDetails.BookingId}-occupant-{occupant.Order:00}.docx";
                     var entry = archive.CreateEntry(entryName, CompressionLevel.Optimal);
                     using var entryStream = entry.Open();
@@ -232,7 +233,7 @@ namespace BLL.Services.Implements
         {
             var reportDate = details.ReportDate ?? DateOnly.FromDateTime(DateTime.Now);
             var tenantDobValue = FormatDate(details.TenantDateOfBirth);
-            var tenantSex = isVietnameseTemplate ? ConvertSexToVietnamese(details.TenantSex) : details.TenantSex;
+            var tenantSex = ConvertSexToVietnamese(details.TenantSex);
 
             return new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -338,7 +339,7 @@ namespace BLL.Services.Implements
                 return;
             }
 
-            var occupantSex = isVietnameseTemplate ? ConvertSexToVietnamese(occupant.Sex) : occupant.Sex;
+            var occupantSex = ConvertSexToVietnamese(occupant.Sex);
 
             SetCell(cells, 0, occupant.Order.ToString("00"));
             SetCell(cells, 1, occupant.FullName ?? string.Empty);

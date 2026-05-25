@@ -191,6 +191,7 @@ public class BookingResponseDto
     public bool? DepositPaid { get; set; }
     public string? PaymentMode { get; set; }
     public DateOnly BalanceDueDate { get; set; }
+    public bool IsRefundable { get; set; }
     public string? Status { get; set; }
     public DateTime? CreatedAt { get; set; }
 }

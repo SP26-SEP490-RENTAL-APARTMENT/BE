@@ -116,7 +116,46 @@ public class BookingService : BaseService<Booking>, IBookingService
         var response = _mapper.Map<BookingResponseDto>(booking);
         response.Images = await GetApartmentImageUrlsAsync(booking.ApartmentId);
         response.TicketId = await ResolveBookingSupportTicketIdAsync(booking.BookingId, booking.TenantId);
+        response.IsRefundable = await IsBookingRefundableForTenantAsync(booking);
         return response;
+    }
+
+    private async Task<bool> IsBookingRefundableForTenantAsync(Booking booking)
+    {
+        if (booking == null) return false;
+
+        // Already finalised -> not refundable
+        if (string.Equals(booking.Status, "completed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(booking.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // If a successful refund already exists -> not refundable
+        if (await HasSuccessfulBookingRefundAsync(booking.BookingId))
+        {
+            return false;
+        }
+
+        // Ensure there is at least one original paid payment to refund
+        var paidPayments = (await _paymentRepository.FindAsync(p =>
+            p.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+            && p.RelatedEntityId == booking.BookingId
+            && p.Status == PaymentStatus.success.ToString()
+            && p.PaymentType != PaymentTypes.refund.ToString())).ToList();
+
+        if (!paidPayments.Any())
+        {
+            return false;
+        }
+
+        // Need booking check-time to compute hours until check-in
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        var now = Common.Utils.VietnamTime.Now;
+        var hoursUntilCheckIn = (checkTime.ScheduledCheckIn - now).TotalHours;
+
+        // Tenant requests must be >= 24 hours before check-in
+        return hoursUntilCheckIn >= 24;
     }
 
     private async Task<List<string>> GetApartmentImageUrlsAsync(Guid apartmentId)

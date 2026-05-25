@@ -909,14 +909,12 @@ namespace Short_termApartmentAPI.Controllers
             {
                 var details = await _bookingService.GetResidenceReportDetailsAsync(id, landlordUserId);
                 var docxBytes = await _residenceReportDocxGenerator.GenerateAsync(details);
-                var isVietnamese = string.Equals(details.TenantNationality, "VN", StringComparison.OrdinalIgnoreCase);
                 var hasMultipleOccupants = (details.Occupants?.Count ?? 0) > 1;
-                if (isVietnamese && hasMultipleOccupants)
+                if (hasMultipleOccupants)
                 {
                     var zipName = $"residence-report-{id}.zip";
                     return File(docxBytes, "application/zip", zipName);
                 }
-
                 var fileName = $"residence-report-{id}.docx";
                 return File(docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", fileName);
             }
