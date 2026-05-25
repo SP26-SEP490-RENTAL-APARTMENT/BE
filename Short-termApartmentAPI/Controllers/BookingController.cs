@@ -107,7 +107,12 @@ namespace Short_termApartmentAPI.Controllers
             [FromQuery] Dictionary<string, string>? filters = null)
         {
             var (items, totalCount) = await _bookingService.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters);
-            var mappedItems = await Task.WhenAll(items.Select(_bookingService.MapBookingResponseAsync));
+            var mappedItems = new List<BookingResponseDto>();
+            foreach (var item in items)
+            {
+                mappedItems.Add(await _bookingService.MapBookingResponseAsync(item));
+            }
+
             return Ok(new { Items = mappedItems, TotalCount = totalCount });
         }
 
