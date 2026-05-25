@@ -543,6 +543,17 @@ public class ReportExportService : IReportExportService
             sanitized = "report";
         }
 
+        // If the run request includes an explicit date range, use it as a filename preset
+        var runFrom = request.RunRequest?.From;
+        var runTo = request.RunRequest?.To;
+        if (runFrom.HasValue || runTo.HasValue)
+        {
+            var fromPart = runFrom.HasValue ? runFrom.Value.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture) : "from-unknown";
+            var toPart = runTo.HasValue ? runTo.Value.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture) : "to-unknown";
+            return $"{sanitized}_{fromPart}-{toPart}.{extension}";
+        }
+
+        // Fallback to timestamped filename
         return $"{sanitized}_{Common.Utils.VietnamTime.Now:yyyyMMddHHmmss}.{extension}";
     }
 

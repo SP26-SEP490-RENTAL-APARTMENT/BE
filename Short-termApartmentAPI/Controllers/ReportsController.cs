@@ -23,19 +23,22 @@ public sealed class ReportsController : ControllerBase
     private readonly IReportExportService _reportExportService;
     private readonly IAdminAnalyticsService _adminAnalyticsService;
     private readonly IMapper _mapper;
+    private readonly DAL.Data.AppDbContext _dbContext;
 
     public ReportsController(
         IRepository<ReportDefinition> reportDefinitionRepository,
         IReportExecutionService reportExecutionService,
         IReportExportService reportExportService,
         IAdminAnalyticsService adminAnalyticsService,
-        IMapper mapper)
+        IMapper mapper,
+        DAL.Data.AppDbContext dbContext)
     {
         _reportDefinitionRepository = reportDefinitionRepository;
         _reportExecutionService = reportExecutionService;
         _reportExportService = reportExportService;
         _adminAnalyticsService = adminAnalyticsService;
         _mapper = mapper;
+        _dbContext = dbContext;
     }
 
     [HttpGet("catalog")]
@@ -123,6 +126,26 @@ public sealed class ReportsController : ControllerBase
 
         var schema = ReportExecutionService.GetDefaultSchema();
         return Ok(new ApiResponse<ReportSchemaDto>(schema));
+    }
+
+    [HttpGet("{id:guid}/config")]
+    public async Task<IActionResult> GetConfig(Guid id)
+    {
+        var config = await _dbContext.Set<DAL.Models.ReportQueryConfig>().FindAsync(id);
+        if (config == null)
+        {
+            return NotFound(new ApiResponse<string>("Report config not found."));
+        }
+
+        var dto = new ReportQueryConfigResponseDto
+        {
+            DimensionsJson = config.DimensionsJson,
+            MetricsJson = config.MetricsJson,
+            FiltersJson = config.FiltersJson,
+            TimeRangeJson = config.TimeRangeJson
+        };
+
+        return Ok(new ApiResponse<ReportQueryConfigResponseDto>(dto));
     }
 
     [HttpPost("{id:guid}/compare")]

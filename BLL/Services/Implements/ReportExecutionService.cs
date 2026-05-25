@@ -304,25 +304,43 @@ public class ReportExecutionService : IReportExecutionService
             var groupedFrom = request.From ?? Common.Utils.VietnamTime.Now.AddDays(-30);
             var groupedTo = request.To ?? Common.Utils.VietnamTime.Now;
 
-            var (rows, groupedTotalCount) = await _bookingRepository.GetPagedGroupedReportRowsAsync(
-                groupedFrom,
-                groupedTo.AddDays(1),
-                dimensions,
-                metrics,
-                request.SearchTerm,
-                page,
-                pageSize,
-                landlordId);
+            var groupedPage = 1;
+            var groupedPageSize = 5000;
+            var materializedRows = new List<ReportResultRowDto>();
+            int groupedTotalCount;
 
-            var materializedRows = rows.ToList();
+            do
+            {
+                var (rows, count) = await _bookingRepository.GetPagedGroupedReportRowsAsync(
+                    groupedFrom,
+                    groupedTo.AddDays(1),
+                    dimensions,
+                    metrics,
+                    searchTerm: null,
+                    groupedPage,
+                    groupedPageSize,
+                    landlordId);
+
+                groupedTotalCount = count;
+                materializedRows.AddRange(rows);
+                groupedPage++;
+            }
+            while (materializedRows.Count < groupedTotalCount);
+
+            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+            {
+                materializedRows = materializedRows
+                    .Where(r => MatchesSearchTerm(r, request.SearchTerm))
+                    .ToList();
+            }
 
             return new ReportResultPageDto
             {
                 ReportId = reportId,
                 Name = definition.Name,
-                Rows = materializedRows,
+                Rows = materializedRows.Skip(Math.Max(0, (page - 1) * pageSize)).Take(pageSize).ToList(),
                 TotalMetrics = CalculateTotalMetrics(materializedRows),
-                TotalCount = groupedTotalCount,
+                TotalCount = materializedRows.Count,
                 Page = page,
                 PageSize = pageSize
             };
@@ -924,6 +942,18 @@ public class ReportExecutionService : IReportExecutionService
         return string.Join("|", row.Dimensions
             .OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase)
             .Select(k => $"{NormalizeKey(k.Key)}:{k.Value}"));
+    }
+
+    private static bool MatchesSearchTerm(ReportResultRowDto row, string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return true;
+        }
+
+        return row.Dimensions.Values.Any(v =>
+            string.Equals(v?.ToString(), searchTerm, StringComparison.OrdinalIgnoreCase)
+            || (v?.ToString()?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
     }
 
     public static ReportSchemaDto GetDefaultSchema()

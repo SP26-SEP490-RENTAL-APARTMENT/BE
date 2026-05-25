@@ -91,6 +91,14 @@ public class ReportSchemaDto
     public IReadOnlyList<string> Operators { get; set; } = Array.Empty<string>();
 }
 
+public class ReportQueryConfigResponseDto
+{
+    public string? DimensionsJson { get; set; }
+    public string? MetricsJson { get; set; }
+    public string? FiltersJson { get; set; }
+    public string? TimeRangeJson { get; set; }
+}
+
 public class ReportResultRowDto
 {
     public Dictionary<string, object?> Dimensions { get; set; } = new();

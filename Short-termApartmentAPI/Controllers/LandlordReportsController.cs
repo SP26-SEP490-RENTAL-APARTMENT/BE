@@ -1,5 +1,6 @@
 using BLL.Services.Implements;
 using BLL.Services.Interfaces;
+using DAL.Data;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
@@ -30,17 +31,20 @@ public sealed class LandlordReportsController : ControllerBase
     private readonly IReportExecutionService _reportExecutionService;
     private readonly IReportExportService _reportExportService;
     private readonly ILandlordService _landlordService;
+    private readonly AppDbContext _dbContext;
 
     public LandlordReportsController(
         IRepository<ReportDefinition> reportDefinitionRepository,
         IReportExecutionService reportExecutionService,
         IReportExportService reportExportService,
-        ILandlordService landlordService)
+        ILandlordService landlordService,
+        AppDbContext dbContext)
     {
         _reportDefinitionRepository = reportDefinitionRepository;
         _reportExecutionService = reportExecutionService;
         _reportExportService = reportExportService;
         _landlordService = landlordService;
+        _dbContext = dbContext;
     }
 
     [HttpGet("catalog")]
@@ -75,6 +79,30 @@ public sealed class LandlordReportsController : ControllerBase
 
         var schema = ReportExecutionService.GetDefaultSchema();
         return Ok(new ApiResponse<ReportSchemaDto>(schema));
+    }
+
+    [HttpGet("{id:guid}/config")]
+    public async Task<IActionResult> GetConfig(Guid id)
+    {
+        var definition = await _reportDefinitionRepository.GetByIdAsync(id);
+        if (definition == null || !AllowedCatalogCategories.Contains(definition.Category))
+        {
+            return NotFound(new ApiResponse<string>("Report definition not found."));
+        }
+
+        var config = await _dbContext.Set<ReportQueryConfig>().FindAsync(id);
+        if (config == null)
+        {
+            return NotFound(new ApiResponse<string>("Report config not found."));
+        }
+
+        return Ok(new ApiResponse<ReportQueryConfigResponseDto>(new ReportQueryConfigResponseDto
+        {
+            DimensionsJson = config.DimensionsJson,
+            MetricsJson = config.MetricsJson,
+            FiltersJson = config.FiltersJson,
+            TimeRangeJson = config.TimeRangeJson
+        }));
     }
 
     [HttpPost("{id:guid}/run")]
