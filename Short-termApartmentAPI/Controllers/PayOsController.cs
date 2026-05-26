@@ -20,6 +20,7 @@ public class PayOsController : ControllerBase
     private readonly IRepository<DAL.Models.BookingCheckTime> _bookingCheckTimeRepository;
     private readonly IRepository<DAL.Models.Booking> _bookingRepository;
     private readonly IRepository<DAL.Models.BookingCheckTimeStateEvent> _checkTimeEventRepository;
+    private readonly IRepository<DAL.Models.User> _userRepository;
     private readonly PayOS.PayOSClient? _paymentSdkClient;
     private readonly IBookingService _bookingService;
     private readonly ILogger<PayOsController> _logger;
@@ -30,6 +31,7 @@ public class PayOsController : ControllerBase
         IRepository<DAL.Models.BookingCheckTime> bookingCheckTimeRepository,
         IRepository<DAL.Models.Booking> bookingRepository,
         IRepository<DAL.Models.BookingCheckTimeStateEvent> checkTimeEventRepository,
+        IRepository<DAL.Models.User> userRepository,
         ILogger<PayOsController> logger,
         IBookingService bookingService,
         [FromKeyedServices("OrderClient")] PayOSClient? paymentSdkClient = null)
@@ -39,6 +41,7 @@ public class PayOsController : ControllerBase
         _bookingCheckTimeRepository = bookingCheckTimeRepository;
         _bookingRepository = bookingRepository;
         _checkTimeEventRepository = checkTimeEventRepository;
+        _userRepository = userRepository;
         _logger = logger;
         _paymentSdkClient = paymentSdkClient;
         _bookingService = bookingService;
@@ -64,6 +67,12 @@ public class PayOsController : ControllerBase
         {
             string? reference = null;
             string? paymentLinkId = null;
+            string? payerAccountNumber = null;
+            string? payerAccountName = null;
+            string? payerBankName = null;
+            string? payerBankBin = null;
+            string? receivingAccountNumber = null;
+            string? receivingBankBin = null;
 
             if (_paymentSdkClient != null)
             {
@@ -92,9 +101,15 @@ public class PayOsController : ControllerBase
                     var verifiedJson = JsonSerializer.Serialize(webhookData);
                     using (var doc = JsonDocument.Parse(verifiedJson))
                     {
-                        var root = doc.RootElement;
+                        var root = GetPayOsDataRoot(doc.RootElement);
                         reference = GetJsonString(root, "reference", "Reference");
                         paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+                        payerAccountNumber = GetJsonString(root, "counterAccountNumber", "CounterAccountNumber");
+                        payerAccountName = GetJsonString(root, "counterAccountName", "CounterAccountName");
+                        payerBankName = GetJsonString(root, "counterAccountBankName", "CounterAccountBankName");
+                        payerBankBin = GetJsonString(root, "counterAccountBankId", "CounterAccountBankId");
+                        receivingAccountNumber = GetJsonString(root, "accountNumber", "AccountNumber");
+                        receivingBankBin = GetJsonString(root, "bin", "Bin");
                     }
                 }
                 catch (WebhookException wex)
@@ -118,9 +133,15 @@ public class PayOsController : ControllerBase
                     _logger.LogInformation("[PayOS Webhook] Service-based verification successful (fallback)");
                     using (var doc = JsonDocument.Parse(json))
                     {
-                        var root = doc.RootElement;
+                        var root = GetPayOsDataRoot(doc.RootElement);
                         reference = GetJsonString(root, "reference", "Reference");
                         paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+                        payerAccountNumber = GetJsonString(root, "counterAccountNumber", "CounterAccountNumber");
+                        payerAccountName = GetJsonString(root, "counterAccountName", "CounterAccountName");
+                        payerBankName = GetJsonString(root, "counterAccountBankName", "CounterAccountBankName");
+                        payerBankBin = GetJsonString(root, "counterAccountBankId", "CounterAccountBankId");
+                        receivingAccountNumber = GetJsonString(root, "accountNumber", "AccountNumber");
+                        receivingBankBin = GetJsonString(root, "bin", "Bin");
                     }
                 }
             }
@@ -143,9 +164,15 @@ public class PayOsController : ControllerBase
                 _logger.LogInformation("[PayOS Webhook] Signature verification successful");
                 using (var doc = JsonDocument.Parse(json))
                 {
-                    var root = doc.RootElement;
+                    var root = GetPayOsDataRoot(doc.RootElement);
                     reference = GetJsonString(root, "reference", "Reference");
                     paymentLinkId = GetJsonString(root, "paymentLinkId", "PaymentLinkId", "payment_link_id");
+                    payerAccountNumber = GetJsonString(root, "counterAccountNumber", "CounterAccountNumber");
+                    payerAccountName = GetJsonString(root, "counterAccountName", "CounterAccountName");
+                    payerBankName = GetJsonString(root, "counterAccountBankName", "CounterAccountBankName");
+                    payerBankBin = GetJsonString(root, "counterAccountBankId", "CounterAccountBankId");
+                    receivingAccountNumber = GetJsonString(root, "accountNumber", "AccountNumber");
+                    receivingBankBin = GetJsonString(root, "bin", "Bin");
                 }
             }
 
@@ -160,8 +187,20 @@ public class PayOsController : ControllerBase
                 payment.Status = "success";
                 payment.SettlementStatus = "settled";
                 payment.PaidAt = Common.Utils.VietnamTime.Now;
+                payment.PayerAccountNumber = payerAccountNumber;
+                payment.PayerBankName = payerBankName;
+                payment.PayerBankBin = payerBankBin;
+                payment.ReceivingAccountNumber = receivingAccountNumber;
+                payment.ReceivingBankBin = receivingBankBin;
                 _paymentRepository.Update(payment);
                 await _paymentRepository.SaveChangesAsync();
+
+                if (payment.RelatedEntityId.HasValue &&
+                    (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(payment.RelatedEntityType, "booking_check_time", StringComparison.OrdinalIgnoreCase)))
+                {
+                    await UpdateUserBankProfileFromBookingAsync(payment.RelatedEntityId.Value, payerAccountName, payerAccountNumber, payerBankName, payerBankBin, payment.PaymentId);
+                }
 
                 if (payment.RelatedEntityId.HasValue &&
                     string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
@@ -319,4 +358,60 @@ public class PayOsController : ControllerBase
         return null;
     }
 
+    private static JsonElement GetPayOsDataRoot(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("data", out var data)
+            && data.ValueKind == JsonValueKind.Object)
+        {
+            return data;
+        }
+        return root;
+    }
+
+    private async Task UpdateUserBankProfileFromBookingAsync(
+        Guid bookingId,
+        string? payerAccountName,
+        string? payerAccountNumber,
+        string? payerBankName,
+        string? payerBankBin,
+        Guid paymentId)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId);
+        if (booking == null)
+        {
+            return;
+        }
+
+        var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+        if (tenantUser == null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(payerAccountName))
+        {
+            tenantUser.BankAccountHolderName = payerAccountName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(payerAccountNumber))
+        {
+            tenantUser.BankAccountNumber = payerAccountNumber;
+        }
+
+        if (!string.IsNullOrWhiteSpace(payerBankName))
+        {
+            tenantUser.BankName = payerBankName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(payerBankBin))
+        {
+            tenantUser.BankBin = payerBankBin;
+        }
+
+        _userRepository.Update(tenantUser);
+        await _userRepository.SaveChangesAsync();
+
+        _logger.LogInformation("[PayOS Webhook] Updated bank profile for user {UserId} from successful payment {PaymentId}", tenantUser.UserId, paymentId);
+    }
 }

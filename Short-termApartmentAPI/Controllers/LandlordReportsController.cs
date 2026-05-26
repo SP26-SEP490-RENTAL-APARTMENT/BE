@@ -54,6 +54,11 @@ public sealed class LandlordReportsController : ControllerBase
             r.IsActive &&
             AllowedCatalogCategories.Contains(r.Category));
 
+        foreach (var item in items)
+        {
+            await _dbContext.Entry(item).Reference(r => r.QueryConfig).LoadAsync();
+        }
+
         var ordered = items
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -247,7 +252,10 @@ public sealed class LandlordReportsController : ControllerBase
             Description = definition.Description,
             Type = definition.Type,
             Category = definition.Category,
-            IsActive = definition.IsActive
+            IsActive = definition.IsActive,
+            DimensionsJson = definition.QueryConfig?.DimensionsJson,
+            MetricsJson = definition.QueryConfig?.MetricsJson,
+            TimeRangeJson = definition.QueryConfig?.TimeRangeJson
         };
     }
 

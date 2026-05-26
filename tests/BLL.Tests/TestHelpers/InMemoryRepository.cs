@@ -63,6 +63,13 @@ namespace BLL.Tests
             return Task.FromResult(result.AsEnumerable());
         }
 
+        public Task<IEnumerable<T>> FindNoTrackingAsync(Expression<Func<T, bool>> predicate)
+        {
+            var compiled = predicate.Compile();
+            var result = _items.Where(compiled);
+            return Task.FromResult(result.AsEnumerable());
+        }
+
         public Task<T?> GetByIdAsync(Guid id)
         {
             var item = _items.FirstOrDefault(i => _keySelector(i) == id);

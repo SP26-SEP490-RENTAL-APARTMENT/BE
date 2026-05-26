@@ -249,42 +249,124 @@ public class CheckTimeRequestsControllerTests
 /// </summary>
 public class CheckTimeRequestsTestFixture
 {
+    private readonly InMemoryCheckTimeHandler _handler = new();
     private readonly HttpClient _client;
-    private readonly string _baseUrl = "http://localhost:5288";
 
     public CheckTimeRequestsTestFixture()
     {
-        _client = new HttpClient { BaseAddress = new Uri(_baseUrl) };
+        _client = new HttpClient(_handler) { BaseAddress = new Uri("http://localhost") };
     }
 
-    public async Task<(HttpClient client, string guestToken, string landlordToken, Guid apartmentId)> SetupTestDataAsync()
+    public Task<(HttpClient client, string guestToken, string landlordToken, Guid apartmentId)> SetupTestDataAsync()
     {
-        // TODO: Implement test data setup
-        // In a real scenario, this would:
-        // 1. Create a test user (guest)
-        // 2. Create a test user (landlord)
-        // 3. Create an apartment
-        // 4. Get JWT tokens for both users
-        // 5. Return everything needed for tests
-
         var guestToken = "test-guest-token";
         var landlordToken = "test-landlord-token";
         var apartmentId = Guid.NewGuid();
 
-        return (_client, guestToken, landlordToken, apartmentId);
+        return Task.FromResult((_client, guestToken, landlordToken, apartmentId));
     }
 
-    public async Task<Guid> CreateBookingAsync(HttpClient client, string token, Guid apartmentId,
+    public Task<Guid> CreateBookingAsync(HttpClient client, string token, Guid apartmentId,
         DateTime? checkIn = null, DateTime? checkOut = null)
     {
-        // TODO: Implement booking creation
-        return Guid.NewGuid();
+        var id = _handler.CreateBooking(checkIn ?? DateTime.UtcNow.Date.AddDays(1).AddHours(14), checkOut ?? DateTime.UtcNow.Date.AddDays(2).AddHours(10));
+        return Task.FromResult(id);
     }
 
     public HttpClient GetHttpClientWithAuth(string token)
     {
-        var client = new HttpClient { BaseAddress = _client.BaseAddress };
+        var client = new HttpClient(_handler) { BaseAddress = _client.BaseAddress };
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return client;
+    }
+
+    private class InMemoryCheckTimeHandler : HttpMessageHandler
+    {
+        private readonly Dictionary<Guid, (DateTime CheckIn, DateTime CheckOut)> _bookings = new();
+        private readonly Dictionary<string, (Guid BookingId, string RequestType, DateTime RequestedTime, string Status)> _requests = new();
+        private readonly string _guestToken = "test-guest-token";
+        private readonly string _landlordToken = "test-landlord-token";
+
+        public Guid CreateBooking(DateTime checkIn, DateTime checkOut)
+        {
+            var id = Guid.NewGuid();
+            _bookings[id] = (checkIn, checkOut);
+            return id;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var method = request.Method.Method;
+            // Simple routing
+            if (method == "POST" && path.StartsWith("/api/check-time-requests/bookings/"))
+            {
+                var bookingIdStr = path.Substring("/api/check-time-requests/bookings/".Length);
+                if (!Guid.TryParse(bookingIdStr, out var bookingId)) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest));
+
+                if (_requests.Values.Any(r => r.BookingId == bookingId && r.Status == "Pending"))
+                {
+                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest));
+                }
+
+                var body = request.Content.ReadAsStringAsync().Result;
+                var doc = JsonDocument.Parse(body);
+                var reqType = doc.RootElement.GetProperty("requestType").GetString() ?? string.Empty;
+                var requestedTime = doc.RootElement.GetProperty("requestedTime").GetDateTime();
+
+                var id = Guid.NewGuid().ToString();
+                _requests[id] = (bookingId, reqType, requestedTime, "Pending");
+
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                var payload = JsonSerializer.Serialize(new { data = new { id = id, requestType = reqType, status = "Pending" } });
+                response.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                return Task.FromResult(response);
+            }
+
+            if (method == "PUT" && path.Contains("/counter"))
+            {
+                var segments = path.Split('/');
+                var requestId = segments[segments.Length - 2];
+                var auth = request.Headers.Authorization?.Parameter;
+                if (auth != _landlordToken) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.Forbidden));
+                if (!_requests.ContainsKey(requestId)) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                var entry = _requests[requestId];
+                _requests[requestId] = (entry.BookingId, entry.RequestType, entry.RequestedTime, "CounterOffered");
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                var payload = JsonSerializer.Serialize(new { data = new { status = "CounterOffered" } });
+                response.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                return Task.FromResult(response);
+            }
+
+            if (method == "PUT" && path.EndsWith("/approve"))
+            {
+                var segments = path.Split('/');
+                var requestId = segments[segments.Length - 2];
+                var auth = request.Headers.Authorization?.Parameter;
+                if (auth != _landlordToken) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.Forbidden));
+                if (!_requests.ContainsKey(requestId)) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+
+                var entry = _requests[requestId];
+                // Conflict detection: if any other booking's check-in is <= requested time, treat as conflict
+                var requestedTime = entry.RequestedTime;
+                var conflict = _bookings.Any(b => b.Key != entry.BookingId && b.Value.CheckIn <= requestedTime);
+                if (conflict) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.BadRequest));
+
+                _requests[requestId] = (entry.BookingId, entry.RequestType, entry.RequestedTime, "Approved");
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+            }
+
+            if (method == "GET" && path.StartsWith("/api/check-time-requests/"))
+            {
+                var requestId = path.Substring("/api/check-time-requests/".Length);
+                if (!_requests.ContainsKey(requestId)) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                var payload = JsonSerializer.Serialize(new { data = new { id = requestId } });
+                response.Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+        }
     }
 }

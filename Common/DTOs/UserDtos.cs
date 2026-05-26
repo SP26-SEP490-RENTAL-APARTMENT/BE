@@ -15,6 +15,10 @@ namespace Common.DTOs
         public DateOnly? Birthday { get; set; }
         public string? Nationality { get; set; }
         public string? NationalIdCardNumber { get; set; }
+        public string? BankAccountHolderName { get; set; }
+        public string? BankAccountNumber { get; set; }
+        public string? BankName { get; set; }
+        public string? BankBin { get; set; }
         public bool? IdentityVerified { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
@@ -76,6 +80,17 @@ namespace Common.DTOs
         public string? NationalIdCardNumber { get; set; }
         
         public bool? IdentityVerified { get; set; }
+    }
+
+    public class UpdateMyBankProfileDto
+    {
+        public string? BankAccountHolderName { get; set; }
+
+        public string? BankAccountNumber { get; set; }
+
+        public string? BankName { get; set; }
+
+        public string? BankBin { get; set; }
     }
 
     public class UpdateMyProfileDto

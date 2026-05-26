@@ -34,12 +34,12 @@ public static class ReportDefinitionSeed
                 "{\"preset\":\"current_month\"}"),
             new(
                 Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"),
-                "Guest Reviews Analysis",
-                "Review count and rating averages for listing quality monitoring",
+                "Guest Feedback / Reviews Report",
+                "Review metrics including ratings, response rates, and sentiment analysis",
                 "standard",
                 "review",
-                "[{\"field\":\"apartment_name\",\"alias\":\"apartment_name\"}]",
-                "[{\"field\":\"review_count\",\"aggregation\":\"count\",\"alias\":\"review_count\"},{\"field\":\"review_avg_rating\",\"aggregation\":\"avg\",\"alias\":\"review_avg_rating\"}]",
+                "[{\"field\":\"month\",\"alias\":\"month\"},{\"field\":\"apartment_name\",\"alias\":\"apartment_name\"}]",
+                "[{\"field\":\"review_avg_rating\",\"aggregation\":\"avg\",\"alias\":\"average_rating\"},{\"field\":\"review_count\",\"aggregation\":\"count\",\"alias\":\"total_reviews\"},{\"field\":\"response_rate\",\"aggregation\":\"avg\",\"alias\":\"response_rate\"},{\"field\":\"five_star_review_percent\",\"aggregation\":\"avg\",\"alias\":\"five_star_reviews_percent\"},{\"field\":\"one_star_review_percent\",\"aggregation\":\"avg\",\"alias\":\"one_star_reviews_percent\"}]",
                 "{\"preset\":\"last_90_days\"}"),
             new(
                 Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4"),

@@ -39,8 +39,12 @@ public partial class Payment
     public Guid? ConfirmedBy { get; set; }
 
     public DateTime? ConfirmedAt { get; set; }
-
     public string? Notes { get; set; }
+    public string? PayerAccountNumber { get; set; }
+    public string? PayerBankName { get; set; }
+    public string? PayerBankBin { get; set; }
+    public string? ReceivingAccountNumber { get; set; }
+    public string? ReceivingBankBin { get; set; }
 
     public virtual ICollection<LandlordSubscription> LandlordSubscriptions { get; set; } = new List<LandlordSubscription>();
 

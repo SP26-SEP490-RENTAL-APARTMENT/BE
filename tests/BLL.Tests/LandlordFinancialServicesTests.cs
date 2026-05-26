@@ -555,7 +555,7 @@ public class BookingServiceResidenceReportTests
             tenantRepo,
             userRepo,
             new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
-            new InMemoryRepository<SupportTicket>(s => s.TicketId),
+            new FakeSupportTicketRepository(new InMemoryRepository<SupportTicket>(s => s.TicketId)),
             new InMemoryRepository<Payment>(p => p.PaymentId),
             new StripeServiceStub(),
             payOsClient,
@@ -637,7 +637,7 @@ public class BookingServiceResidenceReportTests
             tenantRepo,
             userRepo,
             new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId),
-            new InMemoryRepository<SupportTicket>(s => s.TicketId),
+            new FakeSupportTicketRepository(new InMemoryRepository<SupportTicket>(s => s.TicketId)),
             new InMemoryRepository<Payment>(p => p.PaymentId),
             new StripeServiceStub(),
             payOsClient,
@@ -775,7 +775,7 @@ internal static class FinancialTestHelpers
         var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
         var userRepo = new InMemoryRepository<User>(u => u.UserId);
         var availabilityRepo = new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId, availabilities?.ToArray() ?? Array.Empty<ApartmentAvailability>());
-        var supportTicketRepo = new InMemoryRepository<SupportTicket>(s => s.TicketId);
+        var supportTicketRepo = new FakeSupportTicketRepository(new InMemoryRepository<SupportTicket>(s => s.TicketId));
         var paymentRepo = new InMemoryRepository<Payment>(p => p.PaymentId);
         var identityVerificationService = new NoOpIdentityVerificationService();
         var walletService = new RecordingWalletService();
@@ -886,6 +886,12 @@ internal sealed class InMemoryBookingRepository : IBookingRepository
         return Task.FromResult<IEnumerable<Booking>>(_items.Where(compiled));
     }
 
+    public Task<IEnumerable<Booking>> FindNoTrackingAsync(Expression<Func<Booking, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<Booking>>(_items.Where(compiled));
+    }
+
     public Task<(IEnumerable<Booking> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null)
     {
         return Task.FromResult((Items: _items.AsEnumerable(), TotalCount: _items.Count));
@@ -935,6 +941,12 @@ internal sealed class InMemoryBookingOfferRepository : IBookingOfferRepository
     }
 
     public Task<IEnumerable<BookingOffer>> FindAsync(Expression<Func<BookingOffer, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<BookingOffer>>(_items.Where(compiled));
+    }
+
+    public Task<IEnumerable<BookingOffer>> FindNoTrackingAsync(Expression<Func<BookingOffer, bool>> predicate)
     {
         var compiled = predicate.Compile();
         return Task.FromResult<IEnumerable<BookingOffer>>(_items.Where(compiled));
@@ -996,6 +1008,12 @@ internal sealed class InMemoryApartmentPriceCalendarRepository : IApartmentPrice
     }
 
     public Task<IEnumerable<ApartmentPriceCalendar>> FindAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(_items.Where(compiled));
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> FindNoTrackingAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate)
     {
         var compiled = predicate.Compile();
         return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(_items.Where(compiled));

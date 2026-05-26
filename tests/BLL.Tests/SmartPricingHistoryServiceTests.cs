@@ -166,6 +166,13 @@ internal sealed class InMemorySmartPricingHistoryRepository : IRepository<SmartP
         return Task.FromResult(result);
     }
 
+    public Task<IEnumerable<SmartPricingHistory>> FindNoTrackingAsync(Expression<Func<SmartPricingHistory, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<SmartPricingHistory> result = _items.Where(compiled);
+        return Task.FromResult(result);
+    }
+
     public Task<(IEnumerable<SmartPricingHistory> Items, int TotalCount)> GetAllAsync(
         int page,
         int pageSize,
@@ -221,6 +228,13 @@ internal sealed class InMemoryApartmentRepository : IApartmentRepository
     }
 
     public Task<IEnumerable<Apartment>> FindAsync(Expression<Func<Apartment, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<Apartment> result = _apartments.Where(compiled);
+        return Task.FromResult(result);
+    }
+
+    public Task<IEnumerable<Apartment>> FindNoTrackingAsync(Expression<Func<Apartment, bool>> predicate)
     {
         var compiled = predicate.Compile();
         IEnumerable<Apartment> result = _apartments.Where(compiled);
@@ -353,6 +367,13 @@ internal sealed class InMemoryHolidaysEventRepository : IHolidaysEventRepository
         return Task.FromResult(result);
     }
 
+    public Task<IEnumerable<HolidaysEvent>> FindNoTrackingAsync(Expression<Func<HolidaysEvent, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<HolidaysEvent> result = _events.Where(compiled);
+        return Task.FromResult(result);
+    }
+
     public Task<(IEnumerable<HolidaysEvent> Items, int TotalCount)> GetAllAsync(
         int page,
         int pageSize,
@@ -408,6 +429,13 @@ internal sealed class InMemoryNearbyAttractionRepository : INearbyAttractionRepo
     }
 
     public Task<IEnumerable<NearbyAttraction>> FindAsync(Expression<Func<NearbyAttraction, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        IEnumerable<NearbyAttraction> result = _attractions.Where(compiled);
+        return Task.FromResult(result);
+    }
+
+    public Task<IEnumerable<NearbyAttraction>> FindNoTrackingAsync(Expression<Func<NearbyAttraction, bool>> predicate)
     {
         var compiled = predicate.Compile();
         IEnumerable<NearbyAttraction> result = _attractions.Where(compiled);

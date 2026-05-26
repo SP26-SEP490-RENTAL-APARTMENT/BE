@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using DAL.Data;
 using DAL.Models;
 using DAL.Repository.Interfaces;
@@ -57,6 +58,16 @@ namespace DAL.Repository.Implements
                 .Include(s => s.SupportTicketAttachments)
                 .Include(s => s.SupportTicketAssignments)
                 .Where(s => s.UserId == userId)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<SupportTicket>> FindWithAttachmentsNoTrackingAsync(Expression<Func<SupportTicket, bool>> predicate)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .Include(s => s.SupportTicketAttachments)
+                .Include(s => s.SupportTicketAssignments)
+                .Where(predicate)
                 .ToListAsync();
         }
     }

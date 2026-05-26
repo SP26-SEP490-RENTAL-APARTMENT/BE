@@ -1799,8 +1799,7 @@ namespace Short_termApartmentAPI.Controllers
                 var result = await _bookingService.ConfirmOccupiedIncidentPenaltyAsync(
                     id,
                     staffId,
-                    dto?.TicketId,
-                    dto?.Notes);
+                    dto);
 
                 return Ok(new ApiResponse<ConfirmOccupiedIncidentPenaltyResponseDto>(result, result.Message));
             }

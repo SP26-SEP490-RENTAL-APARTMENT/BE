@@ -28,6 +28,14 @@ public partial class User
 
     public string? NationalIdCardNumber { get; set; }
 
+    public string? BankAccountHolderName { get; set; }
+
+    public string? BankAccountNumber { get; set; }
+
+    public string? BankName { get; set; }
+
+    public string? BankBin { get; set; }
+
     public bool? IdentityVerified { get; set; }
 
     public string? Token { get; set; }

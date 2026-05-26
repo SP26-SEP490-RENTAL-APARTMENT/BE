@@ -2,6 +2,7 @@ using AutoMapper;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
+using DAL.Repository.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -15,12 +16,14 @@ namespace Short_termApartmentAPI.Controllers
     {
         private readonly IUserService _userService;
         private readonly ILandlordService _landlordService;
+        private readonly IRepository<User> _userRepository;
         private readonly IMapper _mapper;
 
-        public UserController(IUserService userService, ILandlordService landlordService, IMapper mapper)
+        public UserController(IUserService userService, ILandlordService landlordService, IRepository<User> userRepository, IMapper mapper)
         {
             _userService = userService;
             _landlordService = landlordService;
+            _userRepository = userRepository;
             _mapper = mapper;
         }
 
@@ -155,6 +158,64 @@ namespace Short_termApartmentAPI.Controllers
 
             await _userService.UpdateAsync(user);
             return Ok(new { message = "Profile updated successfully", data = _mapper.Map<UserDto>(user) });
+        }
+
+        /// <summary>
+        /// Update current user's bank profile information
+        /// </summary>
+        [HttpPut("me/bank-profile")]
+        [Authorize]
+        public async Task<IActionResult> UpdateMyBankProfile([FromBody] UpdateMyBankProfileDto bankProfileDto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new { message = "Invalid user token." });
+            }
+
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                return NotFound(new { message = "User not found." });
+            }
+
+            if (bankProfileDto.BankAccountHolderName != null)
+            {
+                user.BankAccountHolderName = bankProfileDto.BankAccountHolderName;
+            }
+
+            if (bankProfileDto.BankAccountNumber != null)
+            {
+                user.BankAccountNumber = bankProfileDto.BankAccountNumber;
+            }
+
+            if (bankProfileDto.BankName != null)
+            {
+                user.BankName = bankProfileDto.BankName;
+            }
+
+            if (bankProfileDto.BankBin != null)
+            {
+                user.BankBin = bankProfileDto.BankBin;
+            }
+
+            await _userService.UpdateAsync(user);
+
+            // If this user has a landlord profile, also upsert the landlord payout profile
+            var landlord = await _landlordService.GetByUserIdAsync(userId);
+            if (landlord != null)
+            {
+                var upsert = new Common.DTOs.UpsertLandlordPayoutProfileRequestDto
+                {
+                    ReceiverName = bankProfileDto.BankAccountHolderName?.Trim(),
+                    BankAccountNo = bankProfileDto.BankAccountNumber?.Trim(),
+                    BankCode = bankProfileDto.BankBin?.Trim()
+                };
+
+                await _landlordService.UpsertPayoutProfileAsync(landlord.LandlordId, upsert);
+            }
+
+            return Ok(new { message = "Bank profile updated successfully", data = _mapper.Map<UserDto>(user) });
         }
     }
 }

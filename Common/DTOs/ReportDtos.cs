@@ -10,6 +10,9 @@ public class ReportDefinitionDto
     public string Type { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public string? DimensionsJson { get; set; }
+    public string? MetricsJson { get; set; }
+    public string? TimeRangeJson { get; set; }
 }
 
 public class ReportDefinitionResponseDto
@@ -20,6 +23,9 @@ public class ReportDefinitionResponseDto
     public string Type { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public bool IsActive { get; set; }
+    public string? DimensionsJson { get; set; }
+    public string? MetricsJson { get; set; }
+    public string? TimeRangeJson { get; set; }
 }
 
 public class ReportRunRequestDto

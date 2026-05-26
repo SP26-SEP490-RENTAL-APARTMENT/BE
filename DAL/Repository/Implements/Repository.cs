@@ -394,6 +394,11 @@ namespace DAL.Repository.Implements
         {
             return await _context.SaveChangesAsync();
         }
+
+        public virtual async Task<IEnumerable<T>> FindNoTrackingAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _dbSet.AsNoTracking().Where(predicate).ToListAsync();
+        }
     }
 
 }

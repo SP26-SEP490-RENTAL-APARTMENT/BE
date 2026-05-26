@@ -55,6 +55,11 @@ public sealed class ReportsController : ControllerBase
             filters: null,
             allowedColumns: new[] { "Name", "Category", "Type" });
 
+        foreach (var item in items)
+        {
+            await _dbContext.Entry(item).Reference(r => r.QueryConfig).LoadAsync();
+        }
+
         var dtos = _mapper.Map<IEnumerable<ReportDefinitionResponseDto>>(items);
         return Ok(new { Items = dtos, TotalCount = totalCount });
     }
@@ -84,6 +89,15 @@ public sealed class ReportsController : ControllerBase
             CreatedBy = userId,
             CreatedAt = Common.Utils.VietnamTime.Now,
             UpdatedAt = Common.Utils.VietnamTime.Now
+        };
+
+        entity.QueryConfig = new ReportQueryConfig
+        {
+            ReportId = entity.ReportId,
+            DimensionsJson = dto.DimensionsJson,
+            MetricsJson = dto.MetricsJson,
+            TimeRangeJson = dto.TimeRangeJson,
+            FiltersJson = null
         };
 
         await _reportDefinitionRepository.AddAsync(entity);
@@ -124,6 +138,13 @@ public sealed class ReportsController : ControllerBase
             return NotFound(new ApiResponse<string>("Report definition not found."));
         }
 
+        var schema = ReportExecutionService.GetDefaultSchema();
+        return Ok(new ApiResponse<ReportSchemaDto>(schema));
+    }
+
+    [HttpGet("schema/default")]
+    public IActionResult GetDefaultSchema()
+    {
         var schema = ReportExecutionService.GetDefaultSchema();
         return Ok(new ApiResponse<ReportSchemaDto>(schema));
     }

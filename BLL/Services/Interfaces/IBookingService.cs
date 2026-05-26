@@ -132,8 +132,7 @@ public interface IBookingService : IBaseService<Booking>
 	Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
 		Guid bookingId,
 		Guid confirmedBy,
-		Guid? ticketId = null,
-		string? notes = null);
+		ConfirmOccupiedIncidentPenaltyRequestDto? dto = null);
 
 	/// <summary>
 	/// Lists all outstanding check-time fees for a user across multiple bookings.
@@ -155,6 +154,18 @@ public interface IBookingService : IBaseService<Booking>
 	/// Admin-only access to view reported bookings across all properties.
 	/// </summary>
 	Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetReportedBookingsAsync(
+		int page = 1,
+		int pageSize = 10,
+		string? sortBy = null,
+		string? sortOrder = null,
+		string? search = null,
+		DateTime? fromDate = null,
+		DateTime? toDate = null);
+
+	/// <summary>
+	/// Lists only bookings that currently have a check-time dispute flow requiring admin attention.
+	/// </summary>
+	Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetDisputedBookingsAsync(
 		int page = 1,
 		int pageSize = 10,
 		string? sortBy = null,

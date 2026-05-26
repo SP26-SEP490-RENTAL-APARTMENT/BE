@@ -1379,6 +1379,21 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Notes)
                 .HasColumnType("text")
                 .HasColumnName("notes");
+            entity.Property(e => e.PayerAccountNumber)
+.HasMaxLength(50)
+.HasColumnName("payer_account_number");
+            entity.Property(e => e.PayerBankName)
+                .HasMaxLength(255)
+                .HasColumnName("payer_bank_name");
+            entity.Property(e => e.PayerBankBin)
+                .HasMaxLength(20)
+                .HasColumnName("payer_bank_bin");
+            entity.Property(e => e.ReceivingAccountNumber)
+                .HasMaxLength(50)
+                .HasColumnName("receiving_account_number");
+            entity.Property(e => e.ReceivingBankBin)
+                .HasMaxLength(20)
+                .HasColumnName("receiving_bank_bin");
             entity.Property(e => e.LandlordId).HasColumnName("landlord_id");
             entity.Property(e => e.LandlordAmount)
                 .HasPrecision(12, 2)
@@ -1895,6 +1910,18 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.NationalIdCardNumber)
                 .HasMaxLength(12)
                 .HasColumnName("national_id_card_number");
+            entity.Property(e => e.BankAccountHolderName)
+                .HasMaxLength(150)
+                .HasColumnName("bank_account_holder_name");
+            entity.Property(e => e.BankAccountNumber)
+                .HasMaxLength(50)
+                .HasColumnName("bank_account_number");
+            entity.Property(e => e.BankBin)
+                .HasMaxLength(20)
+                .HasColumnName("bank_bin");
+            entity.Property(e => e.BankName)
+                .HasMaxLength(150)
+                .HasColumnName("bank_name");
             entity.Property(e => e.Nationality)
                 .HasMaxLength(2)
                 .IsFixedLength()

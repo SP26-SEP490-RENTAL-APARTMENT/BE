@@ -384,7 +384,7 @@ public class ReportExecutionService : IReportExecutionService
             bookingPage++;
         }
 
-        var lookupContext = await BuildDimensionLookupContextAsync(filteredBookings: allBookings, dimensions: dimensions);
+        var lookupContext = await BuildDimensionLookupContextAsync(filteredBookings: allBookings, dimensions: dimensions, filters: filters);
         var auxiliaryContext = await BuildAuxiliaryDataContextAsync(filteredBookings: allBookings, dimensions: dimensions);
 
         ValidateFilters(filters, dimensions, metrics);
@@ -520,7 +520,7 @@ public class ReportExecutionService : IReportExecutionService
 
         var bookings = await LoadBookingsAsync(normalizedFrom, normalizedTo, landlordId);
 
-        var lookupContext = await BuildDimensionLookupContextAsync(filteredBookings: bookings, dimensions: dimensions);
+        var lookupContext = await BuildDimensionLookupContextAsync(filteredBookings: bookings, dimensions: dimensions, filters: filters);
         var auxiliaryContext = await BuildAuxiliaryDataContextAsync(filteredBookings: bookings, dimensions: dimensions);
 
         ValidateFilters(filters, dimensions, metrics);
@@ -707,9 +707,15 @@ public class ReportExecutionService : IReportExecutionService
             }
 
             var key = NormalizeKey(filter.Field);
-            if (!dimensionMap.TryGetValue(key, out var value))
+            object? value;
+            if (!dimensionMap.TryGetValue(key, out value))
             {
-                return false;
+                if (!AllowedDimensionFields.Contains(key))
+                {
+                    return false;
+                }
+
+                value = GetReviewDimensionValue(review, key, context);
             }
 
             if (!Evaluate(value, filter))
@@ -1058,7 +1064,7 @@ public class ReportExecutionService : IReportExecutionService
 
             var exists = target == "metric"
                 ? availableMetricAliases.Contains(field)
-                : availableDimensionAliases.Contains(field);
+                : availableDimensionAliases.Contains(field) || AllowedDimensionFields.Contains(field);
 
             if (!exists)
             {
@@ -1099,9 +1105,15 @@ public class ReportExecutionService : IReportExecutionService
             }
 
             var key = NormalizeKey(filter.Field);
-            if (!dimensionMap.TryGetValue(key, out var value))
+            object? value;
+            if (!dimensionMap.TryGetValue(key, out value))
             {
-                return false;
+                if (!AllowedDimensionFields.Contains(key))
+                {
+                    return false;
+                }
+
+                value = GetDimensionValue(booking, key, lookupContext);
             }
 
             if (!Evaluate(value, filter))
@@ -1215,18 +1227,41 @@ public class ReportExecutionService : IReportExecutionService
 
     private async Task<DimensionLookupContext> BuildDimensionLookupContextAsync(
         IEnumerable<Booking> filteredBookings,
-        IReadOnlyList<ReportDimensionRequestDto> dimensions)
+        IReadOnlyList<ReportDimensionRequestDto> dimensions,
+        IReadOnlyList<ReportFilterRequestDto>? filters = null)
     {
-        var needsApartmentName = dimensions.Any(d => NormalizeKey(d.Field) == "apartment_name");
-        var needsTenantName = dimensions.Any(d => NormalizeKey(d.Field) == "tenant_name");
+        var lookupDimensionFields = new HashSet<string>(
+            dimensions.Select(d => NormalizeKey(d.Field)),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (filters != null)
+        {
+            foreach (var filter in filters)
+            {
+                var target = string.IsNullOrWhiteSpace(filter.Target) ? "dimension" : NormalizeKey(filter.Target);
+                if (target != "dimension")
+                {
+                    continue;
+                }
+
+                var filterField = NormalizeKey(filter.Field);
+                if (AllowedDimensionFields.Contains(filterField))
+                {
+                    lookupDimensionFields.Add(filterField);
+                }
+            }
+        }
+
+        var needsApartmentName = lookupDimensionFields.Contains("apartment_name");
+        var needsTenantName = lookupDimensionFields.Contains("tenant_name");
 
         var apartmentNames = new Dictionary<Guid, string>();
         var tenantNames = new Dictionary<Guid, string>();
 
-        var needsCity = dimensions.Any(d => NormalizeKey(d.Field) == "city");
+        var needsCity = lookupDimensionFields.Contains("city");
         var apartmentCities = new Dictionary<Guid, string>();
 
-        var needsNationality = dimensions.Any(d => NormalizeKey(d.Field) == "guest_nationality");
+        var needsNationality = lookupDimensionFields.Contains("guest_nationality");
         var tenantNationalities = new Dictionary<Guid, string>();
 
         if (needsApartmentName)
@@ -1636,6 +1671,60 @@ public class ReportExecutionService : IReportExecutionService
                         }
                     }
                     return cnt;
+                }
+            case "five_star_review_percent":
+                {
+                    var allReviews = new List<Review>();
+                    foreach (var aptId in apartmentIds)
+                    {
+                        if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var rr) && rr.Count > 0)
+                        {
+                            allReviews.AddRange(rr.Where(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt));
+                        }
+                    }
+
+                    var totalReviews = allReviews.Count;
+                    if (totalReviews == 0) return 0m;
+
+                    var fiveStarCount = allReviews.Count(r => r.Rating == 5);
+                    return Math.Round((decimal)fiveStarCount / totalReviews * 100m, 2, MidpointRounding.AwayFromZero);
+                }
+            case "one_star_review_percent":
+                {
+                    var allReviews = new List<Review>();
+                    foreach (var aptId in apartmentIds)
+                    {
+                        if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var rr) && rr.Count > 0)
+                        {
+                            allReviews.AddRange(rr.Where(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt));
+                        }
+                    }
+
+                    var totalReviews = allReviews.Count;
+                    if (totalReviews == 0) return 0m;
+
+                    var oneStarCount = allReviews.Count(r => r.Rating == 1);
+                    return Math.Round((decimal)oneStarCount / totalReviews * 100m, 2, MidpointRounding.AwayFromZero);
+                }
+            case "response_rate":
+                {
+                    var allReviews = new List<Review>();
+                    foreach (var aptId in apartmentIds)
+                    {
+                        if (auxiliaryContext.ReviewsByApartment.TryGetValue(aptId, out var rr) && rr.Count > 0)
+                        {
+                            allReviews.AddRange(rr.Where(r => r.CreatedAt.HasValue && r.CreatedAt.Value >= periodFromDt && r.CreatedAt.Value < periodToDt));
+                        }
+                    }
+
+                    var totalReviews = allReviews.Count;
+                    if (totalReviews == 0) return 0m;
+
+                    var withResponseCount = allReviews.Count(r =>
+                        !string.IsNullOrWhiteSpace(r.CommentEn) ||
+                        !string.IsNullOrWhiteSpace(r.CommentVi));
+
+                    return Math.Round((decimal)withResponseCount / totalReviews * 100m, 2, MidpointRounding.AwayFromZero);
                 }
             case "package_revenue":
                 return bookings.Sum(b => b.PackagePrice ?? 0m);

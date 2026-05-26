@@ -34,5 +34,6 @@ namespace DAL.Repository.Interfaces
         void Update(T entity);
         void Remove(T entity);
         Task<int> SaveChangesAsync();
+        Task<IEnumerable<T>> FindNoTrackingAsync(Expression<Func<T, bool>> predicate);
     }
 }

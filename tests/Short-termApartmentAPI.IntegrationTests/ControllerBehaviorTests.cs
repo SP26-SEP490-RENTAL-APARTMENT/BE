@@ -1314,10 +1314,12 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<BookingOfferResponseDto> CreateAlternativeOfferAsync(Guid bookingId, Guid alternativeApartmentId, Guid? staffUserId, string? reason = null, int? expiresInHours = null) => Task.FromResult(new BookingOfferResponseDto());
     public Task<IReadOnlyList<BookingOfferResponseDto>> GetTenantActiveOffersAsync(Guid tenantId) => Task.FromResult<IReadOnlyList<BookingOfferResponseDto>>(Array.Empty<BookingOfferResponseDto>());
     public Task<BookingOfferResponseDto> RespondToAlternativeOfferAsync(Guid offerId, Guid tenantId, bool accepted, string? notes = null) => Task.FromResult(new BookingOfferResponseDto());
-    public Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(Guid bookingId, Guid confirmedBy, Guid? ticketId = null, string? notes = null) => Task.FromResult(new ConfirmOccupiedIncidentPenaltyResponseDto());
+    public Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(Guid bookingId, Guid confirmedBy, ConfirmOccupiedIncidentPenaltyRequestDto? dto = null) => Task.FromResult(new ConfirmOccupiedIncidentPenaltyResponseDto());
     public Task<OutstandingCheckTimeFeesResponseDto> GetOutstandingCheckTimeFeesAsync(Guid userId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new OutstandingCheckTimeFeesResponseDto { UserId = userId });
     public Task<LandlordOutstandingCheckTimeFeesResponseDto> GetLandlordOutstandingCheckTimeFeesAsync(Guid landlordId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(new LandlordOutstandingCheckTimeFeesResponseDto { LandlordId = landlordId });
     public Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetReportedBookingsAsync(int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
+        => Task.FromResult((Enumerable.Empty<ReportedBookingDto>(), 0));
+    public Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetDisputedBookingsAsync(int page = 1, int pageSize = 10, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
         => Task.FromResult((Enumerable.Empty<ReportedBookingDto>(), 0));
 
     public Task<BookingRefundResponseDto> RefundBookingViaPayOsAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto)

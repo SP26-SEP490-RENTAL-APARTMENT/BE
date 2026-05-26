@@ -196,7 +196,7 @@ public class BookingCheckTimeResponseDto
 public class RespondBookingCheckTimeDto : IValidatableObject
 {
     [Required]
-    [RegularExpression("^(confirm|refute|dispute)$", ErrorMessage = "Action must be 'confirm' or 'refute'.")]
+    [RegularExpression("^(confirm|refute|dispute)$", ErrorMessage = "Action must be 'confirm', 'refute', or 'dispute'.")]
     public string Action { get; set; } = string.Empty;
 
     [MaxLength(300)]
@@ -209,7 +209,7 @@ public class RespondBookingCheckTimeDto : IValidatableObject
     {
         if ((string.Equals(Action, "refute", StringComparison.OrdinalIgnoreCase) || string.Equals(Action, "dispute", StringComparison.OrdinalIgnoreCase)) && string.IsNullOrWhiteSpace(DisputeReason))
         {
-            yield return new ValidationResult("DisputeReason is required when action is 'refute'.", new[] { nameof(DisputeReason) });
+            yield return new ValidationResult("DisputeReason is required when action is 'refute' or 'dispute'.", new[] { nameof(DisputeReason) });
         }
     }
 }

@@ -174,6 +174,13 @@ public class ApartmentPriceCalendarServiceTests
         }
 
         public Task<int> SaveChangesAsync() => Task.FromResult(1);
+
+        public Task<IEnumerable<ApartmentPriceCalendar>> FindNoTrackingAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate)
+        {
+            var compiled = predicate.Compile();
+            var result = _items.Where(compiled);
+            return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(result);
+        }
     }
 
     private sealed class NoOpAuthService : IAuthService

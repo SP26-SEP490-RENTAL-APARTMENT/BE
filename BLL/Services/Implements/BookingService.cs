@@ -46,7 +46,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IRepository<Tenant> _tenantRepository;
     private readonly IRepository<User> _userRepository;
     private readonly IRepository<ApartmentAvailability> _apartmentAvailabilityRepository;
-    private readonly IRepository<SupportTicket> _supportTicketRepository;
+    private readonly ISupportTicketRepository _supportTicketRepository;
     private readonly IRepository<Payment> _paymentRepository;
     private readonly IStripeService _stripeService;
     private readonly StripeSettings _stripeSettings;
@@ -69,7 +69,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<Tenant> tenantRepository,
         IRepository<User> userRepository,
         IRepository<ApartmentAvailability> apartmentAvailabilityRepository,
-        IRepository<SupportTicket> supportTicketRepository,
+        ISupportTicketRepository supportTicketRepository,
         IRepository<Payment> paymentRepository,
         IStripeService stripeService,
         PayOSClient payOsClient,
@@ -208,8 +208,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
         Guid bookingId,
         Guid confirmedBy,
-        Guid? ticketId = null,
-        string? notes = null)
+        ConfirmOccupiedIncidentPenaltyRequestDto? dto = null)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new ArgumentException("Booking not found.");
@@ -220,7 +219,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
 
-        var ticket = await ResolveOccupiedIncidentTicketAsync(bookingId, booking.TenantId, ticketId);
+        var ticket = await ResolveOccupiedIncidentTicketAsync(bookingId, booking.TenantId, dto?.TicketId);
         if (ticket == null)
         {
             throw new InvalidOperationException("Occupied incident ticket was not found for this booking.");
@@ -230,14 +229,65 @@ public class BookingService : BaseService<Booking>, IBookingService
         var existingRefund = await HasSuccessfulBookingRefundAsync(bookingId);
         if (!existingRefund)
         {
-            await RefundBookingAsync(
-                bookingId,
-                booking.TenantId,
-                new RequestBookingRefundDto
+            var payOsPayment = (await _paymentRepository.FindAsync(payment =>
+                    payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+                    && payment.RelatedEntityId == booking.BookingId
+                    && payment.Status == PaymentStatus.success.ToString()
+                    && payment.PaymentType != PaymentTypes.refund.ToString()
+                    && string.Equals(payment.Method, "payos", StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(payment => payment.PaidAt ?? DateTime.MinValue)
+                .FirstOrDefault();
+
+            var hasPayOsPayment = payOsPayment != null;
+            string? payOsReceiverName = null;
+            string? payOsBankCode = null;
+            string? payOsAccountNumber = null;
+
+            if (hasPayOsPayment)
+            {
+                payOsBankCode = payOsPayment!.PayerBankBin?.Trim();
+                payOsAccountNumber = payOsPayment.PayerAccountNumber?.Trim();
+
+                var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+                payOsReceiverName = tenantUser?.FullName?.Trim();
+
+                if (string.IsNullOrWhiteSpace(payOsReceiverName))
                 {
-                    Reason = "system_cancellation",
-                    Notes = "Refund processed after occupied incident confirmation."
-                });
+                    payOsReceiverName = "PayOS refund recipient";
+                }
+
+                if (string.IsNullOrWhiteSpace(payOsBankCode) || string.IsNullOrWhiteSpace(payOsAccountNumber))
+                {
+                    throw new InvalidOperationException("Stored PayOS payment details are incomplete for refund processing.");
+                }
+            }
+
+            var refundRequest = new RequestBookingRefundDto
+            {
+                Reason = "system_cancellation",
+                Notes = "Refund processed after occupied incident confirmation.",
+                PayOsReceiverName = payOsReceiverName,
+                PayOsBankCode = payOsBankCode,
+                PayOsAccountNumber = payOsAccountNumber
+            };
+
+            var hasPayOsPayoutDetails = !string.IsNullOrWhiteSpace(refundRequest.PayOsReceiverName)
+                && !string.IsNullOrWhiteSpace(refundRequest.PayOsBankCode)
+                && !string.IsNullOrWhiteSpace(refundRequest.PayOsAccountNumber);
+
+            if (hasPayOsPayment)
+            {
+                if (!hasPayOsPayoutDetails)
+                {
+                    throw new InvalidOperationException("PayOS payout details are required to confirm this occupied incident penalty because the booking was paid via PayOS.");
+                }
+
+                await RefundBookingViaPayOsAsync(bookingId, booking.TenantId, refundRequest);
+            }
+            else
+            {
+                await RefundBookingAsync(bookingId, booking.TenantId, refundRequest);
+            }
         }
 
         var penaltyTransactionId = $"occupied_penalty_{bookingId:N}";
@@ -281,9 +331,9 @@ public class BookingService : BaseService<Booking>, IBookingService
                            $"From available: {settlement.DeductedFromAvailable:0.00}, " +
                            $"from pending: {settlement.DeductedFromPending:0.00}, " +
                            $"debt: {settlement.DebtRecorded:0.00}.";
-        if (!string.IsNullOrWhiteSpace(notes))
+        if (dto != null && !string.IsNullOrWhiteSpace(dto.Notes))
         {
-            supportNotes += $" Staff notes: {notes}";
+            supportNotes += $" Staff notes: {dto.Notes}";
         }
 
         ticket.ResolutionNotes = string.IsNullOrWhiteSpace(ticket.ResolutionNotes)
@@ -312,7 +362,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         // Audit event for occupied incident penalty confirmation (staff action)
         try
         {
-            await CreateCheckTimeStateEventAsync(booking.BookingId, null, confirmedBy, "occupied_penalty_confirmed", new { TicketId = ticket.TicketId, PenaltyAmount = booking.DepositAmount, Notes = notes });
+            await CreateCheckTimeStateEventAsync(booking.BookingId, null, confirmedBy, "occupied_penalty_confirmed", new { TicketId = ticket.TicketId, PenaltyAmount = booking.DepositAmount, Notes = dto?.Notes });
         }
         catch
         {
@@ -343,6 +393,22 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private async Task<SupportTicket?> ResolveOccupiedIncidentTicketAsync(Guid bookingId, Guid tenantId, Guid? ticketId)
     {
+        bool IsOccupiedIncidentTicket(SupportTicket ticket)
+        {
+            var subject = ticket.Subject ?? string.Empty;
+            var description = ticket.Description ?? string.Empty;
+            var bookingMarker = bookingId.ToString();
+
+            return ticket.Category != null
+                && string.Equals(ticket.Category, "booking_issue", StringComparison.OrdinalIgnoreCase)
+                && ticket.UserId == tenantId
+                && ((ticket.BookingId.HasValue && ticket.BookingId.Value == bookingId)
+                    || subject.Contains(bookingMarker, StringComparison.OrdinalIgnoreCase)
+                    || description.Contains(bookingMarker, StringComparison.OrdinalIgnoreCase))
+                && (subject.Contains("occupied", StringComparison.OrdinalIgnoreCase)
+                    || description.Contains("occupied", StringComparison.OrdinalIgnoreCase));
+        }
+
         if (ticketId.HasValue)
         {
             var byId = await _supportTicketRepository.GetByIdAsync(ticketId.Value);
@@ -351,10 +417,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                 return null;
             }
 
-            if (!string.Equals(byId.Category, "booking_issue", StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(byId.UserId.ToString(), tenantId.ToString(), StringComparison.OrdinalIgnoreCase)
-                || !byId.Subject.Contains(bookingId.ToString(), StringComparison.OrdinalIgnoreCase)
-                || !byId.Subject.Contains("occupied", StringComparison.OrdinalIgnoreCase))
+            if (!IsOccupiedIncidentTicket(byId))
             {
                 return null;
             }
@@ -368,8 +431,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             t.Category == "booking_issue");
 
         return candidates
-            .Where(t => (t.Subject ?? string.Empty).Contains(subjectMarker, StringComparison.OrdinalIgnoreCase)
-                        && (t.Subject ?? string.Empty).Contains("occupied", StringComparison.OrdinalIgnoreCase))
+            .Where(IsOccupiedIncidentTicket)
             .OrderByDescending(t => t.CreatedAt ?? DateTime.MinValue)
             .FirstOrDefault();
     }
@@ -1245,7 +1307,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             }
             else
             {
-                throw new NotSupportedException($"Refunds for payment method '{payment.Method}' are not supported yet.");
+                throw new InvalidOperationException(
+                    $"Refunds for payment method '{payment.Method}' are not supported by this flow. Use the PayOS refund endpoint with payout details or refund a Stripe/MoMo payment.");
             }
 
             payment.Status = PaymentStatus.refunded.ToString();
@@ -4732,138 +4795,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         DateTime? fromDate = null,
         DateTime? toDate = null)
     {
-        // Get all bookings with disputed status or bookings that have support tickets
-        var allBookings = await _bookingRepository.FindAsync(b => b.Status == "disputed");
-
-        // Get bookings with support tickets from tenants
-        var supportTickets = await _supportTicketRepository.FindAsync(t =>
-            t.Category == "booking_issue" || t.Category == "dispute");
-
-        var bookingIdsWithTickets = supportTickets
-    .Where(t => t.BookingId.HasValue)
-    .Select(t => t.BookingId!.Value)
-    .ToHashSet();
-
-        foreach (var ticket in supportTickets.Where(t => !t.BookingId.HasValue))
-        {
-            var legacyBookingId = ExtractBookingIdFromSupportTicket(ticket);
-            if (legacyBookingId.HasValue)
-            {
-                bookingIdsWithTickets.Add(legacyBookingId.Value);
-            }
-        }
-
-        // Combine disputed bookings and bookings with support tickets
-        var reportedBookings = allBookings.ToList();
-
-        // Get booking check-time records to find disputes
-        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct =>
-            !string.IsNullOrEmpty(ct.DisputeResolutionStatus) || ct.TenantResponseStatus == "dispute" || ct.TenantResponseStatus == "refuted");
-
-        var bookingIdsWithCheckTimeDisputes = checkTimes.Select(ct => ct.BookingId).Distinct().ToList();
-
-        var allReportedBookingIds = new HashSet<Guid>();
-        foreach (var booking in reportedBookings)
-        {
-            allReportedBookingIds.Add(booking.BookingId);
-        }
-        foreach (var id in bookingIdsWithCheckTimeDisputes)
-        {
-            allReportedBookingIds.Add(id);
-        }
-        foreach (var id in bookingIdsWithTickets)
-        {
-            allReportedBookingIds.Add(id);
-        }
-
-        // Fetch full booking details
-        var reportedBookingsList = new List<ReportedBookingDto>();
-
-        foreach (var bookingId in allReportedBookingIds)
-        {
-            var booking = await _bookingRepository.GetByIdAsync(bookingId);
-            if (booking == null) continue;
-
-            var checkTime = checkTimes.FirstOrDefault(ct => ct.BookingId == bookingId);
-            var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
-            var tenant = await _userRepository.GetByIdAsync(booking.TenantId);
-            var landlord = apartment != null ? await _userRepository.GetByIdAsync(apartment.LandlordId) : null;
-
-            // Count support tickets for this booking
-            var ticketsForBooking = supportTickets
-                .Where(t => t.BookingId == bookingId
-                    || (!t.BookingId.HasValue && ExtractBookingIdFromSupportTicket(t) == bookingId))
-                .OrderByDescending(t => t.CreatedAt ?? DateTime.MinValue)
-                .ToList();
-
-            var latestTicket = ticketsForBooking.FirstOrDefault();
-
-            List<string> supportTicketImageUrls = new();
-            if (latestTicket != null)
-            {
-                // GetByIdAsync includes SupportTicketAttachments
-                var loadedTicket = await _supportTicketRepository.GetByIdAsync(latestTicket.TicketId);
-
-                supportTicketImageUrls = loadedTicket?.SupportTicketAttachments
-                    .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
-                    .Select(a => a.FileUrl)
-                    .ToList()
-                    ?? new List<string>();
-            }
-
-            List<string> checkTimeImageUrls = new();
-            if (checkTime != null)
-            {
-                if (!string.IsNullOrWhiteSpace(checkTime.CheckInPhotoUrl))
-                {
-                    checkTimeImageUrls.Add(checkTime.CheckInPhotoUrl);
-                }
-
-                if (!string.IsNullOrWhiteSpace(checkTime.CheckOutPhotoUrl))
-                {
-                    checkTimeImageUrls.Add(checkTime.CheckOutPhotoUrl);
-                }
-            }
-
-            supportTicketImageUrls = supportTicketImageUrls
-                .Where(url => !string.IsNullOrWhiteSpace(url))
-                .Distinct()
-                .ToList();
-
-            checkTimeImageUrls = checkTimeImageUrls
-                .Where(url => !string.IsNullOrWhiteSpace(url))
-                .Distinct()
-                .ToList();
-
-            var reportedDto = new ReportedBookingDto
-            {
-                BookingId = booking.BookingId,
-                TenantId = booking.TenantId,
-                TenantFullName = tenant?.FullName,
-                ApartmentId = booking.ApartmentId,
-                ApartmentAddress = apartment?.Address,
-                LandlordId = apartment?.LandlordId ?? Guid.Empty,
-                LandlordFullName = landlord?.FullName,
-                CheckInDate = booking.CheckInDate,
-                CheckOutDate = booking.CheckOutDate,
-                Nights = booking.Nights,
-                TotalPrice = booking.TotalPrice,
-                BookingStatus = booking.Status,
-                HasCheckTimeDispute = checkTime != null &&
-                    (checkTime.TenantResponseStatus == "dispute" ||
-                     !string.IsNullOrEmpty(checkTime.DisputeResolutionStatus)),
-                DisputeReason = checkTime?.TenantDisputeReason,
-                DisputeResolutionStatus = checkTime?.DisputeResolutionStatus,
-                DisputeCreatedAt = checkTime?.TenantRespondedAt,
-                SupportTicketCount = ticketsForBooking.Count,
-                TicketId = latestTicket?.TicketId,
-                Images = supportTicketImageUrls,
-                CheckTimeImages = checkTimeImageUrls,
-                CreatedAt = booking.CreatedAt
-            };
-
-            reportedBookingsList.Add(reportedDto);
-        }
+        var reportedBookingsList = await BuildReportedBookingsListAsync();
 
         // Apply filtering
         if (!string.IsNullOrWhiteSpace(search))
@@ -4916,7 +4848,6 @@ public class BookingService : BaseService<Booking>, IBookingService
                 : reportedBookingsList.OrderBy(b => b.CreatedAt).ToList()
         };
 
-        // Apply pagination
         var totalCount = reportedBookingsList.Count;
         var items = reportedBookingsList
             .Skip((page - 1) * pageSize)
@@ -4924,6 +4855,222 @@ public class BookingService : BaseService<Booking>, IBookingService
             .ToList();
 
         return (items, totalCount);
+    }
+
+    public async Task<(IEnumerable<ReportedBookingDto> Items, int TotalCount)> GetDisputedBookingsAsync(
+        int page = 1,
+        int pageSize = 10,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
+    {
+        var reportedBookingsList = (await BuildReportedBookingsListAsync())
+            .Where(b => b.HasCheckTimeDispute)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            reportedBookingsList = reportedBookingsList
+                .Where(b => b.TenantFullName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                           b.LandlordFullName?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                           b.ApartmentAddress?.Contains(search, StringComparison.OrdinalIgnoreCase) == true)
+                .ToList();
+        }
+
+        if (fromDate.HasValue)
+        {
+            reportedBookingsList = reportedBookingsList
+                .Where(b => b.CreatedAt >= fromDate)
+                .ToList();
+        }
+
+        if (toDate.HasValue)
+        {
+            reportedBookingsList = reportedBookingsList
+                .Where(b => b.CreatedAt <= toDate)
+                .ToList();
+        }
+
+        if (string.IsNullOrWhiteSpace(sortBy))
+        {
+            sortBy = "CreatedAt";
+        }
+
+        var isDescending = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
+
+        reportedBookingsList = sortBy.ToLower() switch
+        {
+            "tenantname" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.TenantFullName).ToList()
+                : reportedBookingsList.OrderBy(b => b.TenantFullName).ToList(),
+            "landlordname" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.LandlordFullName).ToList()
+                : reportedBookingsList.OrderBy(b => b.LandlordFullName).ToList(),
+            "price" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.TotalPrice).ToList()
+                : reportedBookingsList.OrderBy(b => b.TotalPrice).ToList(),
+            "checkinddate" => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.CheckInDate).ToList()
+                : reportedBookingsList.OrderBy(b => b.CheckInDate).ToList(),
+            _ => isDescending
+                ? reportedBookingsList.OrderByDescending(b => b.CreatedAt).ToList()
+                : reportedBookingsList.OrderBy(b => b.CreatedAt).ToList()
+        };
+
+        var totalCount = reportedBookingsList.Count;
+        var items = reportedBookingsList
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
+    }
+
+    private async Task<List<ReportedBookingDto>> BuildReportedBookingsListAsync()
+    {
+        // Get all bookings with disputed status or bookings that have support tickets
+        var allBookings = await _bookingRepository.FindAsync(b => b.Status == "disputed");
+
+        // Get bookings with support tickets from tenants
+        var supportTickets = (await _supportTicketRepository.FindWithAttachmentsNoTrackingAsync(t =>
+    t.Category == "booking_issue" || t.Category == "dispute")).ToList();
+
+        var bookingIdsWithTickets = supportTickets
+            .Where(t => t.BookingId.HasValue)
+            .Select(t => t.BookingId!.Value)
+            .ToHashSet();
+
+        foreach (var ticket in supportTickets.Where(t => !t.BookingId.HasValue))
+        {
+            var legacyBookingId = ExtractBookingIdFromSupportTicket(ticket);
+            if (legacyBookingId.HasValue)
+            {
+                bookingIdsWithTickets.Add(legacyBookingId.Value);
+            }
+        }
+
+        var reportedBookings = allBookings.ToList();
+
+        // Get booking check-time records to find disputes
+        var checkTimes = await _bookingCheckTimeRepository.FindAsync(ct =>
+            !string.IsNullOrEmpty(ct.DisputeResolutionStatus) || ct.TenantResponseStatus == "dispute" || ct.TenantResponseStatus == "refuted");
+
+        var bookingIdsWithCheckTimeDisputes = checkTimes.Select(ct => ct.BookingId).Distinct().ToList();
+
+        var allReportedBookingIds = new HashSet<Guid>();
+        foreach (var booking in reportedBookings)
+        {
+            allReportedBookingIds.Add(booking.BookingId);
+        }
+        foreach (var id in bookingIdsWithCheckTimeDisputes)
+        {
+            allReportedBookingIds.Add(id);
+        }
+        foreach (var id in bookingIdsWithTickets)
+        {
+            allReportedBookingIds.Add(id);
+        }
+
+        var reportedBookingsList = new List<ReportedBookingDto>();
+
+        foreach (var bookingId in allReportedBookingIds)
+        {
+            var booking = await _bookingRepository.GetByIdAsync(bookingId);
+            if (booking == null) continue;
+
+            var checkTime = checkTimes.FirstOrDefault(ct => ct.BookingId == bookingId);
+            var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+            var tenant = await _userRepository.GetByIdAsync(booking.TenantId);
+            var landlord = apartment != null ? await _userRepository.GetByIdAsync(apartment.LandlordId) : null;
+
+            var ticketsForBooking = supportTickets
+                .Where(t => t.BookingId == bookingId
+                    || (!t.BookingId.HasValue && ExtractBookingIdFromSupportTicket(t) == bookingId))
+                .OrderByDescending(t => t.CreatedAt ?? DateTime.MinValue)
+                .ToList();
+
+            var supportTicketImageUrls = ticketsForBooking
+                .SelectMany(t => t.SupportTicketAttachments ?? [])
+                .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
+                .Select(a => a.FileUrl)
+                .Distinct()
+                .ToList();
+
+            var latestTicket = ticketsForBooking.FirstOrDefault();
+
+            if (latestTicket != null)
+            {
+                var loadedTicket = await _supportTicketRepository.GetByIdAsync(latestTicket.TicketId);                
+
+                if (loadedTicket?.SupportTicketAttachments == null)
+                {
+                    continue;
+                }
+
+                supportTicketImageUrls.AddRange(
+                    loadedTicket.SupportTicketAttachments
+                        .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
+                        .Select(a => a.FileUrl));
+            }
+
+            List<string> checkTimeImageUrls = new();
+            if (checkTime != null)
+            {
+                if (!string.IsNullOrWhiteSpace(checkTime.CheckInPhotoUrl))
+                {
+                    checkTimeImageUrls.Add(checkTime.CheckInPhotoUrl);
+                }
+
+                if (!string.IsNullOrWhiteSpace(checkTime.CheckOutPhotoUrl))
+                {
+                    checkTimeImageUrls.Add(checkTime.CheckOutPhotoUrl);
+                }
+            }
+
+            supportTicketImageUrls = supportTicketImageUrls
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Distinct()
+                .ToList();
+
+            checkTimeImageUrls = checkTimeImageUrls
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Distinct()
+                .ToList();
+
+            var reportedDto = new ReportedBookingDto
+            {
+                BookingId = booking.BookingId,
+                TenantId = booking.TenantId,
+                TenantFullName = tenant?.FullName,
+                ApartmentId = booking.ApartmentId,
+                ApartmentAddress = apartment?.Address,
+                LandlordId = apartment?.LandlordId ?? Guid.Empty,
+                LandlordFullName = landlord?.FullName,
+                CheckInDate = booking.CheckInDate,
+                CheckOutDate = booking.CheckOutDate,
+                Nights = booking.Nights,
+                TotalPrice = booking.TotalPrice,
+                BookingStatus = booking.Status,
+                HasCheckTimeDispute = checkTime != null &&
+                    (checkTime.TenantResponseStatus == "dispute" ||
+                     checkTime.TenantResponseStatus == "refuted" ||
+                     !string.IsNullOrEmpty(checkTime.DisputeResolutionStatus)),
+                DisputeReason = checkTime?.TenantDisputeReason,
+                DisputeResolutionStatus = checkTime?.DisputeResolutionStatus,
+                DisputeCreatedAt = checkTime?.TenantRespondedAt,
+                SupportTicketCount = ticketsForBooking.Count,
+                TicketId = latestTicket?.TicketId,
+                Images = supportTicketImageUrls,
+                CheckTimeImages = checkTimeImageUrls,
+                CreatedAt = booking.CreatedAt
+            };
+
+            reportedBookingsList.Add(reportedDto);
+        }
+
+        return reportedBookingsList;
     }
 
     private static Guid? ExtractBookingIdFromSupportTicket(SupportTicket ticket)

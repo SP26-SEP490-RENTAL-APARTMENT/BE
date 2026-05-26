@@ -133,6 +133,39 @@ public sealed class AdminController : ControllerBase
         }
     }
 
+    [HttpGet("bookings/disputes")]
+    public async Task<IActionResult> GetDisputedBookings(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        try
+        {
+            var (items, totalCount) = await _bookingService.GetDisputedBookingsAsync(
+                page, pageSize, sortBy, sortOrder, search, fromDate, toDate);
+
+            return Ok(new
+            {
+                data = items,
+                pagination = new
+                {
+                    currentPage = page,
+                    pageSize = pageSize,
+                    totalCount = totalCount,
+                    totalPages = (totalCount + pageSize - 1) / pageSize
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPost("pricing/migrate-policies")]
     public async Task<IActionResult> MigratePricingPolicies()
     {

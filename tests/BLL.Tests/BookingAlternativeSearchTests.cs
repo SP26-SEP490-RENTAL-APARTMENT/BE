@@ -163,7 +163,7 @@ public class BookingAlternativeSearchTests
         var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
         var userRepo = new InMemoryRepository<User>(u => u.UserId);
         var availabilityRepo = new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId);
-        var supportTicketRepo = new InMemoryRepository<SupportTicket>(s => s.TicketId);
+        var supportTicketRepo = new FakeSupportTicketRepository(new InMemoryRepository<SupportTicket>(s => s.TicketId));
         var paymentRepo = new InMemoryRepository<Payment>(p => p.PaymentId);
         var checkTimeStateEventRepo = new InMemoryRepository<BookingCheckTimeStateEvent>(e => e.EventId);
         var configuration = new ConfigurationManager();

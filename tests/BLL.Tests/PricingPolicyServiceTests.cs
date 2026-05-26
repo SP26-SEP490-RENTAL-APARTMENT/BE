@@ -294,6 +294,12 @@ namespace BLL.Tests
                 return Task.FromResult(Items.Where(compiled));
             }
 
+            public Task<IEnumerable<T>> FindNoTrackingAsync(Expression<Func<T, bool>> predicate)
+            {
+                var compiled = predicate.Compile();
+                return Task.FromResult(Items.Where(compiled));
+            }
+
             public Task<T?> GetByIdAsync(Guid id)
             {
                 var prop = typeof(T).GetProperties().FirstOrDefault(p => p.Name.EndsWith("Id", StringComparison.OrdinalIgnoreCase));
@@ -325,6 +331,7 @@ namespace BLL.Tests
             public FakeApartmentRepository(InMemoryRepo<Apartment> repo) { _repo = repo; }
             public Task AddAsync(Apartment entity) => _repo.AddAsync(entity);
             public Task<IEnumerable<Apartment>> FindAsync(Expression<Func<Apartment, bool>> predicate) => _repo.FindAsync(predicate);
+            public Task<IEnumerable<Apartment>> FindNoTrackingAsync(Expression<Func<Apartment, bool>> predicate) => _repo.FindAsync(predicate);
             public Task<Apartment?> GetByIdAsync(Guid id) => _repo.GetByIdAsync(id);
             public Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => _repo.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, allowedColumns);
             public void Remove(Apartment entity) => _repo.Remove(entity);
@@ -352,6 +359,7 @@ namespace BLL.Tests
             public Task<IEnumerable<ApartmentPriceCalendar>> GetPriceCalendarRecordsForDeletionAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate) => Task.FromResult(_repo.Items.AsEnumerable());
             public Task AddAsync(ApartmentPriceCalendar entity) => _repo.AddAsync(entity);
             public Task<IEnumerable<ApartmentPriceCalendar>> FindAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate) => _repo.FindAsync(predicate);
+            public Task<IEnumerable<ApartmentPriceCalendar>> FindNoTrackingAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate) => _repo.FindAsync(predicate);
             public Task<ApartmentPriceCalendar?> GetByIdAsync(Guid id) => _repo.GetByIdAsync(id);
             public Task<(IEnumerable<ApartmentPriceCalendar> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => _repo.GetAllAsync(page, pageSize, sortBy, sortOrder, search, filters, allowedColumns);
             public void Remove(ApartmentPriceCalendar entity) => _repo.Remove(entity);

@@ -14,5 +14,10 @@ namespace Common.DTOs
         public string? Status { get; set; }
         public string? TransactionId { get; set; }
         public DateTime? PaidAt { get; set; }
+        public string? PayerAccountNumber { get; set; }
+        public string? PayerBankName { get; set; }
+        public string? PayerBankBin { get; set; }
+        public string? ReceivingAccountNumber { get; set; }
+        public string? ReceivingBankBin { get; set; }
     }
 }

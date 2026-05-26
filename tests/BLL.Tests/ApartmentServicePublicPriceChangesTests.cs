@@ -245,6 +245,7 @@ public class ApartmentServicePublicPriceChangesTests
     {
         public Task AddAsync(TenantWishlist entity) => Task.CompletedTask;
         public Task<IEnumerable<TenantWishlist>> FindAsync(Expression<Func<TenantWishlist, bool>> predicate) => Task.FromResult<IEnumerable<TenantWishlist>>(Enumerable.Empty<TenantWishlist>());
+        public Task<IEnumerable<TenantWishlist>> FindNoTrackingAsync(Expression<Func<TenantWishlist, bool>> predicate) => Task.FromResult<IEnumerable<TenantWishlist>>(Enumerable.Empty<TenantWishlist>());
         public Task<(IEnumerable<TenantWishlist> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => Task.FromResult((Enumerable.Empty<TenantWishlist>(), 0));
         public Task<TenantWishlist?> GetByIdAsync(Guid id) => Task.FromResult<TenantWishlist?>(null);
         public void Remove(TenantWishlist entity) { }
@@ -263,6 +264,7 @@ public class ApartmentServicePublicPriceChangesTests
     {
         public Task AddAsync(Amenity entity) => Task.CompletedTask;
         public Task<IEnumerable<Amenity>> FindAsync(Expression<Func<Amenity, bool>> predicate) => Task.FromResult<IEnumerable<Amenity>>(Enumerable.Empty<Amenity>());
+        public Task<IEnumerable<Amenity>> FindNoTrackingAsync(Expression<Func<Amenity, bool>> predicate) => Task.FromResult<IEnumerable<Amenity>>(Enumerable.Empty<Amenity>());
         public Task<(IEnumerable<Amenity> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => Task.FromResult((Enumerable.Empty<Amenity>(), 0));
         public Task<Amenity?> GetByIdAsync(Guid id) => Task.FromResult<Amenity?>(null);
         public void Remove(Amenity entity) { }
@@ -293,6 +295,7 @@ public class ApartmentServicePublicPriceChangesTests
     {
         public Task AddAsync(User entity) => Task.CompletedTask;
         public Task<IEnumerable<User>> FindAsync(Expression<Func<User, bool>> predicate) => Task.FromResult<IEnumerable<User>>(Enumerable.Empty<User>());
+        public Task<IEnumerable<User>> FindNoTrackingAsync(Expression<Func<User, bool>> predicate) => Task.FromResult<IEnumerable<User>>(Enumerable.Empty<User>());
         public Task<(IEnumerable<User> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => Task.FromResult((Enumerable.Empty<User>(), 0));
         public Task<User?> GetByIdAsync(Guid id) => Task.FromResult<User?>(null);
         public void Remove(User entity) { }
@@ -304,6 +307,7 @@ public class ApartmentServicePublicPriceChangesTests
     {
         public Task AddAsync(T entity) => Task.CompletedTask;
         public Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate) => Task.FromResult<IEnumerable<T>>(Enumerable.Empty<T>());
+        public Task<IEnumerable<T>> FindNoTrackingAsync(Expression<Func<T, bool>> predicate) => Task.FromResult<IEnumerable<T>>(Enumerable.Empty<T>());
         public Task<(IEnumerable<T> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => Task.FromResult((Enumerable.Empty<T>(), 0));
         public Task<T?> GetByIdAsync(Guid id) => Task.FromResult<T?>(null);
         public void Remove(T entity) { }
