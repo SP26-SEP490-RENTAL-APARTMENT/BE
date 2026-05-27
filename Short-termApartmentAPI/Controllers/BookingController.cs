@@ -1398,6 +1398,36 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpPost("{id:guid}/check-time/arrival-confirm")]
+        [Authorize(Roles = "tenant")]
+        public async Task<IActionResult> ConfirmGuestArrival(Guid id, [FromBody] ConfirmGuestArrivalDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var tenantId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var checkTimeResponse = await _bookingService.ConfirmGuestArrivalAsync(id, tenantId, dto);
+                return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Guest arrival was confirmed successfully."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ApiResponse<string>(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
         [HttpPost("{id:guid}/check-time/resolve")]
         [Authorize(Roles = "staff,admin")]
         public async Task<IActionResult> ResolveCheckTimeDispute(Guid id, [FromBody] ResolveBookingCheckTimeDisputeDto dto)

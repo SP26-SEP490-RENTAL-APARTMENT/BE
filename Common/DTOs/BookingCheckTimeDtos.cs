@@ -77,6 +77,34 @@ public class RecordCheckOutDto : IValidatableObject
 }
 
 /// <summary>
+/// DTO for tenant self-declaration of arrival (not landlord-certified check-in).
+/// </summary>
+public class ConfirmGuestArrivalDto : IValidatableObject
+{
+    [Required]
+    public DateTime ArrivedAt { get; set; }
+
+    [MaxLength(1000)]
+    public string? Notes { get; set; }
+
+    [MaxLength(2000)]
+    public string? PhotoEvidenceUrl { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        if (ArrivedAt.Year < 2020 || ArrivedAt.Year > Common.Utils.VietnamTime.Now.Year + 1)
+        {
+            yield return new ValidationResult("Arrival date year is invalid.", new[] { nameof(ArrivedAt) });
+        }
+
+        if (ArrivedAt > Common.Utils.VietnamTime.Now.AddMinutes(5))
+        {
+            yield return new ValidationResult("Arrival time cannot be in the future (+5 min grace).", new[] { nameof(ArrivedAt) });
+        }
+    }
+}
+
+/// <summary>
 /// DTO for responding with booking check-in/check-out details and calculated fees.
 /// </summary>
 public class BookingCheckTimeResponseDto
@@ -89,6 +117,8 @@ public class BookingCheckTimeResponseDto
 
     public DateTime? ActualCheckIn { get; set; }
     public DateTime? ActualCheckOut { get; set; }
+
+    public bool? IsLateCheckIn { get; set; }
 
     public bool? IsEarlyCheckIn { get; set; }
     public decimal? EarlyCheckInFee { get; set; }
@@ -135,6 +165,11 @@ public class BookingCheckTimeResponseDto
     /// </summary>
     public string? CheckInPhotoUrl { get; set; }
     public string? CheckOutPhotoUrl { get; set; }
+
+    public DateTime? GuestArrivalConfirmedAt { get; set; }
+    public Guid? GuestArrivalConfirmedBy { get; set; }
+    public string? GuestArrivalNotes { get; set; }
+    public string? GuestArrivalPhotoUrl { get; set; }
 
     /// <summary>
     /// Claim metadata for the checkout snapshot.

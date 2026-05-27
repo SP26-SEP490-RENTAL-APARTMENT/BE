@@ -504,6 +504,10 @@ namespace DAL.Migrations
                         .HasColumnType("datetime")
                         .HasColumnName("actual_check_out");
 
+                    b.Property<bool?>("IsLateCheckIn")
+                        .HasColumnType("tinyint(1)")
+                        .HasColumnName("is_late_check_in");
+
                     b.Property<Guid>("BookingId")
                         .HasColumnType("char(36)")
                         .HasColumnName("booking_id");
@@ -1564,6 +1568,18 @@ namespace DAL.Migrations
 
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("char(36)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnName("correlation_id");
+
+                    b.Property<string>("TriggerReason")
+                        .HasMaxLength(255)
+                        .HasColumnName("trigger_reason");
+
+                    b.Property<string>("TriggerSource")
+                        .HasMaxLength(50)
+                        .HasColumnName("trigger_source");
 
                     b.Property<string>("Description")
                         .HasColumnType("longtext");

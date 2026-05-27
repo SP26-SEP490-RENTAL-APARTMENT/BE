@@ -52,6 +52,12 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> RecordCheckOutAsync(Guid bookingId, RecordCheckOutDto dto, Guid recordedBy);
 
 	/// <summary>
+	/// Allows tenant to self-declare arrival for no-show protection and audit trail.
+	/// This is not equivalent to landlord/staff certified check-in.
+	/// </summary>
+	Task<BookingCheckTimeResponseDto> ConfirmGuestArrivalAsync(Guid bookingId, Guid tenantId, ConfirmGuestArrivalDto dto);
+
+	/// <summary>
 	/// Retrieves full check-time record with history and editability flag for a booking.
 	/// </summary>
 	Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null);

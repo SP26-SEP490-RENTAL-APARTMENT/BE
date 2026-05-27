@@ -15,6 +15,7 @@ using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 using Common.Settings;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace BLL.Services.Implements;
 
@@ -29,6 +30,11 @@ public class BookingService : BaseService<Booking>, IBookingService
     private const string FeeSettlementStatusDisputed = "disputed";
     private const string FeeSettlementStatusPaid = "paid";
     private const string FeeSettlementStatusWaived = "waived";
+    private const string NoShowWarningEventType = "no_show_warning_sent";
+    private const string NoShowAutoConfirmedEventType = "no_show_auto_confirmed";
+    private const string GuestArrivalConfirmedEventType = "guest_arrival_confirmed";
+    private const string AuditSourceManual = "manual";
+    private const string AuditSourceAutomation = "automation";
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DepositConfirmationLocks = new();
     private const int DefaultOfferExpiryHours = 2;
     private const decimal DefaultPriceTolerancePercent = 0.20m;
@@ -58,6 +64,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly BookingAdmissionPolicySettings _bookingAdmissionPolicySettings;
     private readonly IMapper _mapper;
     private readonly ICheckTimeRequestRepository? _checkTimeRequestRepository;
+    private readonly ILogger<BookingService> _logger;
 
     public BookingService(
         IBookingRepository repository,
@@ -85,7 +92,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IMapper mapper,
         IRepository<BookingOccupant>? bookingOccupantRepository = null,
         ICheckTimeRequestRepository? checkTimeRequestRepository = null,
-        IRepository<BookingCheckTimeStateEvent>? checkTimeStateEventRepository = null) : base(repository)
+        IRepository<BookingCheckTimeStateEvent>? checkTimeStateEventRepository = null,
+        ILogger<BookingService>? logger = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -113,6 +121,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingOccupantRepository = bookingOccupantRepository;
         _checkTimeRequestRepository = checkTimeRequestRepository;
         _checkTimeStateEventRepository = checkTimeStateEventRepository;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<BookingService>.Instance;
     }
 
     public async Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
@@ -2195,12 +2204,25 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         await EnsureActorIsOwnerOrStaffAsync(recordedBy, apartment.LandlordId);
 
-        // Validate booking status (must be confirmed or paid)
-        if (!checkTime.ActualCheckIn.HasValue &&
-            !(string.Equals(booking.Status, "confirmed", StringComparison.OrdinalIgnoreCase) ||
-              string.Equals(booking.Status, "paid", StringComparison.OrdinalIgnoreCase)))
+        var bookingIsActiveForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
+        var bookingIsRecoveringFromNoShow = string.Equals(booking.Status, BookingStatus.cancelled.ToString(), StringComparison.OrdinalIgnoreCase)
+            && (checkTime.NoShowMarkedAt.HasValue || !string.IsNullOrWhiteSpace(checkTime.NoShowStatus));
+
+        // Validate booking status (must be confirmed/paid, or a legacy no-show recovery)
+        if (!checkTime.ActualCheckIn.HasValue && !(bookingIsActiveForCheckIn || bookingIsRecoveringFromNoShow))
         {
             throw new InvalidOperationException("Booking must be in confirmed or paid status to record check-in.");
+        }
+
+        if (bookingIsRecoveringFromNoShow)
+        {
+            booking.Status = GetBookingPaymentMode(booking) == BookingPaymentMode.full
+                ? BookingStatus.paid.ToString()
+                : BookingStatus.confirmed.ToString();
+            _bookingRepository.Update(booking);
+            await _bookingRepository.SaveChangesAsync();
+            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
         }
 
         // Validate time range: ±1 day from scheduled check-in date
@@ -2224,6 +2246,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         // Detect early check-in and calculate fee
+        bool isLateCheckIn = dto.ActualCheckIn > checkTime.ScheduledCheckIn;
         bool isEarlyCheckIn = dto.ActualCheckIn < checkTime.ScheduledCheckIn;
         decimal earlyCheckInFee = 0m;
 
@@ -2235,12 +2258,20 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         // Update check-in record
         checkTime.ActualCheckIn = dto.ActualCheckIn;
+        checkTime.IsLateCheckIn = isLateCheckIn;
         checkTime.IsEarlyCheckIn = isEarlyCheckIn;
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
         checkTime.CheckInPhotoUrl = dto.PhotoEvidenceUrl;
         ApplyFeeSettlementState(checkTime, earlyCheckInFee, Common.Utils.VietnamTime.Now);
         checkTime.RecordedBy = recordedBy;
         checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
+        checkTime.ClaimOpenedAt = null;
+        checkTime.ClaimExpiresAt = null;
+        checkTime.ClaimLockedAt = null;
+        checkTime.ClaimStatus = null;
+        checkTime.NoShowStatus = null;
+        checkTime.NoShowMarkedAt = null;
+        checkTime.NoShowMarkedBy = null;
         checkTime.TenantResponseStatus = "pending";
         checkTime.TenantRespondedBy = null;
         checkTime.TenantRespondedAt = null;
@@ -2263,9 +2294,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, recordedBy, "check_in_recorded", new { ActualCheckIn = dto.ActualCheckIn, Notes = dto.Notes, Photo = dto.PhotoEvidenceUrl });
 
         // Notify landlord
-        var checkInMessage = isEarlyCheckIn
-            ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}"
-            : $"Guest checked in at {dto.ActualCheckIn:yyyy-MM-dd HH:mm} (on schedule).";
+        var checkInMessage = isLateCheckIn
+            ? $"Guest checked in late at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}."
+            : isEarlyCheckIn
+                ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}"
+                : $"Guest checked in at {dto.ActualCheckIn:yyyy-MM-dd HH:mm} (on schedule).";
 
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
@@ -2422,6 +2455,57 @@ public class BookingService : BaseService<Booking>, IBookingService
         return await GetCheckTimeDetailsAsync(bookingId, apartment.LandlordId);
     }
 
+    public async Task<BookingCheckTimeResponseDto> ConfirmGuestArrivalAsync(Guid bookingId, Guid tenantId, ConfirmGuestArrivalDto dto)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        if (booking.TenantId != tenantId)
+        {
+            throw new InvalidOperationException("You are not allowed to confirm arrival for this booking.");
+        }
+
+        var bookingIsActiveForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
+        if (!bookingIsActiveForCheckIn)
+        {
+            throw new InvalidOperationException("Booking must be in confirmed or paid status to confirm arrival.");
+        }
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        var latestArrival = await GetLatestGuestArrivalDeclarationAsync(booking.BookingId, checkTime.CheckTimeId);
+        if (latestArrival != null)
+        {
+            var correctionWindowHours = _configuration.GetValue<int>("BookingCheckTimeSettings:CorrectionWindowHours", 24);
+            var timeSinceDeclaration = Common.Utils.VietnamTime.Now - latestArrival.CreatedAt;
+            if (timeSinceDeclaration.TotalHours > correctionWindowHours)
+            {
+                throw new InvalidOperationException($"Guest arrival cannot be modified after {correctionWindowHours} hours of initial declaration.");
+            }
+        }
+
+        var arrivalEventData = new
+        {
+            ArrivedAt = dto.ArrivedAt,
+            Notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim(),
+            PhotoEvidenceUrl = string.IsNullOrWhiteSpace(dto.PhotoEvidenceUrl) ? null : dto.PhotoEvidenceUrl.Trim()
+        };
+
+        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, tenantId, GuestArrivalConfirmedEventType, arrivalEventData);
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
+            ?? throw new KeyNotFoundException("Apartment not found.");
+
+        await CreateBookingNotificationAsync(
+            apartment.LandlordId,
+            NotificationType.check_in_recorded.ToString(),
+            "Guest Confirmed Arrival",
+            $"Tenant declared arrival at {dto.ArrivedAt:yyyy-MM-dd HH:mm}.",
+            booking.BookingId);
+
+        return await GetCheckTimeDetailsAsync(bookingId, tenantId);
+    }
+
     public async Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId);
@@ -2447,6 +2531,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             ? (claimLockedAt.HasValue ? "locked" : "open")
             : checkTime.ClaimStatus.Trim().ToLowerInvariant();
 
+        var latestGuestArrival = await GetLatestGuestArrivalDeclarationAsync(booking.BookingId, checkTime.CheckTimeId);
+
         return new BookingCheckTimeResponseDto
         {
             CheckTimeId = checkTime.CheckTimeId,
@@ -2455,6 +2541,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ScheduledCheckOut = checkTime.ScheduledCheckOut,
             ActualCheckIn = checkTime.ActualCheckIn,
             ActualCheckOut = checkTime.ActualCheckOut,
+            IsLateCheckIn = checkTime.IsLateCheckIn ?? (checkTime.ActualCheckIn.HasValue ? checkTime.ActualCheckIn.Value > checkTime.ScheduledCheckIn : (bool?)null),
             IsEarlyCheckIn = checkTime.IsEarlyCheckIn,
             EarlyCheckInFee = checkTime.EarlyCheckInFee,
             IsLateCheckOut = checkTime.IsLateCheckOut,
@@ -2470,6 +2557,10 @@ public class BookingService : BaseService<Booking>, IBookingService
             Notes = checkTime.Notes,
             CheckInPhotoUrl = checkTime.CheckInPhotoUrl,
             CheckOutPhotoUrl = checkTime.CheckOutPhotoUrl,
+            GuestArrivalConfirmedAt = latestGuestArrival?.ArrivedAt,
+            GuestArrivalConfirmedBy = latestGuestArrival?.CreatedBy,
+            GuestArrivalNotes = latestGuestArrival?.Notes,
+            GuestArrivalPhotoUrl = latestGuestArrival?.PhotoEvidenceUrl,
             ClaimOpenedAt = checkTime.ClaimOpenedAt,
             ClaimExpiresAt = claimExpiresAt,
             ClaimLockedAt = claimLockedAt,
@@ -3039,14 +3130,19 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
         booking.Status = BookingStatus.cancelled.ToString();
-
-        // Emit audit event for no-show
-        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, actorId, "no_show_marked", new { Reason = dto.Reason, Notes = dto.Notes });
-
-        booking.Status = BookingStatus.cancelled.ToString();
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
         await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        // Emit audit event for no-show
+        await CreateCheckTimeStateEventAsync(
+            booking.BookingId,
+            checkTime.CheckTimeId,
+            actorId,
+            "no_show_marked",
+            new { Reason = dto.Reason, Notes = dto.Notes },
+            AuditSourceManual,
+            string.IsNullOrWhiteSpace(dto.Reason) ? "manual_no_show" : dto.Reason.Trim());
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
@@ -3109,7 +3205,14 @@ public class BookingService : BaseService<Booking>, IBookingService
         booking.Status = BookingStatus.completed.ToString();
 
         // Emit event for missing check-out closed
-        await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, actorId, "missing_checkout_closed", new { Force = dto.Force, Notes = dto.Notes });
+        await CreateCheckTimeStateEventAsync(
+            booking.BookingId,
+            checkTime.CheckTimeId,
+            actorId,
+            "missing_checkout_closed",
+            new { Force = dto.Force, Notes = dto.Notes },
+            AuditSourceManual,
+            dto.Force ? "manual_force_close_missing_checkout" : "manual_close_missing_checkout");
 
         booking.Status = BookingStatus.completed.ToString();
         _bookingRepository.Update(booking);
@@ -3129,6 +3232,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     public async Task ProcessCheckTimeAutomationAsync()
     {
         var now = Common.Utils.VietnamTime.Now;
+        var runId = Guid.NewGuid();
         // Check for long-running claim queues and emit alert events when thresholds exceeded
         try
         {
@@ -3141,7 +3245,15 @@ public class BookingService : BaseService<Booking>, IBookingService
                 if (longClaims.Count >= longClaimAlertCount)
                 {
                     var oldest = longClaims.Min(ct => ct!.ClaimOpenedAt!.Value);
-                    await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "long_claim_queue", new { Count = longClaims.Count, ThresholdDays = longClaimDays, Oldest = oldest });
+                    await CreateCheckTimeStateEventAsync(
+                        Guid.Empty,
+                        null,
+                        null,
+                        "long_claim_queue",
+                        new { Count = longClaims.Count, ThresholdDays = longClaimDays, Oldest = oldest },
+                        AuditSourceAutomation,
+                        "long_claim_threshold_reached",
+                        runId.ToString("D"));
                 }
             }
         }
@@ -3166,10 +3278,23 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             missingCheckOutGraceHours = 6;
         }
+        var automationPollIntervalSeconds = _configuration.GetValue<int>("BookingCheckTimeSettings:AutomationPollIntervalSeconds", 300);
+        if (automationPollIntervalSeconds <= 0)
+        {
+            automationPollIntervalSeconds = 300;
+        }
+        var noShowWarningWindow = TimeSpan.FromSeconds(automationPollIntervalSeconds);
 
         // Emit automation run started event
-        var runId = Guid.NewGuid();
-        await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "automation_run_started", new { RunId = runId, StartedAt = now });
+        await CreateCheckTimeStateEventAsync(
+            Guid.Empty,
+            null,
+            null,
+            "automation_run_started",
+            new { RunId = runId, StartedAt = now },
+            AuditSourceAutomation,
+            "automation_cycle_started",
+            runId.ToString("D"));
 
         var processed = 0;
         var checkTimes = await _bookingCheckTimeRepository.FindAsync(_ => true);
@@ -3208,30 +3333,121 @@ public class BookingService : BaseService<Booking>, IBookingService
                 }
 
                 changed = true;
-                await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, null, "claim_locked", new { ClaimExpiresAt = claimExpiresAt.Value });
+                await CreateCheckTimeStateEventAsync(
+                    booking.BookingId,
+                    checkTime.CheckTimeId,
+                    null,
+                    "claim_locked",
+                    new { ClaimExpiresAt = claimExpiresAt.Value },
+                    AuditSourceAutomation,
+                    "claim_expired",
+                    runId.ToString("D"));
             }
 
             if (!checkTime.ActualCheckIn.HasValue && !checkTime.NoShowMarkedAt.HasValue)
             {
+                if (await HasGuestArrivalDeclarationAsync(booking.BookingId, checkTime.CheckTimeId))
+                {
+                    continue;
+                }
+
                 var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(noShowGraceHours);
                 var bookingOpenForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
                     || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
                 if (bookingOpenForCheckIn && now >= noShowEligibleAt)
                 {
+                    var noShowWarningEvents = _checkTimeStateEventRepository == null
+                        ? Array.Empty<BookingCheckTimeStateEvent>()
+                        : await _checkTimeStateEventRepository.FindAsync(e =>
+                            e.BookingId == booking.BookingId
+                            && e.CheckTimeId == checkTime.CheckTimeId
+                            && e.EventType == NoShowWarningEventType);
+
+                    var latestNoShowWarning = noShowWarningEvents
+                        .OrderByDescending(e => e.CreatedAt)
+                        .FirstOrDefault();
+
+                    if (latestNoShowWarning == null)
+                    {
+                        if (_checkTimeStateEventRepository != null)
+                        {
+                            var warningApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+                            if (warningApartment != null)
+                            {
+                                await CreateBookingNotificationAsync(
+                                    warningApartment.LandlordId,
+                                    NotificationType.system_announcement.ToString(),
+                                    "No-show Warning",
+                                    $"Booking {booking.BookingId} reached no-show eligibility at {noShowEligibleAt:yyyy-MM-dd HH:mm}. It will be auto-marked no-show after the next automation cycle if no check-in is recorded.",
+                                    booking.BookingId);
+                            }
+
+                            await CreateCheckTimeStateEventAsync(
+                                booking.BookingId,
+                                checkTime.CheckTimeId,
+                                null,
+                                NoShowWarningEventType,
+                                new
+                                {
+                                    NoShowEligibleAt = noShowEligibleAt,
+                                    WarningWindowSeconds = automationPollIntervalSeconds,
+                                    WarningCreatedAt = now
+                                },
+                                AuditSourceAutomation,
+                                "no_show_grace_window_elapsed",
+                                runId.ToString("D"));
+                        }
+
+                        continue;
+                    }
+
+                    if (now - latestNoShowWarning.CreatedAt < noShowWarningWindow)
+                    {
+                        continue;
+                    }
+
+                    var noShowApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
                     checkTime.NoShowStatus = "auto_confirmed";
                     checkTime.NoShowMarkedBy = Guid.Empty;
                     checkTime.NoShowMarkedAt = now;
+                    checkTime.IsLateCheckIn = null;
                     checkTime.ClaimStatus = "no_show_confirmed";
                     checkTime.ClaimOpenedAt ??= now;
                     checkTime.ClaimExpiresAt ??= now;
                     checkTime.ClaimLockedAt ??= now;
 
+                    changed = true;
                     booking.Status = BookingStatus.cancelled.ToString();
                     _bookingRepository.Update(booking);
                     await _bookingRepository.SaveChangesAsync();
                     await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
-                    changed = true;
-                    await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, null, "no_show_auto_confirmed", new { NoShowMarkedAt = now });
+
+                    await CreateCheckTimeStateEventAsync(
+                        booking.BookingId,
+                        checkTime.CheckTimeId,
+                        null,
+                        NoShowAutoConfirmedEventType,
+                        new { NoShowMarkedAt = now, WarningEventType = NoShowWarningEventType, WarningEventCreatedAt = latestNoShowWarning.CreatedAt },
+                        AuditSourceAutomation,
+                        "no_show_warning_window_expired",
+                        runId.ToString("D"));
+
+                        if (noShowApartment != null)
+                    {
+                        await CreateBookingNotificationAsync(
+                            noShowApartment.LandlordId,
+                            NotificationType.system_announcement.ToString(),
+                            "No-show Auto-Confirmed",
+                            $"Booking {booking.BookingId} was automatically marked as no-show after the warning window expired and the booking was cancelled.",
+                            booking.BookingId);
+                    }
+
+                    await CreateBookingNotificationAsync(
+                        booking.TenantId,
+                        NotificationType.system_announcement.ToString(),
+                        "No-show Marked",
+                        "Your booking was automatically marked as no-show and cancelled after the grace window expired.",
+                        booking.BookingId);
                 }
             }
 
@@ -3258,7 +3474,15 @@ public class BookingService : BaseService<Booking>, IBookingService
                     await _bookingRepository.SaveChangesAsync();
                     await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
                     changed = true;
-                    await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, null, "missing_checkout_auto_closed", new { AutoClosedAt = now });
+                    await CreateCheckTimeStateEventAsync(
+                        booking.BookingId,
+                        checkTime.CheckTimeId,
+                        null,
+                        "missing_checkout_auto_closed",
+                        new { AutoClosedAt = now },
+                        AuditSourceAutomation,
+                        "missing_checkout_grace_elapsed",
+                        runId.ToString("D"));
                 }
             }
 
@@ -3271,7 +3495,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         // Emit automation run completed event
-        await CreateCheckTimeStateEventAsync(Guid.Empty, null, null, "automation_run_completed", new { RunId = runId, CompletedAt = Common.Utils.VietnamTime.Now, Processed = processed });
+        await CreateCheckTimeStateEventAsync(
+            Guid.Empty,
+            null,
+            null,
+            "automation_run_completed",
+            new { RunId = runId, CompletedAt = Common.Utils.VietnamTime.Now, Processed = processed },
+            AuditSourceAutomation,
+            "automation_cycle_completed",
+            runId.ToString("D"));
     }
 
     private async Task EnsureTenantHasNoOutstandingCheckTimeFeesAsync(Guid tenantId)
@@ -3298,7 +3530,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         throw new InvalidOperationException($"You have unpaid check-time fees totaling {totalOutstanding:0.00}. Please settle them before creating a new booking.");
     }
 
-    private async Task CreateCheckTimeStateEventAsync(Guid bookingId, Guid? checkTimeId, Guid? actorId, string eventType, object? eventData = null)
+    private async Task CreateCheckTimeStateEventAsync(
+        Guid bookingId,
+        Guid? checkTimeId,
+        Guid? actorId,
+        string eventType,
+        object? eventData = null,
+        string? triggerSource = null,
+        string? triggerReason = null,
+        string? correlationId = null)
     {
         try
         {
@@ -3320,6 +3560,9 @@ public class BookingService : BaseService<Booking>, IBookingService
                 CheckTimeId = checkTimeId,
                 EventType = eventType,
                 EventData = serializedEventData,
+                TriggerSource = triggerSource,
+                TriggerReason = triggerReason,
+                CorrelationId = correlationId,
                 CreatedBy = actorId,
                 CreatedAt = Common.Utils.VietnamTime.Now
             };
@@ -3327,10 +3570,103 @@ public class BookingService : BaseService<Booking>, IBookingService
             await _checkTimeStateEventRepository.AddAsync(ev);
             await _checkTimeStateEventRepository.SaveChangesAsync();
         }
-        catch
+        catch (Exception ex)
         {
-            // swallow errors to avoid breaking main flow; consider logging
+            _logger.LogError(
+            ex,
+                "Failed to persist check-time audit event {EventType} for booking {BookingId} and check-time {CheckTimeId}.",
+                eventType,
+                bookingId,
+                checkTimeId);
         }
+    }
+
+    private async Task<bool> HasGuestArrivalDeclarationAsync(Guid bookingId, Guid checkTimeId)
+    {
+        if (_checkTimeStateEventRepository == null)
+        {
+            return false;
+        }
+
+        var events = await _checkTimeStateEventRepository.FindAsync(e =>
+            e.BookingId == bookingId
+            && e.CheckTimeId == checkTimeId
+            && e.EventType == GuestArrivalConfirmedEventType);
+
+        return events.Any();
+    }
+
+    private async Task<GuestArrivalDeclarationSnapshot?> GetLatestGuestArrivalDeclarationAsync(Guid bookingId, Guid checkTimeId)
+    {
+        if (_checkTimeStateEventRepository == null)
+        {
+            return null;
+        }
+
+        var events = await _checkTimeStateEventRepository.FindAsync(e =>
+            e.BookingId == bookingId
+            && e.CheckTimeId == checkTimeId
+            && e.EventType == GuestArrivalConfirmedEventType);
+
+        var latest = events
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+
+        if (latest == null)
+        {
+            return null;
+        }
+
+        string? notes = null;
+        string? photoEvidenceUrl = null;
+        DateTime? arrivedAt = null;
+        if (!string.IsNullOrWhiteSpace(latest.EventData))
+        {
+            try
+            {
+                using var eventData = JsonDocument.Parse(latest.EventData);
+                var root = eventData.RootElement;
+                if (root.TryGetProperty("ArrivedAt", out var arrivedAtProperty) && arrivedAtProperty.ValueKind == JsonValueKind.String)
+                {
+                    if (arrivedAtProperty.TryGetDateTime(out var parsedDate))
+                    {
+                        arrivedAt = parsedDate;
+                    }
+                }
+
+                if (root.TryGetProperty("Notes", out var notesProperty) && notesProperty.ValueKind == JsonValueKind.String)
+                {
+                    notes = notesProperty.GetString();
+                }
+
+                if (root.TryGetProperty("PhotoEvidenceUrl", out var photoProperty) && photoProperty.ValueKind == JsonValueKind.String)
+                {
+                    photoEvidenceUrl = photoProperty.GetString();
+                }
+            }
+            catch
+            {
+                // Keep event fallback values even when payload parsing fails.
+            }
+        }
+
+        return new GuestArrivalDeclarationSnapshot
+        {
+            CreatedBy = latest.CreatedBy,
+            CreatedAt = latest.CreatedAt,
+            ArrivedAt = arrivedAt,
+            Notes = notes,
+            PhotoEvidenceUrl = photoEvidenceUrl
+        };
+    }
+
+    private sealed class GuestArrivalDeclarationSnapshot
+    {
+        public Guid? CreatedBy { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? ArrivedAt { get; set; }
+        public string? Notes { get; set; }
+        public string? PhotoEvidenceUrl { get; set; }
     }
 
     private async Task EnsureTenantHasNoPendingCheckTimeRequestsAsync(Guid tenantId)

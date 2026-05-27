@@ -14,6 +14,12 @@ public partial class BookingCheckTimeStateEvent
 
     public string? EventData { get; set; }
 
+    public string? TriggerSource { get; set; }
+
+    public string? TriggerReason { get; set; }
+
+    public string? CorrelationId { get; set; }
+
     public Guid? CreatedBy { get; set; }
 
     public DateTime CreatedAt { get; set; }

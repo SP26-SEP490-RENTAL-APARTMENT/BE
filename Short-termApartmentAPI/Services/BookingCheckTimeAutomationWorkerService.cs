@@ -58,6 +58,9 @@ public class BookingCheckTimeAutomationWorkerService : BackgroundService
                             CheckTimeId = null,
                             EventType = "automation_error",
                             EventData = System.Text.Json.JsonSerializer.Serialize(new { Error = ex.Message, Stack = ex.StackTrace }),
+                            TriggerSource = "automation",
+                            TriggerReason = "worker_exception",
+                            CorrelationId = Guid.NewGuid().ToString("D"),
                             CreatedBy = null,
                             CreatedAt = Common.Utils.VietnamTime.Now
                         };

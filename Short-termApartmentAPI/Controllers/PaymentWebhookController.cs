@@ -90,6 +90,9 @@ public class PaymentWebhookController : ControllerBase
                                         CheckTimeId = checkTime.CheckTimeId,
                                         EventType = "payment_settled",
                                         EventData = JsonSerializer.Serialize(new { PaymentId = payment.PaymentId, TransactionId = payment.TransactionId, Amount = payment.Amount, Method = payment.Method }),
+                                        TriggerSource = "integration",
+                                        TriggerReason = "stripe_checkout_session_completed",
+                                        CorrelationId = session.Id,
                                         CreatedBy = null,
                                         CreatedAt = Common.Utils.VietnamTime.Now
                                     };
@@ -165,6 +168,9 @@ public class PaymentWebhookController : ControllerBase
                                             CheckTimeId = checkTime.CheckTimeId,
                                             EventType = "payment_failed",
                                             EventData = JsonSerializer.Serialize(new { PaymentId = payment.PaymentId, TransactionId = payment.TransactionId, Method = payment.Method }),
+                                            TriggerSource = "integration",
+                                            TriggerReason = stripeEvent.Type,
+                                            CorrelationId = session.Id,
                                             CreatedBy = null,
                                             CreatedAt = Common.Utils.VietnamTime.Now
                                         };

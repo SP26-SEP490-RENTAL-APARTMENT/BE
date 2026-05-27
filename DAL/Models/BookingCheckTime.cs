@@ -15,6 +15,8 @@ public partial class BookingCheckTime
 
     public DateTime? ActualCheckIn { get; set; }
 
+    public bool? IsLateCheckIn { get; set; }
+
     public DateTime? ActualCheckOut { get; set; }
 
     public bool? IsLateCheckOut { get; set; }

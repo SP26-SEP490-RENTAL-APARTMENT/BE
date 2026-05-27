@@ -174,6 +174,15 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.EventData)
                 .HasColumnType("text")
                 .HasColumnName("event_data");
+            entity.Property(e => e.TriggerSource)
+                .HasMaxLength(50)
+                .HasColumnName("trigger_source");
+            entity.Property(e => e.TriggerReason)
+                .HasMaxLength(255)
+                .HasColumnName("trigger_reason");
+            entity.Property(e => e.CorrelationId)
+                .HasMaxLength(100)
+                .HasColumnName("correlation_id");
             entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("now()")
@@ -729,6 +738,8 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ActualCheckOut)
                 .HasColumnType("datetime")
                 .HasColumnName("actual_check_out");
+            entity.Property(e => e.IsLateCheckIn)
+                .HasColumnName("is_late_check_in");
             entity.Property(e => e.BookingId).HasColumnName("booking_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
