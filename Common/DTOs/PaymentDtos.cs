@@ -8,6 +8,7 @@ namespace Common.DTOs
         public Guid? RelatedEntityId { get; set; }
         public string? RelatedEntityType { get; set; }
         public decimal Amount { get; set; }
+        public string SignedAmountDisplay { get; set; } = string.Empty; 
         public string PaymentType { get; set; } = string.Empty;
         public string PaymentPurpose { get; set; } = string.Empty;
         public string Method { get; set; } = string.Empty;

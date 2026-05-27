@@ -11,6 +11,10 @@ public partial class SmartPricingHistory
 
     public DateOnly Date { get; set; }
 
+    public DateOnly StartDate { get; set; }
+
+    public DateOnly EndDate { get; set; }
+
     public decimal SuggestedPrice { get; set; }
 
     public decimal BasePrice { get; set; }

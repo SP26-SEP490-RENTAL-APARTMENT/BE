@@ -55,6 +55,7 @@ namespace Common.DTOs
 
         [Required]
         [MinLength(6)]
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$", ErrorMessage = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.")]
         public required string NewPassword { get; set; }
 
         [Required]
@@ -67,6 +68,7 @@ namespace Common.DTOs
     {
         [Required]
         [MinLength(6)]
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$", ErrorMessage = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.")]
         public required string NewPassword { get; set; }
 
         [Required]
@@ -86,11 +88,12 @@ namespace Common.DTOs
         public required string VerificationCode { get; set; }
 
         [Required]
-        [MinLength(8)]
+        [MinLength(6)]
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$", ErrorMessage = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.")]
         public required string NewPassword { get; set; }
 
         [Required]
-        [MinLength(8)]
+        [MinLength(6)]
         [Compare("NewPassword", ErrorMessage = "Passwords do not match.")]
         public required string ConfirmNewPassword { get; set; }
     }
@@ -103,6 +106,7 @@ namespace Common.DTOs
 
         [Required]
         [MinLength(6)]
+        [RegularExpression(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{6,}$", ErrorMessage = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character.")]
         public required string Password { get; set; }
         
         [Required]

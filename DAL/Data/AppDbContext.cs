@@ -1567,6 +1567,7 @@ public partial class AppDbContext : DbContext
             entity.ToTable("smart_pricing_history");
 
             entity.HasIndex(e => new { e.ApartmentId, e.Date }, "idx_apartment_date");
+            entity.HasIndex(e => new { e.ApartmentId, e.StartDate, e.EndDate }, "idx_apartment_date_range");
 
             entity.Property(e => e.PricingId).HasColumnName("pricing_id");
             entity.Property(e => e.AcceptedByLandlord)
@@ -1581,6 +1582,7 @@ public partial class AppDbContext : DbContext
                 .HasColumnType("timestamp")
                 .HasColumnName("created_at");
             entity.Property(e => e.Date).HasColumnName("date");
+            entity.Property(e => e.EndDate).HasColumnName("end_date");
             entity.Property(e => e.Multiplier)
                 .HasPrecision(5, 2)
                 .HasDefaultValueSql("'1.00'")
@@ -1591,6 +1593,7 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Reason)
                 .HasMaxLength(255)
                 .HasColumnName("reason");
+            entity.Property(e => e.StartDate).HasColumnName("start_date");
             entity.Property(e => e.SuggestedPrice)
                 .HasPrecision(12, 2)
                 .HasColumnName("suggested_price");

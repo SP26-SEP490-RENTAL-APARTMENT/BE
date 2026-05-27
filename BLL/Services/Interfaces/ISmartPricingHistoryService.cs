@@ -16,6 +16,17 @@ public interface ISmartPricingHistoryService : IBaseService<SmartPricingHistory>
     Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly date, decimal? occupancyRate = null);
 
     /// <summary>
+    /// Generates a smart price suggestion for an apartment over a date span.
+    /// The service computes the pricing per day and stores one suggestion record for the whole span.
+    /// </summary>
+    /// <param name="apartmentId">The apartment to price</param>
+    /// <param name="startDate">Start of the pricing span</param>
+    /// <param name="endDate">End of the pricing span</param>
+    /// <param name="occupancyRate">Market occupancy rate (0-1). If null, defaults to 0.7</param>
+    /// <returns>SmartPricingHistory record with suggested price</returns>
+    Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate, decimal? occupancyRate = null);
+
+    /// <summary>
     /// Landlord accepts or overrides the suggested price.
     /// </summary>
     Task<SmartPricingHistory> AcceptPriceSuggestionAsync(Guid pricingId, decimal? overridePrice = null);

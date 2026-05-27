@@ -1845,7 +1845,12 @@ public class ReportExecutionService : IReportExecutionService
                         // smart pricing history
                         if (auxiliaryContext.PricingHistoriesByApartment.TryGetValue(aptId, out var phs) && phs.Count > 0)
                         {
-                            var entries = phs.Where(p => p.Date.ToDateTime(TimeOnly.MinValue) >= periodFromDt && p.Date.ToDateTime(TimeOnly.MinValue) < periodToDt).ToList();
+                            var entries = phs.Where(p =>
+                            {
+                                var entryStart = p.StartDate.ToDateTime(TimeOnly.MinValue);
+                                var entryEndExclusive = p.EndDate.AddDays(1).ToDateTime(TimeOnly.MinValue);
+                                return entryStart < periodToDt && entryEndExclusive > periodFromDt;
+                            }).ToList();
                             if (entries.Count > 0) aptBase = Math.Round(entries.Average(p => p.BasePrice), 2);
                         }
 

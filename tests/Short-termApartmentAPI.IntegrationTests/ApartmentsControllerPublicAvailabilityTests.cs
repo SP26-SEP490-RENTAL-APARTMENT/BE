@@ -155,6 +155,7 @@ public class ApartmentsControllerPublicAvailabilityTests
     private sealed class SmartPricingHistoryServiceStub : ISmartPricingHistoryService
     {
         public Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly date, decimal? occupancyRate = null) => throw new NotImplementedException();
+        public Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate, decimal? occupancyRate = null) => throw new NotImplementedException();
         public Task<SmartPricingHistory> AcceptPriceSuggestionAsync(Guid pricingId, decimal? overridePrice = null) => throw new NotImplementedException();
         public Task<bool> HasAcceptedSuggestionAsync(Guid apartmentId) => Task.FromResult(false);
         public Task<(IEnumerable<SmartPricingHistory> Items, int TotalCount)> GetAllSuggestionsAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null) => Task.FromResult((Enumerable.Empty<SmartPricingHistory>(), 0));

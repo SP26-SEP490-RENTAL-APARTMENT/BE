@@ -196,7 +196,7 @@ namespace BLL.Services.Implements
 
         private static bool IsStrongPassword(string password)
         {
-            if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
             {
                 return false;
             }
@@ -204,8 +204,9 @@ namespace BLL.Services.Implements
             var hasUpper = password.Any(char.IsUpper);
             var hasLower = password.Any(char.IsLower);
             var hasDigit = password.Any(char.IsDigit);
+            var hasSpecial = password.Any(ch => !char.IsLetterOrDigit(ch));
 
-            return hasUpper && hasLower && hasDigit;
+            return hasUpper && hasLower && hasDigit && hasSpecial;
         }
 
         private static bool IsRateLimited(ConcurrentDictionary<string, List<DateTime>> bucket, string key, int maxAttempts, int windowMinutes)
@@ -417,7 +418,7 @@ namespace BLL.Services.Implements
                 return new ResponseDTO
                 {
                     Success = false,
-                    Message = "Password must be at least 8 characters and include uppercase, lowercase, and a number."
+                    Message = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character."
                 };
             }
 
@@ -466,6 +467,15 @@ namespace BLL.Services.Implements
             if (dto.NewPassword != dto.ConfirmNewPassword)
                 return new ResponseDTO { Success = false, Message = "New passwords do not match." };
 
+            if (!IsStrongPassword(dto.NewPassword))
+            {
+                return new ResponseDTO
+                {
+                    Success = false,
+                    Message = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character."
+                };
+            }
+
             user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
             user.Token = null;
             user.TokenExpired = null;
@@ -486,6 +496,16 @@ namespace BLL.Services.Implements
                 return new ResponseDTO { Success = false, Message = "Incorrect old password." };
             if (dto.NewPassword != dto.ConfirmNewPassword)
                 return new ResponseDTO { Success = false, Message = "New passwords do not match." };
+
+            if (!IsStrongPassword(dto.NewPassword))
+            {
+                return new ResponseDTO
+                {
+                    Success = false,
+                    Message = "Password must be at least 6 characters and include at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character."
+                };
+            }
+
             user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();

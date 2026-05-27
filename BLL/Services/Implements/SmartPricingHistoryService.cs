@@ -23,6 +23,8 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         nameof(SmartPricingHistory.PricingId),
         nameof(SmartPricingHistory.ApartmentId),
         nameof(SmartPricingHistory.Date),
+        nameof(SmartPricingHistory.StartDate),
+        nameof(SmartPricingHistory.EndDate),
         nameof(SmartPricingHistory.SuggestedPrice),
         nameof(SmartPricingHistory.BasePrice),
         nameof(SmartPricingHistory.Multiplier),
@@ -50,6 +52,14 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
 
     public async Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly date, decimal? occupancyRate = null)
     {
+        return await SuggestPriceAsync(apartmentId, date, date, occupancyRate);
+    }
+
+    public async Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate, decimal? occupancyRate = null)
+    {
+        if (startDate > endDate)
+            throw new ArgumentException("Start date cannot be after end date.");
+
         var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
         if (apartment == null)
             throw new ArgumentException("Apartment not found.");
@@ -65,15 +75,31 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         var occupancyComponent = 1 + (rate * PriceAdjustmentFactor);
 
         // Holiday and location multipliers
-        var holidayMultiplier = await GetHolidayMultiplierAsync(apartment, date);
         var locationMultiplier = await GetLocationMultiplierAsync(apartment);
+        decimal holidayMultiplierTotal = 0m;
+        decimal finalMultiplierTotal = 0m;
+        decimal suggestedPriceTotal = 0m;
+        var dayCount = 0;
 
-        var finalMultiplier = occupancyComponent * holidayMultiplier * locationMultiplier;
-        var suggestedPrice = apartment.BasePricePerNight * finalMultiplier;
+        for (var currentDate = startDate; currentDate <= endDate; currentDate = currentDate.AddDays(1))
+        {
+            var holidayMultiplier = await GetHolidayMultiplierAsync(apartment, currentDate);
+            var finalMultiplier = occupancyComponent * holidayMultiplier * locationMultiplier;
+            var suggestedPrice = apartment.BasePricePerNight * finalMultiplier;
 
-        // Check if pricing suggestion already exists for this date
+            holidayMultiplierTotal += holidayMultiplier;
+            finalMultiplierTotal += finalMultiplier;
+            suggestedPriceTotal += suggestedPrice;
+            dayCount++;
+        }
+
+        var averageHolidayMultiplier = holidayMultiplierTotal / dayCount;
+        var averageFinalMultiplier = finalMultiplierTotal / dayCount;
+        var averageSuggestedPrice = suggestedPriceTotal / dayCount;
+
+        // Check if pricing suggestion already exists for this span
         var existing = await _repository.FindAsync(p => 
-            p.ApartmentId == apartmentId && p.Date == date);
+            p.ApartmentId == apartmentId && p.StartDate == startDate && p.EndDate == endDate);
 
         SmartPricingHistory pricing;
         if (existing.Any())
@@ -82,17 +108,22 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
             pricing = existing.First();
             pricing.BasePrice = apartment.BasePricePerNight;
             pricing.OccupancyRate = rate;
-            pricing.Multiplier = (decimal)finalMultiplier;
-            pricing.SuggestedPrice = suggestedPrice;
-            pricing.Reason = BuildPricingReason(
+            pricing.Date = startDate;
+            pricing.StartDate = startDate;
+            pricing.EndDate = endDate;
+            pricing.Multiplier = averageFinalMultiplier;
+            pricing.SuggestedPrice = averageSuggestedPrice;
+            pricing.Reason = BuildPricingReasonForSpan(
                 isUpdated: true,
+                startDate: startDate,
+                endDate: endDate,
                 occupancyRate: rate,
                 occupancyComponent: occupancyComponent,
-                holidayMultiplier: holidayMultiplier,
+                holidayMultiplier: averageHolidayMultiplier,
                 locationMultiplier: locationMultiplier,
-                finalMultiplier: finalMultiplier,
+                finalMultiplier: averageFinalMultiplier,
                 basePrice: apartment.BasePricePerNight,
-                suggestedPrice: suggestedPrice);
+                suggestedPrice: averageSuggestedPrice);
             pricing.AcceptedByLandlord = false;
 
             _repository.Update(pricing);
@@ -105,20 +136,24 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
             {
                 PricingId = Guid.NewGuid(),
                 ApartmentId = apartmentId,
-                Date = date,
+                Date = startDate,
+                StartDate = startDate,
+                EndDate = endDate,
                 BasePrice = apartment.BasePricePerNight,
                 OccupancyRate = rate,
-                Multiplier = (decimal)finalMultiplier,
-                SuggestedPrice = suggestedPrice,
-                Reason = BuildPricingReason(
+                Multiplier = averageFinalMultiplier,
+                SuggestedPrice = averageSuggestedPrice,
+                Reason = BuildPricingReasonForSpan(
                     isUpdated: false,
+                    startDate: startDate,
+                    endDate: endDate,
                     occupancyRate: rate,
                     occupancyComponent: occupancyComponent,
-                    holidayMultiplier: holidayMultiplier,
+                    holidayMultiplier: averageHolidayMultiplier,
                     locationMultiplier: locationMultiplier,
-                    finalMultiplier: finalMultiplier,
+                    finalMultiplier: averageFinalMultiplier,
                     basePrice: apartment.BasePricePerNight,
-                    suggestedPrice: suggestedPrice),
+                    suggestedPrice: averageSuggestedPrice),
                 AcceptedByLandlord = false,
                 CreatedAt = Common.Utils.VietnamTime.Now
             };
@@ -151,7 +186,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         
         await UpdateAsync(pricing);
 
-        await UpsertManualOverrideCalendarAsync(pricing.ApartmentId, pricing.Date, pricing.SuggestedPrice);
+        await UpsertManualOverrideCalendarAsync(pricing.ApartmentId, pricing.StartDate, pricing.EndDate, pricing.SuggestedPrice);
 
         var apartmentDetails = await _apartmentRepository.GetApartmentWithDetailsAsync(pricing.ApartmentId);
         if (apartmentDetails != null)
@@ -225,14 +260,14 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         return (hydratedItems, totalCount);
     }
 
-    private async Task UpsertManualOverrideCalendarAsync(Guid apartmentId, DateOnly date, decimal acceptedPrice)
+    private async Task UpsertManualOverrideCalendarAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate, decimal acceptedPrice)
     {
         var existingOverrides = await _apartmentPriceCalendarRepository.FindAsync(c =>
             c.ApartmentId == apartmentId &&
             c.PriceType != null &&
             c.PriceType.ToLower() == "manual_override" &&
-            c.StartDate <= date &&
-            c.EndDate > date);
+            c.StartDate <= endDate &&
+            c.EndDate > startDate);
 
         var overrideEntry = existingOverrides
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
@@ -240,6 +275,8 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
 
         if (overrideEntry != null)
         {
+            overrideEntry.StartDate = startDate;
+            overrideEntry.EndDate = endDate.AddDays(1);
             overrideEntry.DiscountPercentage = acceptedPrice;
             overrideEntry.IsDiscount = false;
             overrideEntry.UpdatedAt = Common.Utils.VietnamTime.Now;
@@ -252,8 +289,8 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         {
             PriceId = Guid.NewGuid(),
             ApartmentId = apartmentId,
-            StartDate = date,
-            EndDate = date.AddDays(1),
+            StartDate = startDate,
+            EndDate = endDate.AddDays(1),
             DiscountPercentage = acceptedPrice,
             IsDiscount = false,
             PriceType = "manual_override",
@@ -442,6 +479,35 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         var priceFormula = $"price={basePrice:F2}x{finalMultiplier:F4}={suggestedPrice:F2}";
 
         var reason = $"{heading}: {occupancyReason}, holiday {holidayReason}, location {locationReason}. Calc: {occupancyFormula}; {multiplierFormula}; {priceFormula}.";
+
+        return EnsureReasonMaxLength(reason);
+    }
+
+    private static string BuildPricingReasonForSpan(
+        bool isUpdated,
+        DateOnly startDate,
+        DateOnly endDate,
+        decimal occupancyRate,
+        decimal occupancyComponent,
+        decimal holidayMultiplier,
+        decimal locationMultiplier,
+        decimal finalMultiplier,
+        decimal basePrice,
+        decimal suggestedPrice)
+    {
+        var heading = isUpdated ? "Updated smart pricing" : "Smart pricing";
+        var dateRange = startDate == endDate
+            ? startDate.ToString("yyyy-MM-dd")
+            : $"{startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}";
+        var occupancyReason = $"occupancy {occupancyRate:P0}";
+        var holidayReason = DescribeHolidayReason(holidayMultiplier);
+        var locationReason = DescribeLocationReason(locationMultiplier);
+
+        var occupancyFormula = $"occFactor=1+({occupancyRate:F2}x{PriceAdjustmentFactor:F2})={occupancyComponent:F4}";
+        var multiplierFormula = $"finalMultiplier={occupancyComponent:F4}x{holidayMultiplier:F2}x{locationMultiplier:F2}={finalMultiplier:F4}";
+        var priceFormula = $"price={basePrice:F2}x{finalMultiplier:F4}={suggestedPrice:F2}";
+
+        var reason = $"{heading} [{dateRange}]: {occupancyReason}, holiday {holidayReason}, location {locationReason}. Calc: {occupancyFormula}; {multiplierFormula}; {priceFormula}.";
 
         return EnsureReasonMaxLength(reason);
     }

@@ -30,7 +30,7 @@ public sealed class SmartPricingController : ControllerBase
     }
 
     /// <summary>
-    /// Get a smart price suggestion for an apartment on a specific date.
+    /// Get a smart price suggestion for an apartment over a date span.
     /// Based on occupancy rate and dynamic pricing algorithm.
     /// </summary>
     [HttpPost("suggest")]
@@ -59,7 +59,8 @@ public sealed class SmartPricingController : ControllerBase
 
             var suggestion = await _smartPricingService.SuggestPriceAsync(
                 dto.ApartmentId,
-                dto.Date,
+                dto.StartDate,
+                dto.EndDate,
                 dto.OccupancyRate);
 
             var response = _mapper.Map<SmartPricingResponseDto>(suggestion);

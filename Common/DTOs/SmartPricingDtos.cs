@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Common.DTOs;
 
 /// <summary>
-/// Request to suggest a price for an apartment on a specific date.
+/// Request to suggest a price for an apartment over a date span.
 /// </summary>
 public class SuggestPriceDto
 {
@@ -11,7 +11,10 @@ public class SuggestPriceDto
     public Guid ApartmentId { get; set; }
 
     [Required]
-    public DateOnly Date { get; set; }
+    public DateOnly StartDate { get; set; }
+
+    [Required]
+    public DateOnly EndDate { get; set; }
 
     [Range(0, 1, ErrorMessage = "Occupancy rate must be between 0 and 1.")]
     public decimal? OccupancyRate { get; set; }
@@ -26,6 +29,8 @@ public class SmartPricingResponseDto
     public Guid ApartmentId { get; set; }
     public SmartPricingApartmentPhotoDto? Apartment { get; set; }
     public DateOnly Date { get; set; }
+    public DateOnly StartDate { get; set; }
+    public DateOnly EndDate { get; set; }
     public decimal BasePrice { get; set; }
     public decimal OccupancyRate { get; set; }
     public decimal Multiplier { get; set; }

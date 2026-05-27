@@ -172,7 +172,7 @@ namespace BLL.Services.Implements
 
             Tenant? tenant = null;
             Landlord? landlord = null;
-            
+
             if (string.Equals(user.Role, "tenant", StringComparison.OrdinalIgnoreCase))
             {
                 tenant = await _tenantRepository.GetByIdAsync(userId);
@@ -417,7 +417,7 @@ namespace BLL.Services.Implements
 
             Tenant? tenant = null;
             Landlord? landlord = null;
-            
+
             if (string.Equals(user.Role, "tenant", StringComparison.OrdinalIgnoreCase))
             {
                 tenant = await _tenantRepository.GetByIdAsync(user.UserId);
@@ -540,6 +540,11 @@ namespace BLL.Services.Implements
                 return;
             }
 
+            if (user.IdentityVerified == true)
+            {
+                return;
+            }
+
             var landlord = await _landlordRepository.GetByIdAsync(landlordId);
             if (landlord == null)
             {
@@ -575,8 +580,7 @@ namespace BLL.Services.Implements
                 throw new InvalidOperationException(message);
             }
 
-            if (user.IdentityVerified == true &&
-                string.Equals(landlord.IdentityVerificationStatus, "verified", StringComparison.OrdinalIgnoreCase))
+            if (user.IdentityVerified == true)
             {
                 return;
             }
@@ -1006,6 +1010,11 @@ namespace BLL.Services.Implements
 
             // For now, enforce rules only for tenant bookings.
             if (!string.Equals(user.Role, "tenant", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (user.IdentityVerified == true)
             {
                 return;
             }

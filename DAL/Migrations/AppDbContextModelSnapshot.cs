@@ -1796,6 +1796,10 @@ namespace DAL.Migrations
                         .HasColumnType("decimal(12,2)")
                         .HasColumnName("base_price");
 
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
                     b.Property<DateTime?>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp")
@@ -1805,6 +1809,10 @@ namespace DAL.Migrations
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date")
                         .HasColumnName("date");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
 
                     b.Property<decimal?>("Multiplier")
                         .ValueGeneratedOnAdd()
@@ -1832,6 +1840,8 @@ namespace DAL.Migrations
                         .HasName("PRIMARY");
 
                     b.HasIndex(new[] { "ApartmentId", "Date" }, "idx_apartment_date");
+
+                    b.HasIndex(new[] { "ApartmentId", "StartDate", "EndDate" }, "idx_apartment_date_range");
 
                     b.ToTable("smart_pricing_history", (string)null);
                 });

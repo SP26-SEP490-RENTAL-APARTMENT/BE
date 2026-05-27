@@ -1539,7 +1539,28 @@ namespace Short_termApartmentAPI.Controllers
                     ? "payos"
                     : dto.PaymentMethod.Trim().ToLowerInvariant();
 
-                var checkTimeResponse = await _bookingService.PayClaimFeeAsync(id, tenantId, dto);
+                var checkTimeDetails = await _bookingService.GetCheckTimeDetailsAsync(id, tenantId);
+                var payment = new Payment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    RelatedEntityId = id,
+                    RelatedEntityType = "booking_check_time",
+                    Amount = checkTimeDetails.TotalFee,
+                    PaymentType = "charge",
+                    PaymentPurpose = "check_time_fee",
+                    LandlordId = null,
+                    LandlordAmount = 0m,
+                    PlatformFee = 0m,
+                    SettlementStatus = "pending",
+                    Method = dto.PaymentMethod,
+                    Status = "initiated",
+                    TransactionId = null,
+                    PaidAt = null
+                };
+
+                await _paymentService.CreateAsync(payment);
+
+                var checkTimeResponse = await _bookingService.PayClaimFeeAsync(id, tenantId, payment.PaymentId, dto);
                 return Ok(new ApiResponse<BookingCheckTimeResponseDto>(checkTimeResponse, "Claim fee paid successfully."));
             }
             catch (KeyNotFoundException ex)

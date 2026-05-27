@@ -87,7 +87,7 @@ public interface IBookingService : IBaseService<Booking>
 	/// <summary>
 	/// Allows tenant to pay a locked checkout claim fee.
 	/// </summary>
-	Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, PayClaimFeeDto dto);
+	Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, Guid paymentId, PayClaimFeeDto dto);
 
 	/// <summary>
 	/// Marks a booking as no-show when tenant did not check in.

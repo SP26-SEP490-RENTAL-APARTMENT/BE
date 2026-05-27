@@ -1,3 +1,4 @@
+using System.Globalization;
 using AutoMapper;
 using Common.DTOs;
 using DAL.Models;
@@ -8,6 +9,15 @@ public class PaymentProfile : Profile
 {
     public PaymentProfile()
     {
-        CreateMap<Payment, PaymentHistoryDto>();
+        var viCulture = CultureInfo.GetCultureInfo("vi-VN");
+
+        CreateMap<Payment, PaymentHistoryDto>()
+            .ForMember(
+                dest => dest.SignedAmountDisplay,
+                opt => opt.MapFrom(src =>
+                    (string.Equals(src.PaymentType, "refund", StringComparison.OrdinalIgnoreCase) ? "-" : "+")
+                    + src.Amount.ToString("N0", viCulture)
+                )
+            );
     }
 }

@@ -2901,7 +2901,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         return await GetCheckTimeDetailsAsync(bookingId, landlordId);
     }
 
-    public async Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, PayClaimFeeDto dto)
+    public async Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, Guid paymentId, PayClaimFeeDto dto)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new KeyNotFoundException("Booking not found.");
@@ -2920,7 +2920,10 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var now = Common.Utils.VietnamTime.Now;
         var claimExpiresAt = checkTime.ClaimExpiresAt ?? checkTime.ClaimOpenedAt?.AddHours(24) ?? checkTime.UpdatedAt?.AddHours(24);
-        if (!claimExpiresAt.HasValue || now < claimExpiresAt.Value)
+        var tenantConfirmedClaim = string.Equals(checkTime.TenantResponseStatus, "confirmed", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(checkTime.ClaimStatus, "confirmed", StringComparison.OrdinalIgnoreCase);
+
+        if (!tenantConfirmedClaim && (!claimExpiresAt.HasValue || now < claimExpiresAt.Value))
         {
             throw new InvalidOperationException("Claim is still open for refutation. Payment becomes required after the 24-hour claim window.");
         }
@@ -2942,31 +2945,25 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Claim fee has already been waived.");
         }
 
-        // Create payment record (pending)
         var method = string.IsNullOrWhiteSpace(dto.PaymentMethod)
     ? "payos"
     : dto.PaymentMethod.Trim().ToLowerInvariant();
+        var payment = await _paymentRepository.GetByIdAsync(paymentId)
+            ?? throw new KeyNotFoundException("Payment record not found.");
 
-        var payment = new DAL.Models.Payment
+        if (payment.RelatedEntityId != booking.BookingId ||
+            !string.Equals(payment.RelatedEntityType, "booking_check_time", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(payment.PaymentPurpose, "check_time_fee", StringComparison.OrdinalIgnoreCase))
         {
-            PaymentId = Guid.NewGuid(),
-            RelatedEntityId = booking.BookingId,
-            RelatedEntityType = "booking_check_time",
-            Amount = totalFee,
-            PaymentType = "charge",
-            PaymentPurpose = "check_time_fee",
-            LandlordId = booking.ApartmentId == Guid.Empty ? null : (Guid?)null,
-            LandlordAmount = 0m,
-            PlatformFee = 0m,
-            SettlementStatus = "pending",
-            Method = method,
-            Status = "initiated",
-            TransactionId = null,
-            PaidAt = null
-        };
+            throw new InvalidOperationException("Payment record does not match this claim fee.");
+        }
 
-        await _paymentRepository.AddAsync(payment);
-        await _paymentRepository.SaveChangesAsync();
+        if (!string.Equals(payment.Method, method, StringComparison.OrdinalIgnoreCase))
+        {
+            payment.Method = method;
+            _paymentRepository.Update(payment);
+            await _paymentRepository.SaveChangesAsync();
+        }
 
 
         if (method == "payos")
@@ -2993,15 +2990,15 @@ public class BookingService : BaseService<Booking>, IBookingService
                 ReturnUrl = resolvedReturnUrl,
                 CancelUrl = resolvedCancelUrl,
                 Items = new List<PaymentLinkItem>
-        {
-            new PaymentLinkItem
-            {
-                Name = $"Booking {booking.BookingId}",
-                Quantity = 1,
-                Price = (long)Math.Round(totalFee),
-                Unit = "fee"
-            }
-        }
+                        {
+                            new PaymentLinkItem
+                            {
+                                Name = $"Claim payment",
+                                Quantity = 1,
+                                Price = (long)Math.Round(totalFee),
+                                Unit = "fee"
+                            }
+                        }
             };
 
             CreatePaymentLinkResponse payosResponse;
@@ -3432,7 +3429,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                         "no_show_warning_window_expired",
                         runId.ToString("D"));
 
-                        if (noShowApartment != null)
+                    if (noShowApartment != null)
                     {
                         await CreateBookingNotificationAsync(
                             noShowApartment.LandlordId,
@@ -5438,7 +5435,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             if (latestTicket != null)
             {
-                var loadedTicket = await _supportTicketRepository.GetByIdAsync(latestTicket.TicketId);                
+                var loadedTicket = await _supportTicketRepository.GetByIdAsync(latestTicket.TicketId);
 
                 if (loadedTicket?.SupportTicketAttachments == null)
                 {

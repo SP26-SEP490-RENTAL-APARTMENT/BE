@@ -90,7 +90,8 @@ public class FptIdRecognitionService : IFptIdRecognitionService
                 IdNumber = TryGetString(data, "id"),
                 FullName = TryGetString(data, "name"),
                 DateOfBirth = TryGetString(data, "dob"),
-                IssueDate = TryGetString(data, "issue_date")
+                IssueDate = TryGetString(data, "issue_date"),
+                Sex = TryGetString(data, "sex")
             };
 
             foreach (var property in data.EnumerateObject())

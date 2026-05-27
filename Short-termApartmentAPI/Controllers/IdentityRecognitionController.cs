@@ -118,6 +118,7 @@ namespace Short_termApartmentAPI.Controllers
             user.FullName = recognition.FullName.Trim();
             user.NationalIdCardNumber = recognition.IdNumber.Trim();
             user.Birthday = birthday;
+            user.Sex = string.IsNullOrWhiteSpace(recognition.Sex) ? null : recognition.Sex.Trim();
             user.Nationality = string.IsNullOrWhiteSpace(user.Nationality) ? "VN" : user.Nationality;
 
             errorMessage = string.Empty;
