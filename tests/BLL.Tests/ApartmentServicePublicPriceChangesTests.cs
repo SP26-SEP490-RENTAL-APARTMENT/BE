@@ -134,9 +134,108 @@ public class ApartmentServicePublicPriceChangesTests
         Assert.Equal(new DateOnly(2026, 5, 31), response.PriceChanges[0].EndDate);
     }
 
+    [Fact]
+    public async Task GetApartmentWithDetailsResponseAsync_GroupsNearbyAttractionsByTier()
+    {
+        var apartmentId = Guid.NewGuid();
+        var apartment = new Apartment
+        {
+            ApartmentId = apartmentId,
+            LandlordId = Guid.NewGuid(),
+            Title = "Test Apartment",
+            BasePricePerNight = 100m,
+            City = "Hanoi",
+            Latitude = 21.028511m,
+            Longitude = 105.804817m,
+            Location = new Point(105.804817, 21.028511) { SRID = 4326 }
+        };
+
+        var apartmentRepository = new InMemoryApartmentRepository(apartment);
+        var attractionRepository = new InMemoryNearbyAttractionRepository(new[]
+        {
+            new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = "Old Quarter",
+                NameVi = "Phố cổ",
+                Type = "landmark",
+                City = "Hanoi",
+                Address = "Hoan Kiem",
+                Location = new Point(105.804900, 21.031000) { SRID = 4326 }
+            },
+            new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = "History Museum",
+                NameVi = "Bảo tàng lịch sử",
+                Type = "museum",
+                City = "Hanoi",
+                Address = "Dong Da",
+                Location = new Point(105.807000, 21.040000) { SRID = 4326 }
+            },
+            new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = "City Park",
+                NameVi = "Công viên thành phố",
+                Type = "park",
+                City = "Hanoi",
+                Address = "Ba Dinh",
+                Location = new Point(105.798000, 21.033500) { SRID = 4326 }
+            },
+            new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = "Night Market",
+                NameVi = "Chợ đêm",
+                Type = "shopping",
+                City = "Hanoi",
+                Address = "Old Quarter",
+                Location = new Point(105.804817, 21.060000) { SRID = 4326 }
+            },
+            new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = "Sky Viewpoint",
+                NameVi = "Điểm ngắm cảnh",
+                Type = "landmark",
+                City = "Hanoi",
+                Address = "West Lake",
+                Location = new Point(105.804817, 21.071000) { SRID = 4326 }
+            },
+            new NearbyAttraction
+            {
+                AttractionId = Guid.NewGuid(),
+                NameEn = "Metro Station",
+                NameVi = "Ga tàu điện",
+                Type = "transport",
+                City = "Hanoi",
+                Address = "Far Away",
+                Location = new Point(105.804817, 21.100000) { SRID = 4326 }
+            }
+        });
+
+        var service = CreateService(apartmentRepository, new InMemoryApartmentPriceCalendarRepository(Array.Empty<ApartmentPriceCalendar>()), attractionRepository);
+
+        var response = await service.GetApartmentWithDetailsResponseAsync(apartmentId, includeExpandedNearbyAttractions: true);
+
+        Assert.NotNull(response);
+        Assert.Equal(3, response!.NearbyAttractions.PrimaryAttractions.Count);
+        Assert.Equal(2, response.NearbyAttractions.ExpandedAttractions.Count);
+        Assert.True(response.NearbyAttractions.HasExpandedAttractions);
+        Assert.Equal("Old Quarter", response.NearbyAttractions.PrimaryAttractions[0].NameEn);
+        Assert.Equal("History Museum", response.NearbyAttractions.PrimaryAttractions[1].NameEn);
+        Assert.Equal("City Park", response.NearbyAttractions.PrimaryAttractions[2].NameEn);
+        Assert.Equal("Night Market", response.NearbyAttractions.ExpandedAttractions[0].NameEn);
+        Assert.Equal("Sky Viewpoint", response.NearbyAttractions.ExpandedAttractions[1].NameEn);
+        Assert.InRange(response.NearbyAttractions.PrimaryAttractions[0].DistanceKm, 0d, 3d);
+        Assert.InRange(response.NearbyAttractions.ExpandedAttractions[0].DistanceKm, 3d, 5d);
+    }
+
     private static ApartmentService CreateService(
         IApartmentRepository apartmentRepository,
-        IApartmentPriceCalendarRepository calendarRepository)
+        IApartmentPriceCalendarRepository calendarRepository,
+        INearbyAttractionRepository? nearbyAttractionRepository = null)
     {
         var mapper = new SimpleMapper();
 
@@ -151,7 +250,8 @@ public class ApartmentServicePublicPriceChangesTests
             new NoOpRepository<Notification>(),
             new NoOpRepository<PropertyInspection>(),
                 calendarRepository,
-                new NoOpHolidayService());
+                new NoOpHolidayService(),
+                nearbyAttractionRepository ?? new NoOpNearbyAttractionRepository());
     }
 
     private sealed class SimpleMapper : IMapper
@@ -166,6 +266,8 @@ public class ApartmentServicePublicPriceChangesTests
                     Title = a.Title,
                     BasePricePerNight = a.BasePricePerNight,
                     City = a.City,
+                    Latitude = a.Latitude,
+                    Longitude = a.Longitude,
                 }).ToList();
 
                 return (TDestination)(object)list;
@@ -179,6 +281,8 @@ public class ApartmentServicePublicPriceChangesTests
                     Title = ap.Title,
                     BasePricePerNight = ap.BasePricePerNight,
                     City = ap.City,
+                    Latitude = ap.Latitude,
+                    Longitude = ap.Longitude,
                 };
 
                 return (TDestination)(object)dto;
@@ -289,6 +393,82 @@ public class ApartmentServicePublicPriceChangesTests
     private sealed class NoOpHolidayService : IHolidayService
     {
         public Task<bool> IsHolidayAsync(DateOnly date, string? locationScope = null) => Task.FromResult(false);
+    }
+
+    private sealed class InMemoryNearbyAttractionRepository : INearbyAttractionRepository
+    {
+        private readonly List<NearbyAttraction> _attractions;
+
+        public InMemoryNearbyAttractionRepository()
+        {
+            _attractions = new List<NearbyAttraction>();
+        }
+
+        public InMemoryNearbyAttractionRepository(IEnumerable<NearbyAttraction> attractions)
+        {
+            _attractions = attractions.ToList();
+        }
+
+        public Task AddAsync(NearbyAttraction entity)
+        {
+            _attractions.Add(entity);
+            return Task.CompletedTask;
+        }
+
+        public Task<IEnumerable<NearbyAttraction>> FindAsync(Expression<Func<NearbyAttraction, bool>> predicate)
+        {
+            var compiled = predicate.Compile();
+            IEnumerable<NearbyAttraction> result = _attractions.Where(compiled);
+            return Task.FromResult(result);
+        }
+
+        public Task<IEnumerable<NearbyAttraction>> FindNoTrackingAsync(Expression<Func<NearbyAttraction, bool>> predicate)
+        {
+            var compiled = predicate.Compile();
+            IEnumerable<NearbyAttraction> result = _attractions.Where(compiled);
+            return Task.FromResult(result);
+        }
+
+        public Task<(IEnumerable<NearbyAttraction> Items, int TotalCount)> GetAllAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null,
+            string? search = null,
+            Dictionary<string, string>? filters = null,
+            IEnumerable<string>? allowedColumns = null)
+        {
+            return Task.FromResult((_attractions.AsEnumerable(), _attractions.Count));
+        }
+
+        public Task<NearbyAttraction?> GetByIdAsync(Guid id)
+        {
+            NearbyAttraction? result = _attractions.FirstOrDefault(a => a.AttractionId == id);
+            return Task.FromResult(result);
+        }
+
+        public void Remove(NearbyAttraction entity)
+        {
+            _attractions.Remove(entity);
+        }
+
+        public void Update(NearbyAttraction entity)
+        {
+        }
+
+        public Task<int> SaveChangesAsync() => Task.FromResult(1);
+    }
+
+    private sealed class NoOpNearbyAttractionRepository : INearbyAttractionRepository
+    {
+        public Task AddAsync(NearbyAttraction entity) => Task.CompletedTask;
+        public Task<IEnumerable<NearbyAttraction>> FindAsync(Expression<Func<NearbyAttraction, bool>> predicate) => Task.FromResult<IEnumerable<NearbyAttraction>>(Enumerable.Empty<NearbyAttraction>());
+        public Task<IEnumerable<NearbyAttraction>> FindNoTrackingAsync(Expression<Func<NearbyAttraction, bool>> predicate) => Task.FromResult<IEnumerable<NearbyAttraction>>(Enumerable.Empty<NearbyAttraction>());
+        public Task<(IEnumerable<NearbyAttraction> Items, int TotalCount)> GetAllAsync(int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, Dictionary<string, string>? filters = null, IEnumerable<string>? allowedColumns = null) => Task.FromResult((Enumerable.Empty<NearbyAttraction>(), 0));
+        public Task<NearbyAttraction?> GetByIdAsync(Guid id) => Task.FromResult<NearbyAttraction?>(null);
+        public void Remove(NearbyAttraction entity) { }
+        public void Update(NearbyAttraction entity) { }
+        public Task<int> SaveChangesAsync() => Task.FromResult(1);
     }
 
     private sealed class NoOpUserRepository : IUserRepository

@@ -1215,6 +1215,11 @@ internal sealed class RecordingWalletService : ILandlordWalletService
         return Task.CompletedTask;
     }
 
+    public Task ReleasePendingToAvailableAsync(Guid landlordId, decimal amount)
+    {
+        return Task.CompletedTask;
+    }
+
     public Task RollbackPendingAsync(Guid landlordId, decimal amount)
     {
         return Task.CompletedTask;
@@ -1257,6 +1262,11 @@ public class FakeLandlordWalletService : ILandlordWalletService
     }
 
     public Task CreditPendingAsync(Guid landlordId, decimal amount)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task ReleasePendingToAvailableAsync(Guid landlordId, decimal amount)
     {
         throw new NotImplementedException();
     }

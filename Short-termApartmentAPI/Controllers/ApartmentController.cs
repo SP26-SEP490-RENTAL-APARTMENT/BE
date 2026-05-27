@@ -212,10 +212,10 @@ public sealed class ApartmentsController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, [FromQuery] bool includeExpandedNearbyAttractions = false)
     {
         var tenantId = GetAuthenticatedTenantId();
-        var apartment = await _apartmentService.GetApartmentWithDetailsResponseAsync(id, tenantId);
+        var apartment = await _apartmentService.GetApartmentWithDetailsResponseAsync(id, tenantId, includeExpandedNearbyAttractions);
         if (apartment == null)
         {
             return NotFound(new ApiResponse<string>("Apartment not found."));

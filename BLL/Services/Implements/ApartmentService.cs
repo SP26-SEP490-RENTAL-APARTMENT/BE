@@ -3,6 +3,7 @@ using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using NetTopologySuite.Geometries;
 using NotificationType = Common.Enums.Notification;
 using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 
@@ -15,6 +16,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IMapper _mapper;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IHolidayService _holidayService;
+    private readonly INearbyAttractionRepository _nearbyAttractionRepository;
 
     private readonly IApartmentRepository _apartmentRepository;
     private readonly ITenantWishlistRepository _tenantWishlistRepository;
@@ -34,7 +36,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IRepository<Notification> notificationRepository,
         IRepository<PropertyInspection> propertyInspectionRepository,
         IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
-        IHolidayService holidayService)
+        IHolidayService holidayService,
+        INearbyAttractionRepository nearbyAttractionRepository)
         : base(repository)
     {
         _apartmentRepository = repository;
@@ -48,6 +51,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _propertyInspectionRepository = propertyInspectionRepository;
         _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _holidayService = holidayService;
+        _nearbyAttractionRepository = nearbyAttractionRepository;
     }
 
     public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
@@ -408,7 +412,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         return apartment == null ? null : _mapper.Map<ApartmentResponseDto>(apartment);
     }
 
-    public async Task<ApartmentResponseDto?> GetApartmentWithDetailsResponseAsync(Guid id, Guid? tenantId = null)
+    public async Task<ApartmentResponseDto?> GetApartmentWithDetailsResponseAsync(Guid id, Guid? tenantId = null, bool includeExpandedNearbyAttractions = false)
     {
         var apartment = await GetApartmentWithDetailsAsync(id);
         if (apartment == null)
@@ -418,7 +422,89 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         await ApplyPriceChangeHistoryAsync(new List<ApartmentResponseDto> { apartment });
         await ApplyWishlistMetadataAsync(apartment, tenantId);
+        await ApplyNearbyAttractionsAsync(apartment, includeExpandedNearbyAttractions);
         return apartment;
+    }
+
+    private async Task ApplyNearbyAttractionsAsync(ApartmentResponseDto apartment, bool includeExpandedNearbyAttractions)
+    {
+        if (!apartment.Latitude.HasValue || !apartment.Longitude.HasValue)
+        {
+            apartment.NearbyAttractions = new ApartmentNearbyAttractionsDto();
+            return;
+        }
+
+        IEnumerable<NearbyAttraction> attractions = apartment.City != null
+            ? await _nearbyAttractionRepository.FindNoTrackingAsync(a => a.City == apartment.City)
+            : await _nearbyAttractionRepository.FindNoTrackingAsync(a => true);
+
+        var apartmentPoint = new Point((double)apartment.Longitude.Value, (double)apartment.Latitude.Value) { SRID = 4326 };
+        var rankedAttractions = attractions
+            .Where(attraction => attraction.Location != null)
+            .Select(attraction => new ApartmentNearbyAttractionDto
+            {
+                AttractionId = attraction.AttractionId,
+                NameEn = attraction.NameEn,
+                NameVi = attraction.NameVi,
+                Type = attraction.Type,
+                Latitude = attraction.Location.Y,
+                Longitude = attraction.Location.X,
+                Address = attraction.Address,
+                City = attraction.City,
+                DistanceKm = CalculateDistanceKm(apartmentPoint, attraction.Location)
+            })
+            .Where(attraction => attraction.DistanceKm <= 5d)
+            .OrderBy(attraction => GetNearbyAttractionPriority(attraction.Type))
+            .ThenBy(attraction => attraction.DistanceKm)
+            .ThenBy(attraction => attraction.NameEn)
+            .ToList();
+
+        var primaryAttractions = rankedAttractions
+            .Where(attraction => attraction.DistanceKm <= 3d)
+            .ToList();
+
+        var expandedAttractions = rankedAttractions
+            .Where(attraction => attraction.DistanceKm > 3d && attraction.DistanceKm <= 5d)
+            .ToList();
+
+        apartment.NearbyAttractions = new ApartmentNearbyAttractionsDto
+        {
+            PrimaryAttractions = primaryAttractions,
+            ExpandedAttractions = includeExpandedNearbyAttractions ? expandedAttractions : new List<ApartmentNearbyAttractionDto>(),
+            HasExpandedAttractions = expandedAttractions.Count > 0
+        };
+    }
+
+    private static double CalculateDistanceKm(Point origin, Point destination)
+    {
+        const double earthRadiusKm = 6371d;
+
+        var originLat = DegreesToRadians(origin.Y);
+        var destinationLat = DegreesToRadians(destination.Y);
+        var deltaLat = DegreesToRadians(destination.Y - origin.Y);
+        var deltaLon = DegreesToRadians(destination.X - origin.X);
+
+        var a = Math.Pow(Math.Sin(deltaLat / 2), 2)
+            + Math.Cos(originLat) * Math.Cos(destinationLat) * Math.Pow(Math.Sin(deltaLon / 2), 2);
+
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return earthRadiusKm * c;
+    }
+
+    private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180d;
+
+    private static int GetNearbyAttractionPriority(string? type)
+    {
+        return type?.ToLowerInvariant() switch
+        {
+            "landmark" => 0,
+            "museum" => 1,
+            "shopping" => 2,
+            "park" => 3,
+            "restaurant" => 4,
+            "transport" => 5,
+            _ => 6,
+        };
     }
 
     private async Task ApplyWishlistMetadataAsync(List<ApartmentResponseDto> apartments, Guid? tenantId)

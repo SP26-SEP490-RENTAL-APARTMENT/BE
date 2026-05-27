@@ -85,6 +85,11 @@ public interface IBookingService : IBaseService<Booking>
 	Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto);
 
 	/// <summary>
+	/// Attempts to finalize landlord fund release after the check-time has become irreversibly settled.
+	/// </summary>
+	Task TryFinalizeLandlordFundsReleaseAsync(Guid bookingId, string source);
+
+	/// <summary>
 	/// Allows tenant to pay a locked checkout claim fee.
 	/// </summary>
 	Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, Guid paymentId, PayClaimFeeDto dto);

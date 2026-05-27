@@ -55,6 +55,10 @@ public partial class BookingCheckTime
     public DateTime? ClaimLockedAt { get; set; }
     public string? ClaimStatus { get; set; }
 
+    public decimal? LandlordPendingCreditAmount { get; set; }
+
+    public DateTime? LandlordFundsReleasedAt { get; set; }
+
     public string? NoShowStatus { get; set; }
     public Guid? NoShowMarkedBy { get; set; }
     public DateTime? NoShowMarkedAt { get; set; }

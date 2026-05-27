@@ -161,6 +161,29 @@ public class ApartmentResponseDto
     public List<string> Photos { get; set; } = new List<string>();
     public RoomResponseDto? Room { get; set; }
     public List<AmenityResponseDto> Amenities { get; set; } = new List<AmenityResponseDto>();
+    public ApartmentNearbyAttractionsDto NearbyAttractions { get; set; } = new ApartmentNearbyAttractionsDto();
+}
+
+public class ApartmentNearbyAttractionDto
+{
+    public Guid AttractionId { get; set; }
+    public string NameEn { get; set; } = null!;
+    public string NameVi { get; set; } = null!;
+    public string Type { get; set; } = null!;
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public string? Address { get; set; }
+    public string? City { get; set; }
+    public double DistanceKm { get; set; }
+}
+
+public class ApartmentNearbyAttractionsDto
+{
+    public double PrimaryRadiusKm { get; set; } = 3;
+    public double ExpandedRadiusKm { get; set; } = 5;
+    public bool HasExpandedAttractions { get; set; }
+    public List<ApartmentNearbyAttractionDto> PrimaryAttractions { get; set; } = new List<ApartmentNearbyAttractionDto>();
+    public List<ApartmentNearbyAttractionDto> ExpandedAttractions { get; set; } = new List<ApartmentNearbyAttractionDto>();
 }
 
 public class ApartmentPriceChangeDto

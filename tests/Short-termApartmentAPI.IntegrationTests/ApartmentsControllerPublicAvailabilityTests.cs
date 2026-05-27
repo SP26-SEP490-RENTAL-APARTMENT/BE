@@ -137,7 +137,7 @@ public class ApartmentsControllerPublicAvailabilityTests
 
         public Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId) => throw new NotImplementedException();
         public Task<ApartmentResponseDto?> GetApartmentWithDetailsAsync(Guid id) => throw new NotImplementedException();
-        public Task<ApartmentResponseDto?> GetApartmentWithDetailsResponseAsync(Guid id, Guid? tenantId = null) => throw new NotImplementedException();
+        public Task<ApartmentResponseDto?> GetApartmentWithDetailsResponseAsync(Guid id, Guid? tenantId = null, bool includeExpandedNearbyAttractions = false) => throw new NotImplementedException();
         public Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds) => throw new NotImplementedException();
         public Task RemoveAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds) => throw new NotImplementedException();
         public Task UpdateApartmentPhotosAsync(Guid apartmentId, List<IFormFile> photos) => throw new NotImplementedException();

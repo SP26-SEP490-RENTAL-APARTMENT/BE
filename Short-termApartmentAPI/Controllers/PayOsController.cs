@@ -252,6 +252,15 @@ public class PayOsController : ControllerBase
                             };
                             await _checkTimeEventRepository.AddAsync(ev);
                             await _checkTimeEventRepository.SaveChangesAsync();
+
+                            try
+                            {
+                                await _bookingService.TryFinalizeLandlordFundsReleaseAsync(bookingId, "payos_webhook");
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "[PayOS Webhook] Failed to finalize landlord fund release for booking {BookingId}", bookingId);
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -308,6 +317,15 @@ public class PayOsController : ControllerBase
                         catch (Exception ex)
                         {
                             _logger.LogWarning(ex, "[PayOS Webhook] Failed to create check-time state event for booking {BookingId}", bookingId);
+                        }
+
+                        try
+                        {
+                            await _bookingService.TryFinalizeLandlordFundsReleaseAsync(bookingId, "payos_webhook");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "[PayOS Webhook] Failed to finalize landlord fund release for booking {BookingId}", bookingId);
                         }
 
                         var booking = await _bookingRepository.GetByIdAsync(bookingId);

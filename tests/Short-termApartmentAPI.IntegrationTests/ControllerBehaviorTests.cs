@@ -1309,6 +1309,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<BookingCheckTimeResponseDto> ResolveCheckTimeDisputeAsync(Guid bookingId, Guid resolvedBy, ResolveBookingCheckTimeDisputeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> SettleCheckTimeFeeAsync(Guid bookingId, Guid settledBy, SettleBookingCheckTimeFeeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> SubmitPaymentConfirmationAsync(Guid bookingId, Guid landlordId, LandlordPaymentConfirmationDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
+    public Task TryFinalizeLandlordFundsReleaseAsync(Guid bookingId, string source) => Task.CompletedTask;
     public Task<BookingCheckTimeResponseDto> PayClaimFeeAsync(Guid bookingId, Guid tenantId, Guid paymentId, PayClaimFeeDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> MarkNoShowAsync(Guid bookingId, Guid actorId, MarkNoShowDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> CloseMissingCheckOutAsync(Guid bookingId, Guid actorId, CloseMissingCheckOutDto dto) => Task.FromResult(new BookingCheckTimeResponseDto());
@@ -1529,6 +1530,8 @@ internal sealed class LandlordWalletServiceStub : ILandlordWalletService
     }
 
     public Task CreditPendingAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
+
+    public Task ReleasePendingToAvailableAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
 
     public Task RollbackPendingAsync(Guid landlordId, decimal amount) => Task.CompletedTask;
 

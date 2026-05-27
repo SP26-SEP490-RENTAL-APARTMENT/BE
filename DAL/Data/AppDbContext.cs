@@ -238,6 +238,9 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("'available'")
                 .HasColumnType("enum('available','confirmed','locked')")
                 .HasColumnName("booking_status");
+            entity.Property(e => e.CancellationPolicyCode)
+                .HasMaxLength(50)
+                .HasColumnName("cancellation_policy_code");
             entity.Property(e => e.City)
                 .HasMaxLength(100)
                 .HasDefaultValueSql("'Hồ Chí Minh'")
@@ -757,6 +760,13 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ClaimStatus)
                 .HasMaxLength(30)
                 .HasColumnName("claim_status");
+            entity.Property(e => e.LandlordPendingCreditAmount)
+                .HasPrecision(12, 2)
+                .HasDefaultValueSql("'0.00'")
+                .HasColumnName("landlord_pending_credit_amount");
+            entity.Property(e => e.LandlordFundsReleasedAt)
+                .HasColumnType("datetime")
+                .HasColumnName("landlord_funds_released_at");
             entity.Property(e => e.NoShowStatus)
                 .HasMaxLength(30)
                 .HasColumnName("no_show_status");

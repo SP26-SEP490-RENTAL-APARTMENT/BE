@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 namespace Short_termApartmentAPI.Middlewares
 {
@@ -17,6 +19,24 @@ namespace Short_termApartmentAPI.Middlewares
             try
             {
                 await _next(context);
+            }
+            catch (DbUpdateException ex) when (IsDuplicateDatabaseException(ex))
+            {
+                var traceId = context.TraceIdentifier;
+                var message = GetDuplicateDatabaseMessage(ex);
+
+                _logger.LogWarning(ex, "Duplicate database record. TraceId: {TraceId}", traceId);
+
+                context.Response.ContentType = "application/json";
+                context.Response.StatusCode = StatusCodes.Status409Conflict;
+
+                var response = new ApiResponse<string>(message)
+                {
+                    Success = false
+                };
+
+                var json = JsonSerializer.Serialize(response);
+                await context.Response.WriteAsync(json);
             }
             catch (Exception ex)
             {
@@ -40,6 +60,26 @@ namespace Short_termApartmentAPI.Middlewares
                 var json = JsonSerializer.Serialize(response);
                 await context.Response.WriteAsync(json);
             }
+        }
+
+        private static bool IsDuplicateDatabaseException(DbUpdateException ex)
+        {
+            if (ex.InnerException is MySqlException mysqlEx && mysqlEx.Number == 1062)
+            {
+                return true;
+            }
+
+            var message = ex.InnerException?.Message ?? ex.Message;
+            return message.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("unique", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetDuplicateDatabaseMessage(DbUpdateException ex)
+        {
+            var message = ex.InnerException?.Message ?? ex.Message;
+            return string.IsNullOrWhiteSpace(message)
+                ? "A duplicate record already exists."
+                : message;
         }
     }
 

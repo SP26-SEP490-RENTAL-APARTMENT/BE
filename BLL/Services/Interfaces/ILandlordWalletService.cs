@@ -9,6 +9,8 @@ public interface ILandlordWalletService
 
     Task CreditPendingAsync(Guid landlordId, decimal amount);
 
+    Task ReleasePendingToAvailableAsync(Guid landlordId, decimal amount);
+
     Task RollbackPendingAsync(Guid landlordId, decimal amount);
 
     Task DebitAvailableAsync(Guid landlordId, decimal amount);

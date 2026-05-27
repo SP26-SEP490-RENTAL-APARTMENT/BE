@@ -30,6 +30,12 @@ public class BookingService : BaseService<Booking>, IBookingService
     private const string FeeSettlementStatusDisputed = "disputed";
     private const string FeeSettlementStatusPaid = "paid";
     private const string FeeSettlementStatusWaived = "waived";
+    private const string CancellationPolicyLegacy = "legacy";
+    private const string CancellationPolicyNonRefundable = "non_refundable";
+    private const string CancellationPolicyFlexible = "flexible";
+    private const string CancellationPolicyModerate = "moderate";
+    private const string CancellationPolicyStrict = "strict";
+    private const decimal CancellationProcessingFeeRate = 0.02m;
     private const string NoShowWarningEventType = "no_show_warning_sent";
     private const string NoShowAutoConfirmedEventType = "no_show_auto_confirmed";
     private const string GuestArrivalConfirmedEventType = "guest_arrival_confirmed";
@@ -133,6 +139,16 @@ public class BookingService : BaseService<Booking>, IBookingService
         return response;
     }
 
+    private sealed record CancellationRefundOutcome(
+        string PolicyCode,
+        decimal RefundPercent,
+        decimal ProcessingFeePercent,
+        string RuleApplied,
+        bool IsExceptionOverride)
+    {
+        public bool CanRefund => RefundPercent > 0m;
+    }
+
     private async Task<bool> IsBookingRefundableForTenantAsync(Booking booking)
     {
         if (booking == null) return false;
@@ -162,13 +178,102 @@ public class BookingService : BaseService<Booking>, IBookingService
             return false;
         }
 
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment == null)
+        {
+            return false;
+        }
+
         // Need booking check-time to compute hours until check-in
         var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
         var now = Common.Utils.VietnamTime.Now;
-        var hoursUntilCheckIn = (checkTime.ScheduledCheckIn - now).TotalHours;
+        var outcome = ResolveCancellationRefundOutcome(apartment, checkTime, "tenant_request", now);
 
-        // Tenant requests must be >= 24 hours before check-in
-        return hoursUntilCheckIn >= 24;
+        return outcome.CanRefund;
+    }
+
+    private static string NormalizeCancellationPolicyCode(string? policyCode)
+    {
+        return string.IsNullOrWhiteSpace(policyCode)
+            ? CancellationPolicyLegacy
+            : policyCode.Trim().ToLowerInvariant();
+    }
+
+    private static bool IsCancellationPolicyExceptionReason(string? reason)
+    {
+        var normalizedReason = reason?.Trim().ToLowerInvariant();
+        return normalizedReason is "system_cancellation" or "manual_admin";
+    }
+
+    private static CancellationRefundOutcome ResolveCancellationRefundOutcome(
+        Apartment apartment,
+        BookingCheckTime checkTime,
+        string? reason,
+        DateTime now)
+    {
+        var policyCode = NormalizeCancellationPolicyCode(apartment.CancellationPolicyCode);
+        var hoursUntilCheckIn = (checkTime.ScheduledCheckIn - now).TotalHours;
+        var isExceptionOverride = IsCancellationPolicyExceptionReason(reason);
+
+        if (isExceptionOverride)
+        {
+            return new CancellationRefundOutcome(
+                policyCode,
+                1m,
+                CancellationProcessingFeeRate,
+                "exception_override",
+                true);
+        }
+
+        decimal refundPercent;
+        string ruleApplied;
+
+        switch (policyCode)
+        {
+            case CancellationPolicyNonRefundable:
+                refundPercent = 0m;
+                ruleApplied = "non_refundable";
+                break;
+            case CancellationPolicyFlexible:
+                refundPercent = hoursUntilCheckIn >= 72 ? 1m : hoursUntilCheckIn >= 24 ? 0.5m : 0m;
+                ruleApplied = hoursUntilCheckIn >= 72
+                    ? "flexible_full_refund_72h_plus"
+                    : hoursUntilCheckIn >= 24
+                        ? "flexible_half_refund_24h_plus"
+                        : "flexible_no_refund_under_24h";
+                break;
+            case CancellationPolicyModerate:
+                refundPercent = hoursUntilCheckIn >= 168 ? 1m : hoursUntilCheckIn >= 72 ? 0.5m : hoursUntilCheckIn >= 24 ? 0.25m : 0m;
+                ruleApplied = hoursUntilCheckIn >= 168
+                    ? "moderate_full_refund_7d_plus"
+                    : hoursUntilCheckIn >= 72
+                        ? "moderate_half_refund_72h_plus"
+                        : hoursUntilCheckIn >= 24
+                            ? "moderate_quarter_refund_24h_plus"
+                            : "moderate_no_refund_under_24h";
+                break;
+            case CancellationPolicyStrict:
+                refundPercent = hoursUntilCheckIn >= 168 ? 0.5m : hoursUntilCheckIn >= 72 ? 0.25m : 0m;
+                ruleApplied = hoursUntilCheckIn >= 168
+                    ? "strict_half_refund_7d_plus"
+                    : hoursUntilCheckIn >= 72
+                        ? "strict_quarter_refund_72h_plus"
+                        : "strict_no_refund_under_72h";
+                break;
+            default:
+                refundPercent = hoursUntilCheckIn >= 24 ? 1m : 0m;
+                ruleApplied = hoursUntilCheckIn >= 24
+                    ? "legacy_full_refund_24h_plus"
+                    : "legacy_no_refund_under_24h";
+                break;
+        }
+
+        return new CancellationRefundOutcome(
+            policyCode,
+            refundPercent,
+            CancellationProcessingFeeRate,
+            ruleApplied,
+            isExceptionOverride);
     }
 
     private async Task<List<string>> GetApartmentImageUrlsAsync(Guid apartmentId)
@@ -1105,9 +1210,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new KeyNotFoundException("Booking not found.");
 
-        var normalizedReason = dto.Reason.Trim().ToLowerInvariant();
-        var isSystemCancellation = string.Equals(normalizedReason, "system_cancellation", StringComparison.OrdinalIgnoreCase);
-
         if (string.Equals(booking.Status, "completed", StringComparison.OrdinalIgnoreCase)
             || string.Equals(booking.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
         {
@@ -1116,15 +1218,11 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
         var now = Common.Utils.VietnamTime.Now;
-        var hoursUntilCheckIn = (checkTime.ScheduledCheckIn - now).TotalHours;
-
-        if (!isSystemCancellation && hoursUntilCheckIn < 24)
-        {
-            throw new InvalidOperationException("Refunds are only allowed at least 24 hours before check-in.");
-        }
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var refundOutcome = ResolveCancellationRefundOutcome(apartment, checkTime, dto.Reason, now);
 
         var refundedPayments = (await _paymentRepository.FindAsync(payment =>
                 payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
@@ -1146,10 +1244,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var totalPaidAmount = refundedPayments.Sum(payment => payment.Amount);
-        var processingFeeAmount = Math.Round(totalPaidAmount * 0.02m, 2, MidpointRounding.AwayFromZero);
-        var netRefundAmount = Math.Max(0m, totalPaidAmount - processingFeeAmount);
+        var grossRefundAmount = Math.Round(totalPaidAmount * refundOutcome.RefundPercent, 2, MidpointRounding.AwayFromZero);
+        var processingFeeAmount = Math.Round(grossRefundAmount * refundOutcome.ProcessingFeePercent, 2, MidpointRounding.AwayFromZero);
+        var netRefundAmount = Math.Max(0m, grossRefundAmount - processingFeeAmount);
 
-        if (refundedPayments.Count == 0)
+        if (!refundOutcome.CanRefund || refundedPayments.Count == 0)
         {
             booking.Status = "cancelled";
             _bookingRepository.Update(booking);
@@ -1160,12 +1259,14 @@ public class BookingService : BaseService<Booking>, IBookingService
             {
                 BookingId = booking.BookingId,
                 Status = booking.Status ?? "cancelled",
-                TotalPaidAmount = 0m,
+                TotalPaidAmount = totalPaidAmount,
                 ProcessingFeeAmount = 0m,
                 NetRefundAmount = 0m,
                 RefundedPaymentCount = 0,
                 ProcessedAt = now,
-                Message = "Booking cancelled. No paid amount was found to refund."
+                Message = refundOutcome.CanRefund
+                    ? "Booking cancelled. No paid amount was found to refund."
+                    : $"Booking cancelled. No refund was issued under cancellation policy '{refundOutcome.PolicyCode}'."
             };
         }
 
@@ -1273,9 +1374,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new KeyNotFoundException("Booking not found.");
 
-        var normalizedReason = dto.Reason.Trim().ToLowerInvariant();
-        var isSystemCancellation = string.Equals(normalizedReason, "system_cancellation", StringComparison.OrdinalIgnoreCase);
-
         if (string.Equals(booking.Status, "completed", StringComparison.OrdinalIgnoreCase)
             || string.Equals(booking.Status, "cancelled", StringComparison.OrdinalIgnoreCase))
         {
@@ -1284,15 +1382,11 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
         var now = Common.Utils.VietnamTime.Now;
-        var hoursUntilCheckIn = (checkTime.ScheduledCheckIn - now).TotalHours;
-
-        if (!isSystemCancellation && hoursUntilCheckIn < 24)
-        {
-            throw new InvalidOperationException("Refunds are only allowed at least 24 hours before check-in.");
-        }
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var refundOutcome = ResolveCancellationRefundOutcome(apartment, checkTime, dto.Reason, now);
 
         var refundedPayments = (await _paymentRepository.FindAsync(payment =>
                 payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
@@ -1314,10 +1408,11 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var totalPaidAmount = refundedPayments.Sum(payment => payment.Amount);
-        var processingFeeAmount = Math.Round(totalPaidAmount * 0.02m, 2, MidpointRounding.AwayFromZero);
-        var netRefundAmount = Math.Max(0m, totalPaidAmount - processingFeeAmount);
+        var grossRefundAmount = Math.Round(totalPaidAmount * refundOutcome.RefundPercent, 2, MidpointRounding.AwayFromZero);
+        var processingFeeAmount = Math.Round(grossRefundAmount * refundOutcome.ProcessingFeePercent, 2, MidpointRounding.AwayFromZero);
+        var netRefundAmount = Math.Max(0m, grossRefundAmount - processingFeeAmount);
 
-        if (refundedPayments.Count == 0)
+        if (!refundOutcome.CanRefund || refundedPayments.Count == 0)
         {
             booking.Status = "cancelled";
             _bookingRepository.Update(booking);
@@ -1328,12 +1423,14 @@ public class BookingService : BaseService<Booking>, IBookingService
             {
                 BookingId = booking.BookingId,
                 Status = booking.Status ?? "cancelled",
-                TotalPaidAmount = 0m,
+                TotalPaidAmount = totalPaidAmount,
                 ProcessingFeeAmount = 0m,
                 NetRefundAmount = 0m,
                 RefundedPaymentCount = 0,
                 ProcessedAt = now,
-                Message = "Booking cancelled. No paid amount was found to refund."
+                Message = refundOutcome.CanRefund
+                    ? "Booking cancelled. No paid amount was found to refund."
+                    : $"Booking cancelled. No refund was issued under cancellation policy '{refundOutcome.PolicyCode}'."
             };
         }
 
@@ -2414,23 +2511,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         // (audit event for claim resolution is emitted in dispute resolution flow)
 
         // Credit landlord wallet after successful checkout
-        var paymentMode = GetBookingPaymentMode(booking);
-        var totalCreditAmount = paymentMode == BookingPaymentMode.full
-            ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
-            : Math.Round(GetUpfrontPaymentAmount(booking) * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
-
-        // Add remaining balance if not full payment
-        if (paymentMode != BookingPaymentMode.full)
-        {
-            var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
-            if (remainingAmount > 0)
-            {
-                var remainingLandlordShare = Math.Round(remainingAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
-                totalCreditAmount += remainingLandlordShare;
-            }
-        }
+        var totalCreditAmount = ResolvePendingCreditAmount(booking, checkTime);
 
         await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, totalCreditAmount);
+
+        checkTime.LandlordPendingCreditAmount = totalCreditAmount;
+        checkTime.LandlordFundsReleasedAt = null;
+        checkTime.UpdatedAt = now;
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
 
         // Notify landlord
         var checkOutMessage = isLateCheckOut
@@ -2746,6 +2835,18 @@ public class BookingService : BaseService<Booking>, IBookingService
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
 
+        if (dto.ApproveTenantDispute)
+        {
+            try
+            {
+                await TryReleaseLandlordFundsAsync(booking, checkTime, "dispute_resolution_waived", resolvedBy);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to release landlord funds after dispute waiver for booking {BookingId}.", booking.BookingId);
+            }
+        }
+
         if (string.Equals(booking.Status, BookingStatus.disputed.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             if (checkTime.ActualCheckOut.HasValue)
@@ -2815,6 +2916,18 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        if (settlementAction == FeeSettlementStatusPaid || settlementAction == FeeSettlementStatusWaived)
+        {
+            try
+            {
+                await TryReleaseLandlordFundsAsync(booking, checkTime, "manual_fee_settlement", settledBy);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to release landlord funds after manual fee settlement for booking {BookingId}.", booking.BookingId);
+            }
+        }
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
@@ -2889,6 +3002,15 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        try
+        {
+            await TryReleaseLandlordFundsAsync(booking, checkTime, "landlord_payment_confirmation", landlordId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to release landlord funds after payment confirmation for booking {BookingId}.", booking.BookingId);
+        }
 
         // Notify landlord of submission
         await CreateBookingNotificationAsync(
@@ -3111,6 +3233,8 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException($"No-show can only be marked after {noShowEligibleAt:yyyy-MM-dd HH:mm}.");
         }
 
+        var refundOutcome = ResolveCancellationRefundOutcome(apartment, checkTime, dto.Reason, now);
+
         checkTime.NoShowStatus = "confirmed";
         checkTime.NoShowMarkedBy = actorId;
         checkTime.NoShowMarkedAt = now;
@@ -3137,9 +3261,19 @@ public class BookingService : BaseService<Booking>, IBookingService
             checkTime.CheckTimeId,
             actorId,
             "no_show_marked",
-            new { Reason = dto.Reason, Notes = dto.Notes },
+            new
+            {
+                Reason = dto.Reason,
+                Notes = dto.Notes,
+                CancellationPolicy = refundOutcome.PolicyCode,
+                RefundPercent = refundOutcome.RefundPercent,
+                ProcessingFeePercent = refundOutcome.ProcessingFeePercent,
+                RuleApplied = refundOutcome.RuleApplied
+            },
             AuditSourceManual,
-            string.IsNullOrWhiteSpace(dto.Reason) ? "manual_no_show" : dto.Reason.Trim());
+            string.IsNullOrWhiteSpace(dto.Reason)
+                ? $"manual_no_show:{refundOutcome.RuleApplied}"
+                : $"{dto.Reason.Trim()}:{refundOutcome.RuleApplied}");
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
@@ -3341,6 +3475,18 @@ public class BookingService : BaseService<Booking>, IBookingService
                     runId.ToString("D"));
             }
 
+            try
+            {
+                if (await TryReleaseLandlordFundsAsync(booking, checkTime, "claim_expiry_automation", null))
+                {
+                    changed = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to release landlord funds during claim-expiry automation for booking {BookingId}.", booking.BookingId);
+            }
+
             if (!checkTime.ActualCheckIn.HasValue && !checkTime.NoShowMarkedAt.HasValue)
             {
                 if (await HasGuestArrivalDeclarationAsync(booking.BookingId, checkTime.CheckTimeId))
@@ -3404,6 +3550,9 @@ public class BookingService : BaseService<Booking>, IBookingService
                     }
 
                     var noShowApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+                    var autoNoShowOutcome = noShowApartment == null
+                        ? null
+                        : ResolveCancellationRefundOutcome(noShowApartment, checkTime, "no_show_auto_confirmed", now);
                     checkTime.NoShowStatus = "auto_confirmed";
                     checkTime.NoShowMarkedBy = Guid.Empty;
                     checkTime.NoShowMarkedAt = now;
@@ -3424,9 +3573,20 @@ public class BookingService : BaseService<Booking>, IBookingService
                         checkTime.CheckTimeId,
                         null,
                         NoShowAutoConfirmedEventType,
-                        new { NoShowMarkedAt = now, WarningEventType = NoShowWarningEventType, WarningEventCreatedAt = latestNoShowWarning.CreatedAt },
+                        new
+                        {
+                            NoShowMarkedAt = now,
+                            WarningEventType = NoShowWarningEventType,
+                            WarningEventCreatedAt = latestNoShowWarning.CreatedAt,
+                            CancellationPolicy = autoNoShowOutcome?.PolicyCode,
+                            RefundPercent = autoNoShowOutcome?.RefundPercent,
+                            ProcessingFeePercent = autoNoShowOutcome?.ProcessingFeePercent,
+                            RuleApplied = autoNoShowOutcome?.RuleApplied
+                        },
                         AuditSourceAutomation,
-                        "no_show_warning_window_expired",
+                        autoNoShowOutcome == null
+                            ? "no_show_warning_window_expired"
+                            : $"no_show_warning_window_expired:{autoNoShowOutcome.RuleApplied}",
                         runId.ToString("D"));
 
                     if (noShowApartment != null)
@@ -3719,6 +3879,136 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.FeeSettlementStatus = FeeSettlementStatusDue;
         checkTime.FeeDueAt ??= now.AddDays(GetFeeSettlementGraceDays());
         checkTime.FeeSettledAt = null;
+    }
+
+    private static bool IsDisputeResolvedForRelease(BookingCheckTime checkTime)
+    {
+        var tenantResponse = checkTime.TenantResponseStatus?.Trim().ToLowerInvariant();
+        if (tenantResponse is not ("refuted" or "disputed"))
+        {
+            return true;
+        }
+
+        var resolutionStatus = checkTime.DisputeResolutionStatus?.Trim().ToLowerInvariant();
+        return !string.IsNullOrWhiteSpace(resolutionStatus) && resolutionStatus != "open";
+    }
+
+    private static bool IsClaimNoLongerOpenForRelease(BookingCheckTime checkTime, DateTime now)
+    {
+        var claimStatus = checkTime.ClaimStatus?.Trim().ToLowerInvariant();
+        if (claimStatus is "locked" or "paid" or "waived" or "closed")
+        {
+            return true;
+        }
+
+        if (checkTime.ClaimLockedAt.HasValue)
+        {
+            return true;
+        }
+
+        var claimExpiresAt = checkTime.ClaimExpiresAt ?? checkTime.ClaimOpenedAt?.AddHours(24) ?? checkTime.UpdatedAt?.AddHours(24);
+        return claimExpiresAt.HasValue && now >= claimExpiresAt.Value;
+    }
+
+    private bool IsIrreversiblySettled(BookingCheckTime checkTime, DateTime now)
+    {
+        if (!checkTime.ActualCheckOut.HasValue)
+        {
+            return false;
+        }
+
+        if (!IsDisputeResolvedForRelease(checkTime))
+        {
+            return false;
+        }
+
+        var feeTotal = GetCheckTimeFeeTotal(checkTime);
+        var settlementStatus = NormalizeFeeSettlementStatus(checkTime.FeeSettlementStatus, checkTime);
+        if (feeTotal > 0m)
+        {
+            return settlementStatus == FeeSettlementStatusPaid || settlementStatus == FeeSettlementStatusWaived;
+        }
+
+        return IsClaimNoLongerOpenForRelease(checkTime, now);
+    }
+
+    private decimal ResolvePendingCreditAmount(Booking booking, BookingCheckTime checkTime)
+    {
+        if (checkTime.LandlordPendingCreditAmount.HasValue && checkTime.LandlordPendingCreditAmount.Value > 0m)
+        {
+            return Math.Round(checkTime.LandlordPendingCreditAmount.Value, 2, MidpointRounding.AwayFromZero);
+        }
+
+        var paymentMode = GetBookingPaymentMode(booking);
+        var totalCreditAmount = paymentMode == BookingPaymentMode.full
+            ? Math.Round(booking.TotalPrice * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero)
+            : Math.Round(GetUpfrontPaymentAmount(booking) * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+
+        if (paymentMode != BookingPaymentMode.full)
+        {
+            var remainingAmount = booking.TotalPrice - GetUpfrontPaymentAmount(booking);
+            if (remainingAmount > 0)
+            {
+                totalCreditAmount += Math.Round(remainingAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+            }
+        }
+
+        return totalCreditAmount;
+    }
+
+    private async Task<bool> TryReleaseLandlordFundsAsync(Booking booking, BookingCheckTime checkTime, string source, Guid? actorId)
+    {
+        if (checkTime.LandlordFundsReleasedAt.HasValue)
+        {
+            return false;
+        }
+
+        var now = Common.Utils.VietnamTime.Now;
+        if (!IsIrreversiblySettled(checkTime, now))
+        {
+            return false;
+        }
+
+        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+        if (apartment == null)
+        {
+            return false;
+        }
+
+        var amount = ResolvePendingCreditAmount(booking, checkTime);
+        if (amount <= 0m)
+        {
+            return false;
+        }
+
+        await _landlordWalletService.ReleasePendingToAvailableAsync(apartment.LandlordId, amount);
+
+        checkTime.LandlordPendingCreditAmount = amount;
+        checkTime.LandlordFundsReleasedAt = now;
+        checkTime.UpdatedAt = now;
+        _bookingCheckTimeRepository.Update(checkTime);
+        await _bookingCheckTimeRepository.SaveChangesAsync();
+
+        await CreateCheckTimeStateEventAsync(
+            booking.BookingId,
+            checkTime.CheckTimeId,
+            actorId,
+            "landlord_funds_released",
+            new { Amount = amount, Source = source, ReleasedAt = now, LandlordId = apartment.LandlordId },
+            source,
+            "landlord_funds_released",
+            booking.BookingId.ToString("D"));
+
+        return true;
+    }
+
+    public async Task TryFinalizeLandlordFundsReleaseAsync(Guid bookingId, string source)
+    {
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new KeyNotFoundException("Booking not found.");
+
+        var checkTime = await GetOrCreateBookingCheckTimeAsync(booking);
+        await TryReleaseLandlordFundsAsync(booking, checkTime, source, null);
     }
 
     private async Task EnsureActorIsOwnerOrStaffAsync(Guid actorId, Guid landlordId)

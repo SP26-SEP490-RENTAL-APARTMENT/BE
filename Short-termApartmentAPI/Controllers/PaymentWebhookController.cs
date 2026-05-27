@@ -110,6 +110,12 @@ public class PaymentWebhookController : ControllerBase
                                     await _bookingRepository.SaveChangesAsync();
                                 }
 
+                                try
+                                {
+                                    await _bookingService.TryFinalizeLandlordFundsReleaseAsync(bookingId, "stripe_webhook");
+                                }
+                                catch { }
+
                                 // Apply booking-side payment side-effects (recalculate paid amounts and status)
                                 try
                                 {
