@@ -103,6 +103,7 @@ public sealed class TenantController : ControllerBase
             filters);
 
         var dtos = _mapper.Map<IEnumerable<PaymentHistoryDto>>(items);
+        ApplySignedAmountDisplay(dtos, isTenantView: true);
         return Ok(new { Items = dtos, TotalCount = totalCount });
     }
 
@@ -134,7 +135,19 @@ public sealed class TenantController : ControllerBase
         }
 
         var dto = _mapper.Map<PaymentHistoryDto>(payment);
+        ApplySignedAmountDisplay(new[] { dto }, isTenantView: true);
         return Ok(new ApiResponse<PaymentHistoryDto>(dto));
+    }
+
+    private static void ApplySignedAmountDisplay(IEnumerable<PaymentHistoryDto> payments, bool isTenantView)
+    {
+        foreach (var payment in payments)
+        {
+            var isRefund = string.Equals(payment.PaymentType, "refund", StringComparison.OrdinalIgnoreCase);
+            var shouldShowPositive = isTenantView ? isRefund : !isRefund;
+            var sign = shouldShowPositive ? "+" : "-";
+            payment.SignedAmountDisplay = $"{sign}{payment.Amount:N0}";
+        }
     }
 
     [HttpGet("wishlist")]

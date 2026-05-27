@@ -195,7 +195,19 @@ public sealed class LandlordController : ControllerBase
             filters);
 
         var dtos = _mapper.Map<IEnumerable<PaymentHistoryDto>>(items);
+        ApplySignedAmountDisplay(dtos, isTenantView: false);
         return Ok(new { Items = dtos, TotalCount = totalCount });
+    }
+
+    private static void ApplySignedAmountDisplay(IEnumerable<PaymentHistoryDto> payments, bool isTenantView)
+    {
+        foreach (var payment in payments)
+        {
+            var isRefund = string.Equals(payment.PaymentType, "refund", StringComparison.OrdinalIgnoreCase);
+            var shouldShowPositive = isTenantView ? isRefund : !isRefund;
+            var sign = shouldShowPositive ? "+" : "-";
+            payment.SignedAmountDisplay = $"{sign}{payment.Amount:N0}";
+        }
     }
 
     [HttpGet("bookings/history")]
