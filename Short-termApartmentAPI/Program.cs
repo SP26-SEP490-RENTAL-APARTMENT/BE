@@ -33,6 +33,7 @@ builder
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
+builder.Services.Configure<BookingAdmissionPolicySettings>(builder.Configuration.GetSection(BookingAdmissionPolicySettings.SectionName));
 builder.Services.AddHostedService<AdminAnalyticsStreamingService>();
 builder.Services.AddHostedService<MomoIpnQueueWorkerService>();
 builder.Services.AddHostedService<MomoPaymentStatusRecoveryWorkerService>();

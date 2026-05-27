@@ -1295,7 +1295,12 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     }
     public Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(Guid landlordId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, string? search = null, DateTime? fromDate = null, DateTime? toDate = null)
         => Task.FromResult((Enumerable.Empty<Booking>(), 0));
-    public Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null) => Task.FromResult(false);
+    public Task<BookingAdmissionEvaluationDto> EvaluateTenantBookingAdmissionAsync(
+        Guid tenantId,
+        Common.Enums.BookingPaymentMode requestedPaymentMode = Common.Enums.BookingPaymentMode.partial,
+        Guid? requesterId = null,
+        string? requesterRole = null)
+        => Task.FromResult(new BookingAdmissionEvaluationDto { Allowed = true });
     public Task<BookingCheckTimeResponseDto> RecordCheckInAsync(Guid bookingId, RecordCheckInDto dto, Guid recordedBy) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> RecordCheckOutAsync(Guid bookingId, RecordCheckOutDto dto, Guid recordedBy) => Task.FromResult(new BookingCheckTimeResponseDto());
     public Task<BookingCheckTimeResponseDto> GetCheckTimeDetailsAsync(Guid bookingId, Guid? requesterId = null) => Task.FromResult(new BookingCheckTimeResponseDto());

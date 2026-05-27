@@ -1,5 +1,6 @@
 using DAL.Models;
 using Common.DTOs;
+using Common.Enums;
 
 namespace BLL.Services.Interfaces;
 
@@ -7,8 +8,12 @@ public interface IBookingService : IBaseService<Booking>
 {
 	Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto);
 	Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId);
+	Task<BookingAdmissionEvaluationDto> EvaluateTenantBookingAdmissionAsync(
+		Guid tenantId,
+		BookingPaymentMode requestedPaymentMode = BookingPaymentMode.partial,
+		Guid? requesterId = null,
+		string? requesterRole = null);
 	Task<BookingResponseDto> MapBookingResponseAsync(Booking booking);
-	Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null);
 	Task<Booking> MarkDepositPaidAsync(Guid bookingId);
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
 	Task<BookingRefundResponseDto> RefundBookingViaPayOsAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto);

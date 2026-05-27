@@ -1,4 +1,5 @@
 using BLL.Services.Interfaces;
+using BLL.Exceptions;
 using AutoMapper;
 using Common.DTOs;
 using Common.Enums;
@@ -54,6 +55,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IIdentityVerificationService _identityVerificationService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly IConfiguration _configuration;
+    private readonly BookingAdmissionPolicySettings _bookingAdmissionPolicySettings;
     private readonly IMapper _mapper;
     private readonly ICheckTimeRequestRepository? _checkTimeRequestRepository;
 
@@ -79,6 +81,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         IIdentityVerificationService identityVerificationService,
         ILandlordWalletService landlordWalletService,
         IConfiguration configuration,
+        IOptions<BookingAdmissionPolicySettings> bookingAdmissionPolicySettings,
         IMapper mapper,
         IRepository<BookingOccupant>? bookingOccupantRepository = null,
         ICheckTimeRequestRepository? checkTimeRequestRepository = null,
@@ -105,6 +108,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _identityVerificationService = identityVerificationService;
         _landlordWalletService = landlordWalletService;
         _configuration = configuration;
+        _bookingAdmissionPolicySettings = bookingAdmissionPolicySettings.Value;
         _mapper = mapper;
         _bookingOccupantRepository = bookingOccupantRepository;
         _checkTimeRequestRepository = checkTimeRequestRepository;
@@ -183,26 +187,122 @@ public class BookingService : BaseService<Booking>, IBookingService
             .FirstOrDefault();
     }
 
-    public async Task<bool> HasOutstandingUnpaidBookingAsync(Guid tenantId, Guid? requesterId = null, string? requesterRole = null)
+    public async Task<BookingAdmissionEvaluationDto> EvaluateTenantBookingAdmissionAsync(
+        Guid tenantId,
+        BookingPaymentMode requestedPaymentMode = BookingPaymentMode.partial,
+        Guid? requesterId = null,
+        string? requesterRole = null)
     {
-        // Allow bypass for admin/staff/appeals roles
-        if (!string.IsNullOrWhiteSpace(requesterRole))
-        {
-            if (string.Equals(requesterRole, "admin", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(requesterRole, "staff", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(requesterRole, "appeals", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-        }
-
-        var matches = await _bookingRepository.FindAsync(b =>
+        var outstandingBookings = (await _bookingRepository.FindAsync(b =>
             b.TenantId == tenantId
             && string.Equals(b.Status, "confirmed", StringComparison.OrdinalIgnoreCase)
-            && (b.DepositPaid != true || b.RemainingAmount > 0m)
-        );
+            && (b.DepositPaid != true || b.RemainingAmount > 0m))).ToList();
 
-        return matches.Any();
+        var outstandingAmount = outstandingBookings.Sum(b => Math.Max(0m, b.RemainingAmount));
+        var unpaidBookingCount = outstandingBookings.Count;
+
+        DateTime? oldestOutstandingAt = null;
+        if (unpaidBookingCount > 0)
+        {
+            oldestOutstandingAt = outstandingBookings
+                .Select(GetOutstandingBookingReferenceTimestamp)
+                .OrderBy(timestamp => timestamp)
+                .First();
+        }
+
+        var graceWindowExpiry = oldestOutstandingAt?.AddHours(_bookingAdmissionPolicySettings.GraceWindowHours);
+        var now = Common.Utils.VietnamTime.Now;
+        var isInsideGraceWindow = graceWindowExpiry.HasValue && now <= graceWindowExpiry.Value;
+        var selectedPaymentMode = requestedPaymentMode.ToString();
+        var selectedPaymentModeAllowed = unpaidBookingCount == 0
+            || _bookingAdmissionPolicySettings.AllowedPaymentModesWhenDebtExists.Any(mode =>
+                string.Equals(mode, selectedPaymentMode, StringComparison.OrdinalIgnoreCase));
+
+        var exceedsUnpaidBookingLimit = unpaidBookingCount > _bookingAdmissionPolicySettings.MaxSimultaneousUnpaidConfirmedBookings;
+        var hasOutstandingDebt = unpaidBookingCount > 0;
+
+        var allowed = !exceedsUnpaidBookingLimit
+            && (!hasOutstandingDebt || (isInsideGraceWindow && selectedPaymentModeAllowed));
+
+        if (IsPolicyBypassRole(requesterRole))
+        {
+            allowed = true;
+        }
+
+        return new BookingAdmissionEvaluationDto
+        {
+            Allowed = allowed,
+            BlockReason = allowed
+                ? null
+                : BuildAdmissionBlockReason(
+                    exceedsUnpaidBookingLimit,
+                    unpaidBookingCount,
+                    isInsideGraceWindow,
+                    selectedPaymentModeAllowed,
+                    graceWindowExpiry,
+                    selectedPaymentMode),
+            OutstandingAmount = outstandingAmount,
+            UnpaidBookingCount = unpaidBookingCount,
+            GraceWindowExpiry = graceWindowExpiry,
+            IsInsideGraceWindow = isInsideGraceWindow,
+            SelectedPaymentModeAllowed = selectedPaymentModeAllowed,
+            SelectedPaymentMode = selectedPaymentMode,
+            OldestUnpaidBookingAgeHours = oldestOutstandingAt.HasValue
+                ? Math.Max(0d, (now - oldestOutstandingAt.Value).TotalHours)
+                : null
+        };
+    }
+
+    private static bool IsPolicyBypassRole(string? requesterRole)
+    {
+        if (string.IsNullOrWhiteSpace(requesterRole))
+        {
+            return false;
+        }
+
+        return string.Equals(requesterRole, "admin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(requesterRole, "staff", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(requesterRole, "appeals", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateTime GetOutstandingBookingReferenceTimestamp(Booking booking)
+    {
+        if (booking.BalanceDueDate.Year > 1)
+        {
+            return booking.BalanceDueDate.ToDateTime(TimeOnly.MinValue);
+        }
+
+        return booking.CreatedAt ?? Common.Utils.VietnamTime.Now;
+    }
+
+    private static string BuildAdmissionBlockReason(
+        bool exceedsUnpaidBookingLimit,
+        int unpaidBookingCount,
+        bool isInsideGraceWindow,
+        bool selectedPaymentModeAllowed,
+        DateTime? graceWindowExpiry,
+        string selectedPaymentMode)
+    {
+        if (exceedsUnpaidBookingLimit)
+        {
+            return $"You have {unpaidBookingCount} confirmed unpaid booking(s), which exceeds the allowed limit.";
+        }
+
+        if (!isInsideGraceWindow && !selectedPaymentModeAllowed)
+        {
+            return graceWindowExpiry.HasValue
+                ? $"You have outstanding unpaid booking(s). The grace window expired at {graceWindowExpiry.Value:yyyy-MM-dd HH:mm:ss} and the selected payment mode '{selectedPaymentMode}' is not allowed while debt exists."
+                : $"You have outstanding unpaid booking(s), and the selected payment mode '{selectedPaymentMode}' is not allowed while debt exists.";
+        }
+
+        if (!isInsideGraceWindow)
+        {
+            return graceWindowExpiry.HasValue
+                ? $"You have outstanding unpaid booking(s). The grace window expired at {graceWindowExpiry.Value:yyyy-MM-dd HH:mm:ss}."
+                : "You have outstanding unpaid booking(s).";
+        }
+
+        return $"The selected payment mode '{selectedPaymentMode}' is not allowed while debt exists.";
     }
 
     public async Task<ConfirmOccupiedIncidentPenaltyResponseDto> ConfirmOccupiedIncidentPenaltyAsync(
@@ -581,10 +681,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         await EnsureTenantHasNoOutstandingCheckTimeFeesAsync(tenantId);
         await EnsureTenantHasNoPendingCheckTimeRequestsAsync(tenantId);
 
-        // Service-level enforcement: prevent creating a new booking when tenant has outstanding unpaid bookings
-        if (await HasOutstandingUnpaidBookingAsync(tenantId))
+        var admission = await EvaluateTenantBookingAdmissionAsync(tenantId, requestDto.PaymentMode);
+        if (!admission.Allowed)
         {
-            throw new BLL.Exceptions.OutstandingUnpaidBookingException("Tenant has an outstanding unpaid booking. Please settle or cancel it before creating a new booking.");
+            throw new BookingAdmissionPolicyException(admission);
         }
 
         var (checkInDate, checkOutDate, checkInDateTime, checkOutDateTime, nights) = ResolveBookingWindow(

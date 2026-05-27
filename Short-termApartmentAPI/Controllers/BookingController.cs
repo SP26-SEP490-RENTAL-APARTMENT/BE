@@ -4,6 +4,7 @@ using Common.DTOs;
 using Common.Enums;
 using Common.Settings;
 using DAL.Models;
+using BLL.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -140,6 +141,20 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpGet("admission-status")]
+        [Authorize(Roles = "tenant")]
+        public async Task<IActionResult> GetAdmissionStatus([FromQuery] BookingPaymentMode paymentMode = BookingPaymentMode.partial)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            var admission = await _bookingService.EvaluateTenantBookingAdmissionAsync(userId, paymentMode);
+            return Ok(new ApiResponse<BookingAdmissionEvaluationDto>(admission));
+        }
+
         [HttpPost]
         [Authorize(Roles = "tenant")]
         public async Task<IActionResult> Create([FromBody] CreateBookingRequestDto requestDto)
@@ -148,13 +163,6 @@ namespace Short_termApartmentAPI.Controllers
             if (!Guid.TryParse(userIdClaim, out var userId))
             {
                 return Unauthorized(new ApiResponse<string>("Invalid user token."));
-            }
-
-            var rolesClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            // Block creating a new booking if tenant has outstanding unpaid booking (admins/staff/appeals can bypass)
-            if (await _bookingService.HasOutstandingUnpaidBookingAsync(userId, userId, rolesClaim))
-            {
-                return BadRequest(new ApiResponse<string>("You have an outstanding unpaid booking. Please settle or cancel it before creating a new booking."));
             }
 
             if (!ModelState.IsValid)
@@ -184,9 +192,12 @@ namespace Short_termApartmentAPI.Controllers
                 return CreatedAtAction(nameof(GetById), new { id = created.BookingId },
                     new ApiResponse<CreateBookingResponseDto>(response, $"Booking created. Please complete {paymentModeText} to confirm."));
             }
-            catch (BLL.Exceptions.OutstandingUnpaidBookingException ex)
+            catch (BookingAdmissionPolicyException ex)
             {
-                return BadRequest(new ApiResponse<string>(ex.Message));
+                return Conflict(new ApiResponse<BookingAdmissionEvaluationDto>(ex.Evaluation, ex.Message)
+                {
+                    Success = false
+                });
             }
             catch (InvalidOperationException ex)
             {

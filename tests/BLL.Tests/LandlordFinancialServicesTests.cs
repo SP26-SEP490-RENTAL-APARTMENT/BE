@@ -565,6 +565,7 @@ public class BookingServiceResidenceReportTests
             new NoOpIdentityVerificationService(),
             landlordWalletService,
             new ConfigurationManager(),
+            Options.Create(new Common.Settings.BookingAdmissionPolicySettings()),
             new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper(),
             null,  // IRepository<BookingOccupant>?
             null,  // ICheckTimeRequestRepository?
@@ -647,6 +648,7 @@ public class BookingServiceResidenceReportTests
             new NoOpIdentityVerificationService(),
             landlordWalletService,
             new ConfigurationManager(),
+            Options.Create(new Common.Settings.BookingAdmissionPolicySettings()),
             new MapperConfiguration(_ => { }, NullLoggerFactory.Instance).CreateMapper(),
             null,
             null,
@@ -812,6 +814,7 @@ internal static class FinancialTestHelpers
             identityVerificationService,
             landlordWalletService,
             configuration,
+            Options.Create(new Common.Settings.BookingAdmissionPolicySettings()),
             mapper,
             null,  // IRepository<BookingOccupant>? – can be null
             null,  // ICheckTimeRequestRepository? – can be null

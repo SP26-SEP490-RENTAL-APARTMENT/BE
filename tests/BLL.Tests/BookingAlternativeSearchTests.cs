@@ -197,6 +197,7 @@ public class BookingAlternativeSearchTests
             new NoOpIdentityVerificationService(), // 19 IIdentityVerificationService
             landlordWalletService,      // 20 ILandlordWalletService
             configuration,              // 21 IConfiguration
+            Options.Create(new Common.Settings.BookingAdmissionPolicySettings()),
             mapper,                     // 22 IMapper
             null,                       // 23 IRepository<BookingOccupant>?
             null,                       // 24 ICheckTimeRequestRepository?
