@@ -40,8 +40,8 @@ namespace BLL.Services.Implements
         private const string GenericInvalidVerificationMessage = "The verification code provided is invalid. Please try again or request a new code.";
 
         public AuthService(
-            IUserRepository userRepository, 
-            IRepository<Tenant> tenantRepository, 
+            IUserRepository userRepository,
+            IRepository<Tenant> tenantRepository,
             IRepository<Landlord> landlordRepository,
             IRepository<Apartment> apartmentRepository,
             IOptions<JwtSettings> jwtSettings,
@@ -142,6 +142,10 @@ namespace BLL.Services.Implements
             }
 
             await CreateProfileIfNeededAsync(userId, dto.TargetRole);
+
+            user.Role = dto.TargetRole;
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
 
             var roles = await GetResolvedRolesAsync(user);
             var tokenString = CreateAccessToken(user, roles);
@@ -371,7 +375,7 @@ namespace BLL.Services.Implements
                 var body = $"Your verification code is <b>{verificationCode}</b>. It expires in {VerificationCodeExpiryMinutes} minutes.";
                 await _emailService.SendEmailAsync(user.Email, "Password Reset Verification Code", body);
             }
-            
+
 
             return new ResponseDTO
             {
@@ -523,5 +527,5 @@ namespace BLL.Services.Implements
             return false;
         }
     }
-    
+
 }

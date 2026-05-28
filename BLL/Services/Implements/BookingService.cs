@@ -4021,6 +4021,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (user == null)
             throw new InvalidOperationException("Actor not found.");
 
+        if (landlordId == actorId)
+            return;
+
         var role = (user.Role ?? string.Empty).Trim().ToLowerInvariant();
         if (role == "landlord")
         {
