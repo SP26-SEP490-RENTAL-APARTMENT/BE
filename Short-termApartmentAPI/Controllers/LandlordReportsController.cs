@@ -10,6 +10,7 @@ using Short_termApartmentAPI.Middlewares;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 
 namespace Short_termApartmentAPI.Controllers;
 
@@ -121,6 +122,52 @@ public sealed class LandlordReportsController : ControllerBase
 
         try
         {
+            // merge saved query config when present, but allow request to override
+            request ??= new ReportRunRequestDto();
+            var savedConfig = await _dbContext.Set<ReportQueryConfig>().FindAsync(id);
+            if (savedConfig != null)
+            {
+                try
+                {
+                    if ((request.Dimensions == null || !request.Dimensions.Any()) && !string.IsNullOrWhiteSpace(savedConfig.DimensionsJson))
+                    {
+                        request.Dimensions = JsonSerializer.Deserialize<List<ReportDimensionRequestDto>>(savedConfig.DimensionsJson);
+                    }
+
+                    if ((request.Metrics == null || !request.Metrics.Any()) && !string.IsNullOrWhiteSpace(savedConfig.MetricsJson))
+                    {
+                        request.Metrics = JsonSerializer.Deserialize<List<ReportMetricRequestDto>>(savedConfig.MetricsJson);
+                    }
+
+                    if ((request.Filters == null || !request.Filters.Any()) && !string.IsNullOrWhiteSpace(savedConfig.FiltersJson))
+                    {
+                        request.Filters = JsonSerializer.Deserialize<List<ReportFilterRequestDto>>(savedConfig.FiltersJson);
+                    }
+
+                    if ((request.From == null && request.To == null) && !string.IsNullOrWhiteSpace(savedConfig.TimeRangeJson))
+                    {
+                        try
+                        {
+                            var timeMap = JsonSerializer.Deserialize<Dictionary<string, string>>(savedConfig.TimeRangeJson);
+                            if (timeMap != null)
+                            {
+                                if (timeMap.TryGetValue("from", out var fromStr) && DateTime.TryParse(fromStr, out var fromDt))
+                                {
+                                    request.From = fromDt;
+                                }
+
+                                if (timeMap.TryGetValue("to", out var toStr) && DateTime.TryParse(toStr, out var toDt))
+                                {
+                                    request.To = toDt;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+
             var page = Math.Max(1, request.Page);
             var pageSize = Math.Max(1, request.PageSize);
             var result = await _reportExecutionService.RunReportPageAsync(id, request, page, pageSize, userId, landlord.LandlordId);
@@ -255,6 +302,7 @@ public sealed class LandlordReportsController : ControllerBase
             IsActive = definition.IsActive,
             DimensionsJson = definition.QueryConfig?.DimensionsJson,
             MetricsJson = definition.QueryConfig?.MetricsJson,
+            FiltersJson = definition.QueryConfig?.FiltersJson,
             TimeRangeJson = definition.QueryConfig?.TimeRangeJson
         };
     }

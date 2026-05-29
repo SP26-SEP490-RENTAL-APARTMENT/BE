@@ -39,7 +39,7 @@ public class SmartPricingHistoryServiceTests
 
         var pricingRepo = new InMemorySmartPricingHistoryRepository();
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
-        var priceCalendarRepo = new InMemoryApartmentPriceCalendarRepository();
+        var priceCalendarRepo = new InMemorySmartPricingCalendarRepository();
         var holidaysRepo = new InMemoryHolidaysEventRepository();
         var attractionsRepo = new InMemoryNearbyAttractionRepository();
 
@@ -70,7 +70,7 @@ public class SmartPricingHistoryServiceTests
 
         var pricingRepo = new InMemorySmartPricingHistoryRepository();
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
-        var priceCalendarRepo = new InMemoryApartmentPriceCalendarRepository();
+        var priceCalendarRepo = new InMemorySmartPricingCalendarRepository();
 
         var holidaysRepo = new InMemoryHolidaysEventRepository(new List<HolidaysEvent>
         {
@@ -116,7 +116,7 @@ public class SmartPricingHistoryServiceTests
 
         var pricingRepo = new InMemorySmartPricingHistoryRepository();
         var apartmentRepo = new InMemoryApartmentRepository(apartment);
-        var priceCalendarRepo = new InMemoryApartmentPriceCalendarRepository();
+        var priceCalendarRepo = new InMemorySmartPricingCalendarRepository();
         var holidaysRepo = new InMemoryHolidaysEventRepository();
 
         var attractions = Enumerable.Range(0, 20)
@@ -147,11 +147,57 @@ public class SmartPricingHistoryServiceTests
         Assert.Equal(expectedPrice, pricing.SuggestedPrice);
         Assert.Contains("location", pricing.Reason, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task AcceptPriceSuggestionAsync_StoresAcceptedPriceAsFixedPriceForExactRange()
+    {
+        var apartmentId = Guid.NewGuid();
+        var pricingId = Guid.NewGuid();
+        var startDate = new DateOnly(2026, 5, 28);
+        var endDate = new DateOnly(2026, 5, 29);
+
+        var apartment = CreateDefaultApartment(apartmentId, 100m, "Hanoi");
+        var pricing = new SmartPricingHistory
+        {
+            PricingId = pricingId,
+            ApartmentId = apartmentId,
+            Date = startDate,
+            StartDate = startDate,
+            EndDate = endDate,
+            SuggestedPrice = 145m,
+            BasePrice = 100m,
+            Reason = "test",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var pricingRepo = new InMemorySmartPricingHistoryRepository(pricing);
+        var apartmentRepo = new InMemoryApartmentRepository(apartment);
+        var priceCalendarRepo = new InMemorySmartPricingCalendarRepository();
+        var holidaysRepo = new InMemoryHolidaysEventRepository();
+        var attractionsRepo = new InMemoryNearbyAttractionRepository();
+
+        var service = new SmartPricingHistoryService(pricingRepo, apartmentRepo, priceCalendarRepo, holidaysRepo, attractionsRepo);
+
+        await service.AcceptPriceSuggestionAsync(pricingId);
+
+        var saved = priceCalendarRepo.Items.Single();
+        Assert.Equal(startDate, saved.StartDate);
+        Assert.Equal(endDate, saved.EndDate);
+        Assert.Equal(145m, saved.FixedPricePerNight);
+        Assert.Null(saved.DiscountPercentage);
+        Assert.False(saved.IsDiscount == true);
+        Assert.Equal("manual_override", saved.PriceType);
+    }
 }
 
 internal sealed class InMemorySmartPricingHistoryRepository : IRepository<SmartPricingHistory>
 {
     private readonly List<SmartPricingHistory> _items = new();
+
+    public InMemorySmartPricingHistoryRepository(params SmartPricingHistory[] items)
+    {
+        _items.AddRange(items);
+    }
 
     public Task AddAsync(SmartPricingHistory entity)
     {
@@ -205,9 +251,98 @@ internal sealed class InMemorySmartPricingHistoryRepository : IRepository<SmartP
     {
         return Task.FromResult(1);
     }
-    
-    
-    
+}
+
+internal sealed class InMemorySmartPricingCalendarRepository : IApartmentPriceCalendarRepository
+{
+    private readonly List<ApartmentPriceCalendar> _items = new();
+
+    public IReadOnlyList<ApartmentPriceCalendar> Items => _items;
+
+    public void AddRange(IEnumerable<ApartmentPriceCalendar> newRecords) => _items.AddRange(newRecords);
+
+    public void DeleteRange(IEnumerable<ApartmentPriceCalendar> recordsToDelete)
+    {
+        foreach (var record in recordsToDelete)
+        {
+            _items.RemoveAll(item => item.PriceId == record.PriceId);
+        }
+    }
+
+    public Task AddAsync(ApartmentPriceCalendar entity)
+    {
+        _items.Add(entity);
+        return Task.CompletedTask;
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> FindAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(_items.Where(compiled));
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> FindNoTrackingAsync(Expression<Func<ApartmentPriceCalendar, bool>> predicate)
+    {
+        var compiled = predicate.Compile();
+        return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(_items.Where(compiled));
+    }
+
+    public Task<(IEnumerable<ApartmentPriceCalendar> Items, int TotalCount)> GetAllAsync(
+        int page,
+        int pageSize,
+        string? sortBy = null,
+        string? sortOrder = null,
+        string? search = null,
+        Dictionary<string, string>? filters = null,
+        IEnumerable<string>? allowedColumns = null)
+    {
+        return Task.FromResult((_items.AsEnumerable(), _items.Count));
+    }
+
+    public Task<ApartmentPriceCalendar?> GetByIdAsync(Guid id)
+    {
+        return Task.FromResult(_items.FirstOrDefault(item => item.PriceId == id));
+    }
+
+    public Task<IReadOnlyList<ApartmentPriceCalendar>> GetExistingManualRecords(Guid apartmentId, DateOnly start, DateOnly end)
+    {
+        var result = _items.Where(item => item.ApartmentId == apartmentId && item.StartDate <= end && item.EndDate >= start).ToList();
+        return Task.FromResult((IReadOnlyList<ApartmentPriceCalendar>)result);
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> GetExistingPriceCalendarRecordsAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate)
+    {
+        var result = _items.Where(item => item.ApartmentId == apartmentId && item.StartDate <= endDate && item.EndDate >= startDate);
+        return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(result);
+    }
+
+    public Task<IReadOnlyList<ApartmentPriceCalendar>> GetExistingStandardRecords(Guid apartmentId, DateOnly start, DateOnly end)
+    {
+        var result = _items.Where(item => item.ApartmentId == apartmentId && item.StartDate <= end && item.EndDate >= start).ToList();
+        return Task.FromResult((IReadOnlyList<ApartmentPriceCalendar>)result);
+    }
+
+    public Task<IEnumerable<ApartmentPriceCalendar>> GetPriceCalendarRecordsForDeletionAsync(Guid apartmentId, DateOnly startDate, DateOnly endDate)
+    {
+        var result = _items.Where(item => item.ApartmentId == apartmentId && item.StartDate <= endDate && item.EndDate >= startDate);
+        return Task.FromResult<IEnumerable<ApartmentPriceCalendar>>(result);
+    }
+
+    public void Remove(ApartmentPriceCalendar entity)
+    {
+        _items.RemoveAll(item => item.PriceId == entity.PriceId);
+    }
+
+    public void Update(ApartmentPriceCalendar entity)
+    {
+        Remove(entity);
+        _items.Add(entity);
+    }
+
+    public Task<int> SaveChangesAsync()
+    {
+        return Task.FromResult(1);
+    }
 }
 
 // (Duplicate in-memory apartment repository removed; single implementation remains later in file.)

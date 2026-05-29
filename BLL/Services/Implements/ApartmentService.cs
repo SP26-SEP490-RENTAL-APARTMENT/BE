@@ -167,7 +167,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             {
                 var lastEntry = priceChanges[priceChanges.Count - 1];
                 if (lastEntry.NewPricePerNight == newPrice &&
-                    lastEntry.EndDate >= calendar.StartDate.AddDays(-1))
+                    lastEntry.EndDate.HasValue &&
+                    lastEntry.EndDate.Value.AddDays(1) >= calendar.StartDate)
                 {
                     // Extend the last entry to include this consecutive period
                     lastEntry.EndDate = calendar.EndDate;
@@ -439,7 +440,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             : await _nearbyAttractionRepository.FindNoTrackingAsync(a => true);
 
         var apartmentPoint = new Point((double)apartment.Longitude.Value, (double)apartment.Latitude.Value) { SRID = 4326 };
-        var rankedAttractions = attractions
+        var attractionDtos = attractions
             .Where(attraction => attraction.Location != null)
             .Select(attraction => new ApartmentNearbyAttractionDto
             {
@@ -453,18 +454,20 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 City = attraction.City,
                 DistanceKm = CalculateDistanceKm(apartmentPoint, attraction.Location)
             })
-            .Where(attraction => attraction.DistanceKm <= 5d)
+            .ToList();
+
+        var primaryAttractions = attractionDtos
+            .Where(attraction => attraction.DistanceKm <= 3d)
             .OrderBy(attraction => GetNearbyAttractionPriority(attraction.Type))
             .ThenBy(attraction => attraction.DistanceKm)
             .ThenBy(attraction => attraction.NameEn)
             .ToList();
 
-        var primaryAttractions = rankedAttractions
-            .Where(attraction => attraction.DistanceKm <= 3d)
-            .ToList();
-
-        var expandedAttractions = rankedAttractions
+        var expandedAttractions = attractionDtos
             .Where(attraction => attraction.DistanceKm > 3d && attraction.DistanceKm <= 5d)
+            .OrderBy(attraction => attraction.DistanceKm)
+            .ThenBy(attraction => GetNearbyAttractionPriority(attraction.Type))
+            .ThenBy(attraction => attraction.NameEn)
             .ToList();
 
         apartment.NearbyAttractions = new ApartmentNearbyAttractionsDto

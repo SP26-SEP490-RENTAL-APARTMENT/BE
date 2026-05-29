@@ -10,6 +10,9 @@ using Short_termApartmentAPI.Middlewares;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 
 namespace Short_termApartmentAPI.Controllers;
 
@@ -18,6 +21,7 @@ namespace Short_termApartmentAPI.Controllers;
 [Authorize(Roles = "admin")]
 public sealed class ReportsController : ControllerBase
 {
+    private readonly ILogger<ReportsController> _logger;
     private readonly IRepository<ReportDefinition> _reportDefinitionRepository;
     private readonly IReportExecutionService _reportExecutionService;
     private readonly IReportExportService _reportExportService;
@@ -31,7 +35,8 @@ public sealed class ReportsController : ControllerBase
         IReportExportService reportExportService,
         IAdminAnalyticsService adminAnalyticsService,
         IMapper mapper,
-        DAL.Data.AppDbContext dbContext)
+        DAL.Data.AppDbContext dbContext,
+        ILogger<ReportsController> logger)
     {
         _reportDefinitionRepository = reportDefinitionRepository;
         _reportExecutionService = reportExecutionService;
@@ -39,6 +44,7 @@ public sealed class ReportsController : ControllerBase
         _adminAnalyticsService = adminAnalyticsService;
         _mapper = mapper;
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     [HttpGet("catalog")]
@@ -49,8 +55,8 @@ public sealed class ReportsController : ControllerBase
         var (items, totalCount) = await _reportDefinitionRepository.GetAllAsync(
             page,
             pageSize,
-            sortBy: null,
-            sortOrder: null,
+            sortBy: nameof(ReportDefinition.CreatedAt),
+            sortOrder: "desc",
             search: null,
             filters: null,
             allowedColumns: new[] { "Name", "Category", "Type" });
@@ -96,8 +102,8 @@ public sealed class ReportsController : ControllerBase
             ReportId = entity.ReportId,
             DimensionsJson = dto.DimensionsJson,
             MetricsJson = dto.MetricsJson,
+            FiltersJson = dto.FiltersJson,
             TimeRangeJson = dto.TimeRangeJson,
-            FiltersJson = null
         };
 
         await _reportDefinitionRepository.AddAsync(entity);
@@ -118,6 +124,52 @@ public sealed class ReportsController : ControllerBase
 
         try
         {
+            // merge saved query config when present, but allow request to override
+            request ??= new ReportRunRequestDto();
+            var savedConfig = await _dbContext.Set<DAL.Models.ReportQueryConfig>().FindAsync(id);
+            if (savedConfig != null)
+            {
+                try
+                {
+                    if ((request.Dimensions == null || !request.Dimensions.Any()) && !string.IsNullOrWhiteSpace(savedConfig.DimensionsJson))
+                    {
+                        request.Dimensions = JsonSerializer.Deserialize<List<ReportDimensionRequestDto>>(savedConfig.DimensionsJson);
+                    }
+
+                    if ((request.Metrics == null || !request.Metrics.Any()) && !string.IsNullOrWhiteSpace(savedConfig.MetricsJson))
+                    {
+                        request.Metrics = JsonSerializer.Deserialize<List<ReportMetricRequestDto>>(savedConfig.MetricsJson);
+                    }
+
+                    if ((request.Filters == null || !request.Filters.Any()) && !string.IsNullOrWhiteSpace(savedConfig.FiltersJson))
+                    {
+                        request.Filters = JsonSerializer.Deserialize<List<ReportFilterRequestDto>>(savedConfig.FiltersJson);
+                    }
+
+                    if ((request.From == null && request.To == null) && !string.IsNullOrWhiteSpace(savedConfig.TimeRangeJson))
+                    {
+                        try
+                        {
+                            var timeMap = JsonSerializer.Deserialize<Dictionary<string, string>>(savedConfig.TimeRangeJson);
+                            if (timeMap != null)
+                            {
+                                if (timeMap.TryGetValue("from", out var fromStr) && DateTime.TryParse(fromStr, out var fromDt))
+                                {
+                                    request.From = fromDt;
+                                }
+
+                                if (timeMap.TryGetValue("to", out var toStr) && DateTime.TryParse(toStr, out var toDt))
+                                {
+                                    request.To = toDt;
+                                }
+                            }
+                        }
+                        catch { /* ignore time parse errors and proceed with defaults */ }
+                    }
+                }
+                catch { /* ignore config parse errors and proceed with request values */ }
+            }
+
             var page = Math.Max(1, request.Page);
             var pageSize = Math.Max(1, request.PageSize);
             var result = await _reportExecutionService.RunReportPageAsync(id, request, page, pageSize, userId);
@@ -274,6 +326,91 @@ public sealed class ReportsController : ControllerBase
     {
         var snapshot = await _adminAnalyticsService.GetSnapshotAsync(cancellationToken);
         return Ok(new ApiResponse<AdminAnalyticsSnapshotDto>(snapshot));
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] ReportDefinitionDto dto)
+    {
+        var entity = await _reportDefinitionRepository.GetByIdAsync(id);
+        if (entity == null)
+        {
+            return NotFound(new ApiResponse<string>("Report definition not found."));
+        }
+
+        var queryConfig = await _dbContext.Set<ReportQueryConfig>().FindAsync(id);
+
+        _logger?.LogInformation(
+            "ReportsController.Update called for report {ReportId}. DimensionsJson={DimensionsJson} MetricsJson={MetricsJson}",
+            id,
+            dto.DimensionsJson ?? "<null>",
+            dto.MetricsJson ?? "<null>");
+
+        entity.Name = dto.Name;
+        entity.Description = dto.Description;
+        entity.Type = string.IsNullOrWhiteSpace(dto.Type) ? "custom" : dto.Type;
+        entity.Category = dto.Category;
+        entity.IsActive = dto.IsActive;
+        entity.UpdatedAt = Common.Utils.VietnamTime.Now;
+
+        // Update the existing query config row directly so edit saves persist reliably.
+        if (queryConfig == null)
+        {
+            entity.QueryConfig = new ReportQueryConfig
+            {
+                ReportId = entity.ReportId,
+                DimensionsJson = dto.DimensionsJson,
+                MetricsJson = dto.MetricsJson,
+                FiltersJson = dto.FiltersJson,
+                TimeRangeJson = dto.TimeRangeJson,
+            };
+            // ensure new QueryConfig is tracked for insert
+            _dbContext.Set<DAL.Models.ReportQueryConfig>().Add(entity.QueryConfig!);
+        }
+        else
+        {
+            queryConfig.DimensionsJson = dto.DimensionsJson;
+            queryConfig.MetricsJson = dto.MetricsJson;
+            queryConfig.FiltersJson = dto.FiltersJson;
+            queryConfig.TimeRangeJson = dto.TimeRangeJson;
+            entity.QueryConfig = queryConfig;
+            // mark as modified because default query tracking behavior is NoTracking
+            _dbContext.Entry(queryConfig).State = EntityState.Modified;
+        }
+
+        // Also ensure the parent entity is tracked for update
+        _dbContext.Set<DAL.Models.ReportDefinition>().Update(entity);
+
+        var changed = await _reportDefinitionRepository.SaveChangesAsync();
+
+        _logger.LogInformation("ReportsController.Update SaveChangesAsync returned {Changes} for report {ReportId}", changed, id);
+
+        try
+        {
+            var saved = await _dbContext.Set<DAL.Models.ReportQueryConfig>().FindAsync(id);
+            _logger.LogInformation("ReportsController.Update post-save config for {ReportId}: DimensionsJson={DimensionsJson} MetricsJson={MetricsJson}", id, saved?.DimensionsJson ?? "<null>", saved?.MetricsJson ?? "<null>");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read back ReportQueryConfig after save for {ReportId}", id);
+        }
+
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var entity = await _reportDefinitionRepository.GetByIdAsync(id);
+        if (entity == null)
+        {
+            return NotFound(new ApiResponse<string>("Report definition not found."));
+        }
+
+        // remove entity
+        _dbContext.Set<DAL.Models.ReportDefinition>().Remove(entity);
+        await _reportDefinitionRepository.SaveChangesAsync();
+
+        return NoContent();
     }
 
     private static IEnumerable<string> BuildRowValuesForController(ReportResultRowDto row, IEnumerable<string> headers)

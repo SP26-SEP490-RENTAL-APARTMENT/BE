@@ -276,8 +276,9 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         if (overrideEntry != null)
         {
             overrideEntry.StartDate = startDate;
-            overrideEntry.EndDate = endDate.AddDays(1);
-            overrideEntry.DiscountPercentage = acceptedPrice;
+            overrideEntry.EndDate = endDate;
+            overrideEntry.FixedPricePerNight = acceptedPrice;
+            overrideEntry.DiscountPercentage = null;
             overrideEntry.IsDiscount = false;
             overrideEntry.UpdatedAt = Common.Utils.VietnamTime.Now;
             _apartmentPriceCalendarRepository.Update(overrideEntry);
@@ -290,8 +291,9 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
             PriceId = Guid.NewGuid(),
             ApartmentId = apartmentId,
             StartDate = startDate,
-            EndDate = endDate.AddDays(1),
-            DiscountPercentage = acceptedPrice,
+            EndDate = endDate,
+            FixedPricePerNight = acceptedPrice,
+            DiscountPercentage = null,
             IsDiscount = false,
             PriceType = "manual_override",
             MinNights = 1,

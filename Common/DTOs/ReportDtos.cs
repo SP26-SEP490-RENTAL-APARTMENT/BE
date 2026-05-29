@@ -12,6 +12,7 @@ public class ReportDefinitionDto
     public bool IsActive { get; set; }
     public string? DimensionsJson { get; set; }
     public string? MetricsJson { get; set; }
+    public string? FiltersJson { get; set; }
     public string? TimeRangeJson { get; set; }
 }
 
@@ -25,6 +26,7 @@ public class ReportDefinitionResponseDto
     public bool IsActive { get; set; }
     public string? DimensionsJson { get; set; }
     public string? MetricsJson { get; set; }
+    public string? FiltersJson { get; set; }
     public string? TimeRangeJson { get; set; }
 }
 

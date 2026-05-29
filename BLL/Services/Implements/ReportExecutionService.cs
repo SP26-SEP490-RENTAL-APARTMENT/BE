@@ -781,13 +781,14 @@ public class ReportExecutionService : IReportExecutionService
             .Distinct()
             .ToList();
 
-        var holidayChecks = reviewDates.Select(date => _holidayService.IsHolidayAsync(date)).ToList();
-        var holidayResults = await Task.WhenAll(holidayChecks);
-        var holidayDates = reviewDates
-            .Zip(holidayResults, (date, isHoliday) => (date, isHoliday))
-            .Where(tuple => tuple.isHoliday)
-            .Select(tuple => tuple.date)
-            .ToHashSet();
+            var holidayDates = new HashSet<DateOnly>();
+            foreach (var date in reviewDates)
+            {
+                if (await _holidayService.IsHolidayAsync(date))
+                {
+                    holidayDates.Add(date);
+                }
+            }
 
         return new ReviewDimensionLookupContext(apartmentNames, apartmentCities, guestNationalities, holidayDates);
     }
@@ -1340,11 +1341,12 @@ public class ReportExecutionService : IReportExecutionService
                 .Distinct()
                 .ToList();
 
-            var holidayTasks = bookingDates.Select(date => _holidayService.IsHolidayAsync(date)).ToList();
-            var holidayResults = await Task.WhenAll(holidayTasks);
-            for (int i = 0; i < bookingDates.Count; i++)
+            foreach (var date in bookingDates)
             {
-                if (holidayResults[i]) holidayDates.Add(bookingDates[i]);
+                if (await _holidayService.IsHolidayAsync(date))
+                {
+                    holidayDates.Add(date);
+                }
             }
         }
 
