@@ -365,3 +365,8 @@ FodyWeavers.xsd
 /Short-termApartmentAPI/appsettings.Development.json
 LISTING_WORKFLOW_IMPLEMENTATION.md
 .github/prompts/plan-reportingEnhancements.prompt.md
+BLL_TESTS_REPORT.md
+COMMON_TESTS_REPORT.md
+DAL_TESTS_REPORT.md
+INTEGRATION_TESTS_REPORT.md
+TEST_REPORT_TEMPLATE.md

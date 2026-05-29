@@ -1369,6 +1369,46 @@ public class BookingService : BaseService<Booking>, IBookingService
         };
     }
 
+    private async Task<RequestBookingRefundDto> BuildAutomaticPayOsRefundRequestAsync(Booking booking, RequestBookingRefundDto dto)
+    {
+        var payOsPayment = (await _paymentRepository.FindAsync(payment =>
+                payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+                && payment.RelatedEntityId == booking.BookingId
+                && payment.Status == PaymentStatus.success.ToString()
+                && payment.PaymentType != PaymentTypes.refund.ToString()
+                && string.Equals(payment.Method, "payos", StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(payment => payment.PaidAt ?? DateTime.MinValue)
+            .FirstOrDefault();
+
+        if (payOsPayment == null)
+        {
+            throw new InvalidOperationException("PayOS payment details were not found for refund processing.");
+        }
+
+        var bankCode = payOsPayment.PayerBankBin?.Trim();
+        var accountNumber = payOsPayment.PayerAccountNumber?.Trim();
+
+        if (string.IsNullOrWhiteSpace(bankCode) || string.IsNullOrWhiteSpace(accountNumber))
+        {
+            throw new InvalidOperationException("Stored PayOS payment details are incomplete for refund processing.");
+        }
+
+        var receiverName = (await _userRepository.GetByIdAsync(booking.TenantId))?.FullName?.Trim();
+        if (string.IsNullOrWhiteSpace(receiverName))
+        {
+            receiverName = "PayOS refund recipient";
+        }
+
+        return new RequestBookingRefundDto
+        {
+            Reason = dto.Reason,
+            Notes = dto.Notes,
+            PayOsReceiverName = receiverName,
+            PayOsBankCode = bankCode,
+            PayOsAccountNumber = accountNumber
+        };
+    }
+
     public async Task<BookingRefundResponseDto> RefundBookingAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
@@ -1411,6 +1451,18 @@ public class BookingService : BaseService<Booking>, IBookingService
         var grossRefundAmount = Math.Round(totalPaidAmount * refundOutcome.RefundPercent, 2, MidpointRounding.AwayFromZero);
         var processingFeeAmount = Math.Round(grossRefundAmount * refundOutcome.ProcessingFeePercent, 2, MidpointRounding.AwayFromZero);
         var netRefundAmount = Math.Max(0m, grossRefundAmount - processingFeeAmount);
+
+        var hasPayOsPayments = refundedPayments.Any(payment => string.Equals(payment.Method, "payos", StringComparison.OrdinalIgnoreCase));
+        if (hasPayOsPayments)
+        {
+            if (!refundedPayments.All(payment => string.Equals(payment.Method, "payos", StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException("Mixed payment methods are not supported for PayOS refunds.");
+            }
+
+            var payOsRefundRequest = await BuildAutomaticPayOsRefundRequestAsync(booking, dto);
+            return await RefundBookingViaPayOsAsync(bookingId, requesterId, payOsRefundRequest);
+        }
 
         if (!refundOutcome.CanRefund || refundedPayments.Count == 0)
         {
@@ -3427,6 +3479,25 @@ public class BookingService : BaseService<Booking>, IBookingService
             "automation_cycle_started",
             runId.ToString("D"));
 
+        var expiryCandidates = (await _bookingRepository.FindAsync(b =>
+            b.Status != null &&
+            (b.Status == "pending" || b.Status == "confirmed")))
+            .Select(b => b.ApartmentId)
+            .Distinct()
+            .ToList();
+
+        foreach (var candidateApartmentId in expiryCandidates)
+        {
+            try
+            {
+                await ExpireUnpaidBookingsIfOverdueAsync(candidateApartmentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed overdue booking expiry automation for apartment {ApartmentId}.", candidateApartmentId);
+            }
+        }
+
         var processed = 0;
         var checkTimes = await _bookingCheckTimeRepository.FindAsync(_ => true);
         foreach (var checkTime in checkTimes)
@@ -4123,8 +4194,6 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (!string.Equals(apartment.Status, "posted", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This apartment is not currently available for booking.");
-
-        await ExpireUnpaidBookingsIfOverdueAsync(apartmentId);
 
         // Set default date range: today to 90 days from today
         var calendarStartDate = startDate ?? Common.Utils.VietnamTime.Now.Date;
