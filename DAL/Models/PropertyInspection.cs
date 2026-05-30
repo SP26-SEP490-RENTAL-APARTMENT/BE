@@ -11,7 +11,7 @@ public partial class PropertyInspection
 
     public Guid InspectorId { get; set; }
 
-    public DateOnly? ScheduledDate { get; set; }
+    public DateTime? ScheduledDate { get; set; }
 
     public DateOnly? CompletedDate { get; set; }
 

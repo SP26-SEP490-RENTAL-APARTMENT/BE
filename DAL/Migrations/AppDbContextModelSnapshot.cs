@@ -1527,8 +1527,8 @@ namespace DAL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("recommendations");
 
-                    b.Property<DateOnly?>("ScheduledDate")
-                        .HasColumnType("date")
+                    b.Property<DateTime?>("ScheduledDate")
+                        .HasColumnType("datetime")
                         .HasColumnName("scheduled_date");
 
                     b.Property<string>("Status")

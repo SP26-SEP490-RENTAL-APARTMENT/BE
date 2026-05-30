@@ -168,7 +168,7 @@ public sealed class ApartmentsController : ControllerBase
             dto.InspectionStatus = apartment.PropertyInspections
                 .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
                 .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
-                .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                .ThenByDescending(i => i.ScheduledDate ?? DateTime.MinValue)
                 .Select(i => i.Status)
                 .FirstOrDefault();
             return dto;
@@ -201,7 +201,7 @@ public sealed class ApartmentsController : ControllerBase
             dto.InspectionStatus = apartment.PropertyInspections
                 .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
                 .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
-                .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                .ThenByDescending(i => i.ScheduledDate ?? DateTime.MinValue)
                 .Select(i => i.Status)
                 .FirstOrDefault();
             return dto;

@@ -90,6 +90,12 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrWhiteSpace(connectionString) &&
+        !connectionString.Contains("ConvertZeroDateTime", StringComparison.OrdinalIgnoreCase))
+    {
+        connectionString += ";ConvertZeroDateTime=True";
+    }
+
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString), mySqlOptions =>
             mySqlOptions
                 .UseNetTopologySuite()

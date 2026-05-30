@@ -196,7 +196,7 @@ namespace DAL.Repository.Implements
                     a.PropertyInspections
                         .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
                         .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
-                        .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                        .ThenByDescending(i => i.ScheduledDate ?? DateTime.MinValue)
                         .Select(i => i.Status)
                         .FirstOrDefault() == inspectionStatus);
             }
@@ -233,7 +233,7 @@ namespace DAL.Repository.Implements
                     a.PropertyInspections
                         .OrderByDescending(i => i.ApprovedAt ?? DateTime.MinValue)
                         .ThenByDescending(i => i.CompletedDate ?? DateOnly.MinValue)
-                        .ThenByDescending(i => i.ScheduledDate ?? DateOnly.MinValue)
+                        .ThenByDescending(i => i.ScheduledDate ?? DateTime.MinValue)
                         .Select(i => i.Status)
                         .FirstOrDefault() == inspectionStatus);
             }

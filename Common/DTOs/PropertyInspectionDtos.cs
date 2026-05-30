@@ -25,10 +25,9 @@ namespace Common.DTOs
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
-            if (ScheduledDateTime.HasValue && DateOnly.FromDateTime(ScheduledDateTime.Value) < today)
+            if (ScheduledDateTime.HasValue && ScheduledDateTime.Value < Common.Utils.VietnamTime.Now)
             {
-                yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDateTime) });
+                yield return new ValidationResult("Scheduled date and time cannot be earlier than now.", new[] { nameof(ScheduledDateTime) });
             }
 
             // Allowed statuses: pending, scheduled, in_progress, passed, failed, re_inspection_needed
@@ -64,10 +63,9 @@ namespace Common.DTOs
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            var today = DateOnly.FromDateTime(Common.Utils.VietnamTime.TodayDateTime);
-            if (ScheduledDateTime.HasValue && DateOnly.FromDateTime(ScheduledDateTime.Value) < today)
+            if (ScheduledDateTime.HasValue && ScheduledDateTime.Value < Common.Utils.VietnamTime.Now)
             {
-                yield return new ValidationResult("Scheduled date cannot be earlier than today.", new[] { nameof(ScheduledDateTime) });
+                yield return new ValidationResult("Scheduled date and time cannot be earlier than now.", new[] { nameof(ScheduledDateTime) });
             }
         }
     }

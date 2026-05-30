@@ -1461,7 +1461,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Recommendations)
                 .HasColumnType("text")
                 .HasColumnName("recommendations");
-            entity.Property(e => e.ScheduledDate).HasColumnName("scheduled_date");
+            entity.Property(e => e.ScheduledDate)
+                .HasColumnType("datetime")
+                .HasColumnName("scheduled_date");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'pending'")
                 .HasColumnType("enum('pending','scheduled','in_progress','passed','failed','re_inspection_needed')")
