@@ -1094,6 +1094,11 @@ internal sealed class NoOpIdentityVerificationService : IIdentityVerificationSer
         return Task.CompletedTask;
     }
 
+    public Task EnsureUserVerifiedForListingSubmissionAsync(Guid landlordId)
+    {
+        return Task.CompletedTask;
+    }
+
     public Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
     {
         return Task.FromResult(Array.Empty<Guid>());

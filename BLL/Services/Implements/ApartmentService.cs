@@ -14,6 +14,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IImageService _imageService;
     private readonly IApartmentMediumService _apartmentMediumService;
     private readonly IMapper _mapper;
+    private readonly IIdentityVerificationService _identityVerificationService;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IHolidayService _holidayService;
     private readonly INearbyAttractionRepository _nearbyAttractionRepository;
@@ -32,6 +33,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IImageService imageService,
         IApartmentMediumService apartmentMediumService,
         IMapper mapper,
+        IIdentityVerificationService identityVerificationService,
         IUserRepository userRepository,
         IRepository<Notification> notificationRepository,
         IRepository<PropertyInspection> propertyInspectionRepository,
@@ -46,6 +48,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _imageService = imageService;
         _apartmentMediumService = apartmentMediumService;
         _mapper = mapper;
+        _identityVerificationService = identityVerificationService;
         _userRepository = userRepository;
         _notificationRepository = notificationRepository;
         _propertyInspectionRepository = propertyInspectionRepository;
@@ -631,6 +634,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         // Validate status is draft
         if (!string.Equals(apartment.Status, "draft", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Only draft apartments can be submitted for review.");
+
+        await _identityVerificationService.EnsureUserVerifiedForListingSubmissionAsync(landlordId);
 
         // Validate listing details
         await ValidateListingDetailsAsync(apartmentId);

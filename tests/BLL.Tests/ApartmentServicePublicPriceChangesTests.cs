@@ -246,12 +246,42 @@ public class ApartmentServicePublicPriceChangesTests
             new NoOpImageService(),
             new NoOpApartmentMediumService(),
             mapper,
+            new NoOpIdentityVerificationService(),
             new NoOpUserRepository(),
             new NoOpRepository<Notification>(),
             new NoOpRepository<PropertyInspection>(),
                 calendarRepository,
                 new NoOpHolidayService(),
                 nearbyAttractionRepository ?? new NoOpNearbyAttractionRepository());
+    }
+
+    private sealed class NoOpIdentityVerificationService : IIdentityVerificationService
+    {
+        public Task EnsureUserVerifiedForBookingAsync(Guid userId) => Task.CompletedTask;
+
+        public Task EnsureUserVerifiedForInspectionAsync(Guid landlordId) => Task.CompletedTask;
+
+        public Task EnsureUserVerifiedForListingSubmissionAsync(Guid landlordId) => Task.CompletedTask;
+
+        public Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
+            => Task.FromResult(Array.Empty<Guid>());
+
+        public Task ReviewIdentityDocumentAsync(ReviewIdentityDocumentDto dto) => Task.CompletedTask;
+
+        public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(
+            Guid userId,
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null)
+            => Task.FromResult((Items: Enumerable.Empty<IdentityDocumentDto>(), TotalCount: 0));
+
+        public Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetAllDocumentsAsync(
+            int page,
+            int pageSize,
+            string? sortBy = null,
+            string? sortOrder = null)
+            => Task.FromResult((Items: Enumerable.Empty<IdentityDocumentDto>(), TotalCount: 0));
     }
 
     private sealed class SimpleMapper : IMapper

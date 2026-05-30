@@ -21,6 +21,13 @@ namespace BLL.Services.Interfaces
         Task EnsureUserVerifiedForInspectionAsync(Guid landlordId);
 
         /// <summary>
+        /// Ensures that a landlord is identity-verified before submitting a property for review.
+        /// Throws InvalidOperationException if not verified.
+        /// </summary>
+        /// <param name="landlordId">The landlord user identifier.</param>
+        Task EnsureUserVerifiedForListingSubmissionAsync(Guid landlordId);
+
+        /// <summary>
         /// Adds a new identity document for the specified user in pending status.
         /// </summary>
         /// <param name="userId">The owner of the document.</param>

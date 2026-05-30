@@ -1117,6 +1117,8 @@ internal sealed class IdentityVerificationServiceStub : IIdentityVerificationSer
 
     public Task EnsureUserVerifiedForInspectionAsync(Guid landlordId) => Task.CompletedTask;
 
+    public Task EnsureUserVerifiedForListingSubmissionAsync(Guid landlordId) => Task.CompletedTask;
+
     public Task<Guid[]> AddIdentityDocumentAsync(Guid userId, IdentityDocumentUploadDto dto)
     {
         LastUploadDto = dto;

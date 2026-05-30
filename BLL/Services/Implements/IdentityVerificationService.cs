@@ -529,6 +529,16 @@ namespace BLL.Services.Implements
 
         public async Task EnsureUserVerifiedForInspectionAsync(Guid landlordId)
         {
+            await EnsureLandlordVerifiedAsync(landlordId, "before property inspection");
+        }
+
+        public async Task EnsureUserVerifiedForListingSubmissionAsync(Guid landlordId)
+        {
+            await EnsureLandlordVerifiedAsync(landlordId, "before submitting a property for review");
+        }
+
+        private async Task EnsureLandlordVerifiedAsync(Guid landlordId, string actionDescription)
+        {
             var user = await _userRepository.GetByIdAsync(landlordId);
             if (user == null)
             {
@@ -553,7 +563,7 @@ namespace BLL.Services.Implements
 
             if (string.IsNullOrWhiteSpace(user.Nationality))
             {
-                throw new InvalidOperationException("Landlord nationality is required before property inspection.");
+                throw new InvalidOperationException($"Landlord nationality is required {actionDescription}.");
             }
 
             var isVietnamese = string.Equals(user.Nationality, "VN", StringComparison.OrdinalIgnoreCase);
@@ -575,8 +585,8 @@ namespace BLL.Services.Implements
             if (!hasRequiredDocument)
             {
                 var message = isVietnamese
-                    ? "Vietnamese landlords must verify identity with a national ID card or other government-issued ID (passport, driver's license, or similar) before property inspection."
-                    : "Foreign landlords must verify identity with a passport or other government-issued ID before property inspection.";
+                    ? $"Vietnamese landlords must verify identity with a national ID card or other government-issued ID (passport, driver's license, or similar) {actionDescription}."
+                    : $"Foreign landlords must verify identity with a passport or other government-issued ID {actionDescription}.";
                 throw new InvalidOperationException(message);
             }
 
