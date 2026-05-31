@@ -679,6 +679,164 @@ public class IdentityVerificationServiceTests
     }
 
     [Fact]
+    public async Task AddIdentityDocumentAsync_WhenNationalIdAlreadyExists_BlocksBeforeUpload()
+    {
+        var userId = Guid.NewGuid();
+        var duplicateNationalId = "012345678901";
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId,
+            new User
+            {
+                UserId = userId,
+                Role = "tenant",
+                Nationality = "VN",
+                IdentityVerified = false,
+                FullName = "Nguyen Van A",
+                Birthday = new DateOnly(2000, 1, 1),
+                NationalIdCardNumber = duplicateNationalId
+            },
+            new User
+            {
+                UserId = Guid.NewGuid(),
+                Role = "tenant",
+                NationalIdCardNumber = duplicateNationalId
+            });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId, new Tenant
+        {
+            TenantId = userId,
+            IdentityVerificationStatus = "not_started"
+        });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+        var uploadService = new TrackingIdentityDocumentUploadService();
+
+        var fptService = new SequenceFptIdRecognitionService(
+            new FptIdRecognitionResult
+            {
+                Success = true,
+                CardType = "new",
+                IdNumber = duplicateNationalId,
+                FullName = "NGUYEN VAN A",
+                DateOfBirth = "01/01/2000",
+                OverallConfidence = 0.99
+            },
+            new FptIdRecognitionResult
+            {
+                Success = true,
+                CardType = "new_back",
+                IssueDate = "01/01/2020",
+                OverallConfidence = 0.98
+            });
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            uploadService,
+            fptService,
+            Options.Create(new FptIdRecognitionOptions()));
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "national_id_card",
+            FrontImage = new TestFormFile("front.jpg", "image/jpeg", new byte[] { 1, 2, 3 }),
+            BackImage = new TestFormFile("back.jpg", "image/jpeg", new byte[] { 4, 5, 6 })
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.AddIdentityDocumentAsync(userId, dto));
+
+        Assert.Equal("National ID number is already in use by another account.", ex.Message);
+        Assert.Equal(0, uploadService.Calls);
+        Assert.Empty(documentRepo.Items);
+        Assert.Empty(ocrResultRepo.Items);
+    }
+
+    [Fact]
+    public async Task AddIdentityDocumentAsync_WhenPassportAlreadyExists_BlocksBeforeUpload()
+    {
+        var userId = Guid.NewGuid();
+        var duplicatePassport = "P1234567";
+
+        var userRepo = new InMemoryRepository<User>(u => u.UserId,
+            new User
+            {
+                UserId = userId,
+                Role = "tenant",
+                Nationality = "US",
+                IdentityVerified = false,
+                FullName = "Foreign Tenant",
+                Birthday = new DateOnly(1990, 1, 1)
+            });
+
+        var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId,
+            new Tenant
+            {
+                TenantId = userId,
+                PassportId = duplicatePassport,
+                IdentityVerificationStatus = "not_started"
+            },
+            new Tenant
+            {
+                TenantId = Guid.NewGuid(),
+                PassportId = duplicatePassport,
+                IdentityVerificationStatus = "verified"
+            });
+
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId);
+        var documentRepo = new InMemoryRepository<UserIdentityDocument>(d => d.DocumentId);
+        var ocrResultRepo = new InMemoryRepository<IdentityDocumentOcrResult>(x => x.OcrResultId);
+        var notificationRepo = new InMemoryRepository<Notification>(n => n.NotificationId);
+        var notificationService = new NotificationService(notificationRepo);
+        var uploadService = new TrackingIdentityDocumentUploadService();
+
+        var passportRecognition = new NoOpFptPassportRecognitionService(new FptIdRecognitionResult
+        {
+            Success = true,
+            PassportNumber = duplicatePassport,
+            FullName = "Foreign Tenant",
+            DateOfBirth = "01/01/1990",
+            PlaceOfBirth = "Paris",
+            Sex = "M",
+            IssueDate = "01/01/2020",
+            ExpiryDate = "01/01/2030",
+            OverallConfidence = 0.99
+        });
+
+        var sut = new IdentityVerificationService(
+            userRepo,
+            tenantRepo,
+            landlordRepo,
+            documentRepo,
+            ocrResultRepo,
+            notificationService,
+            uploadService,
+            new NoOpFptIdRecognitionService(),
+            Options.Create(new FptIdRecognitionOptions()),
+            passportRecognition);
+
+        var dto = new IdentityDocumentUploadDto
+        {
+            DocumentType = "passport",
+            FrontImage = new TestFormFile("passport.jpg", "image/jpeg", new byte[] { 1, 2, 3 })
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.AddIdentityDocumentAsync(userId, dto));
+
+        Assert.Equal("Passport number is already in use by another account.", ex.Message);
+        Assert.Equal(0, uploadService.Calls);
+        Assert.Empty(documentRepo.Items);
+        Assert.Empty(ocrResultRepo.Items);
+    }
+
+    [Fact]
     public async Task AddIdentityDocumentAsync_WhenOcrServiceReturnsError_ThrowsArgumentException()
     {
         var userId = Guid.NewGuid();
@@ -735,6 +893,17 @@ internal sealed class NoOpIdentityDocumentUploadService : IIdentityDocumentUploa
     public Task<string> UploadIdentityDocumentAsync(IFormFile file)
     {
         return Task.FromResult(string.Empty);
+    }
+}
+
+internal sealed class TrackingIdentityDocumentUploadService : IIdentityDocumentUploadService
+{
+    public int Calls { get; private set; }
+
+    public Task<string> UploadIdentityDocumentAsync(IFormFile file)
+    {
+        Calls++;
+        return Task.FromResult("https://example.test/uploaded");
     }
 }
 

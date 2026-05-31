@@ -1795,6 +1795,7 @@ public partial class AppDbContext : DbContext
             entity.ToTable("tenants");
 
             entity.HasIndex(e => e.IdentityVerificationStatus, "idx_verification_status");
+            entity.HasIndex("PassportIdNormalized", "uk_tenants_passport_id_normalized").IsUnique();
 
             entity.Property(e => e.TenantId)
                 .ValueGeneratedOnAdd()
@@ -1809,6 +1810,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.PassportId)
                 .HasMaxLength(50)
                 .HasColumnName("passport_id");
+            entity.Property<string>("PassportIdNormalized")
+                .HasMaxLength(50)
+                .HasColumnName("passport_id_normalized")
+                .HasComputedColumnSql("NULLIF(REGEXP_REPLACE(UPPER(COALESCE(`passport_id`, '')), '[^0-9A-Z]', ''), '')", stored: true);
 
             entity.HasOne(d => d.TenantNavigation).WithOne(p => p.Tenant)
                 .HasForeignKey<Tenant>(d => d.TenantId)
@@ -1917,6 +1922,7 @@ public partial class AppDbContext : DbContext
             entity.ToTable("users");
 
             entity.HasIndex(e => e.Email, "email").IsUnique();
+            entity.HasIndex("NationalIdCardNumberNormalized", "uk_users_national_id_card_number_normalized").IsUnique();
 
             entity.HasIndex(e => e.Role, "idx_role");
 
@@ -1936,6 +1942,10 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.NationalIdCardNumber)
                 .HasMaxLength(12)
                 .HasColumnName("national_id_card_number");
+            entity.Property<string>("NationalIdCardNumberNormalized")
+                .HasMaxLength(12)
+                .HasColumnName("national_id_card_number_normalized")
+                .HasComputedColumnSql("NULLIF(REGEXP_REPLACE(COALESCE(`national_id_card_number`, ''), '[^0-9]', ''), '')", stored: true);
             entity.Property(e => e.BankAccountHolderName)
                 .HasMaxLength(150)
                 .HasColumnName("bank_account_holder_name");

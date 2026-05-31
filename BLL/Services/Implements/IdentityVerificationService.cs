@@ -6,10 +6,12 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using BLL.Services.Interfaces;
+using DAL.Data;
 using Common.DTOs;
 using Common.Settings;
 using DAL.Models;
 using DAL.Repository.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace BLL.Services.Implements
@@ -49,6 +51,7 @@ namespace BLL.Services.Implements
         private readonly IFptIdRecognitionService _fptIdRecognitionService;
         private readonly IFptPassportRecognitionService? _fptPassportRecognitionService;
         private readonly FptIdRecognitionOptions _fptIdRecognitionOptions;
+        private readonly AppDbContext? _dbContext;
 
         private const string IdentityDocumentReferenceType = "identity_document";
         private const string IdentityVerifiedNotificationType = "identity_verified";
@@ -64,7 +67,8 @@ namespace BLL.Services.Implements
             IIdentityDocumentUploadService identityDocumentUploadService,
             IFptIdRecognitionService fptIdRecognitionService,
             IOptions<FptIdRecognitionOptions> fptIdRecognitionOptions,
-            IFptPassportRecognitionService? fptPassportRecognitionService = null)
+            IFptPassportRecognitionService? fptPassportRecognitionService = null,
+            AppDbContext? dbContext = null)
         {
             _userRepository = userRepository;
             _tenantRepository = tenantRepository;
@@ -76,6 +80,7 @@ namespace BLL.Services.Implements
             _fptIdRecognitionService = fptIdRecognitionService;
             _fptPassportRecognitionService = fptPassportRecognitionService;
             _fptIdRecognitionOptions = fptIdRecognitionOptions.Value;
+            _dbContext = dbContext;
         }
 
         public async Task<(IEnumerable<IdentityDocumentDto> Items, int TotalCount)> GetUserDocumentsAsync(
@@ -239,121 +244,107 @@ namespace BLL.Services.Implements
             var now = Common.Utils.VietnamTime.Now;
             var ocrResultsToPersist = new List<IdentityDocumentOcrResult>();
 
-            foreach (var upload in uploads)
+            async Task ExecuteUploadAsync()
             {
-                var file = upload.File;
-                if (file == null || file.Length == 0)
+                foreach (var upload in uploads)
                 {
-                    throw new ArgumentException("Each identity document file must be non-empty.");
-                }
-
-                var fileUrl = await _identityDocumentUploadService.UploadIdentityDocumentAsync(file);
-
-                var document = new UserIdentityDocument
-                {
-                    DocumentId = Guid.NewGuid(),
-                    UserId = userId,
-                    DocumentType = normalizedDocumentType,
-                    Side = upload.Side,
-                    FileUrl = fileUrl,
-                    FileKey = null,
-                    MimeType = file.ContentType,
-                    FileSize = file.Length,
-                    Notes = CombineNotes(dto.Notes, ocrSummary, upload.Ocr),
-                    UploadedAt = now,
-                    VerificationStatus = shouldAutoApprove ? "verified" : "pending",
-                    VerifiedAt = shouldAutoApprove ? now : null,
-                    RejectionReason = null
-                };
-
-                await _userIdentityDocumentRepository.AddAsync(document);
-                createdDocumentIds.Add(document.DocumentId);
-
-                if (upload.Ocr != null)
-                {
-                    var ocrIdNumber = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
-                        ? (upload.Ocr.PassportNumber ?? upload.Ocr.IdNumber)
-                        : upload.Ocr.IdNumber;
-
-                    if (!string.IsNullOrWhiteSpace(ocrIdNumber))
+                    if (upload.Ocr != null)
                     {
-                        if (string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var normalizedPassport = NormalizePassportNumber(ocrIdNumber);
-                            if (!string.IsNullOrWhiteSpace(normalizedPassport))
-                            {
-                                var tenantsWithPassport = await _tenantRepository.FindAsync(t => !string.IsNullOrWhiteSpace(t.PassportId));
-                                if (tenantsWithPassport.Any(t => string.Equals(NormalizePassportNumber(t.PassportId), normalizedPassport, StringComparison.Ordinal) && t.TenantId != userId))
-                                {
-                                    throw new ArgumentException("Passport number is already in use by another account.");
-                                }
-
-                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
-                                if (existingOcrs.Any(r => string.Equals(NormalizePassportNumber(r.IdNumber), normalizedPassport, StringComparison.Ordinal)))
-                                {
-                                    // If OCR record exists, reject to avoid duplicate identity across accounts.
-                                    throw new ArgumentException("Passport number is already in use by another account.");
-                                }
-                            }
-                        }
-                        else
-                        {
-                            var normalizedId = NormalizeIdNumber(ocrIdNumber);
-                            if (!string.IsNullOrWhiteSpace(normalizedId))
-                            {
-                                var usersWithId = await _userRepository.FindAsync(u => !string.IsNullOrWhiteSpace(u.NationalIdCardNumber));
-                                if (usersWithId.Any(u => string.Equals(NormalizeIdNumber(u.NationalIdCardNumber), normalizedId, StringComparison.Ordinal) && u.UserId != userId))
-                                {
-                                    throw new ArgumentException("National ID number is already in use by another account.");
-                                }
-
-                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
-                                if (existingOcrs.Any(r => string.Equals(NormalizeIdNumber(r.IdNumber), normalizedId, StringComparison.Ordinal)))
-                                {
-                                    throw new ArgumentException("National ID number is already in use by another account.");
-                                }
-                            }
-                        }
+                        await EnsureNoDuplicateIdentityAsync(userId, normalizedDocumentType, upload.Ocr);
                     }
 
-                    var ocrResult = new IdentityDocumentOcrResult
+                    var file = upload.File;
+                    if (file == null || file.Length == 0)
                     {
-                        OcrResultId = Guid.NewGuid(),
-                        DocumentId = document.DocumentId,
-                        Provider = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
-                            ? "fpt_passport_recognition"
-                            : "fpt_id_recognition",
-                        ProviderErrorCode = upload.Ocr.ErrorCode,
-                        ProviderErrorMessage = string.IsNullOrWhiteSpace(upload.Ocr.ErrorMessage) ? null : upload.Ocr.ErrorMessage,
-                        CardType = upload.Ocr.CardType,
-                        CardTypeDetail = upload.Ocr.CardTypeDetail,
-                        IdNumber = ocrIdNumber,
-                        FullName = upload.Ocr.FullName,
-                        DateOfBirthRaw = upload.Ocr.DateOfBirth,
-                        IssueDateRaw = upload.Ocr.IssueDate,
-                        OverallConfidence = Convert.ToDecimal(upload.Ocr.OverallConfidence),
-                        ExtractedFieldsJson = upload.Ocr.ExtractedFields.Count > 0 ? JsonSerializer.Serialize(upload.Ocr.ExtractedFields) : null,
-                        FieldConfidencesJson = upload.Ocr.FieldConfidences.Count > 0 ? JsonSerializer.Serialize(upload.Ocr.FieldConfidences) : null,
-                        AutoApproved = shouldAutoApprove,
-                        MatchPassed = shouldAutoApprove,
-                        MatchFailureReason = shouldAutoApprove ? null : "OCR strict matching did not pass.",
-                        ProcessedAt = now
+                        throw new ArgumentException("Each identity document file must be non-empty.");
+                    }
+
+                    var fileUrl = await _identityDocumentUploadService.UploadIdentityDocumentAsync(file);
+
+                    var document = new UserIdentityDocument
+                    {
+                        DocumentId = Guid.NewGuid(),
+                        UserId = userId,
+                        DocumentType = normalizedDocumentType,
+                        Side = upload.Side,
+                        FileUrl = fileUrl,
+                        FileKey = null,
+                        MimeType = file.ContentType,
+                        FileSize = file.Length,
+                        Notes = CombineNotes(dto.Notes, ocrSummary, upload.Ocr),
+                        UploadedAt = now,
+                        VerificationStatus = shouldAutoApprove ? "verified" : "pending",
+                        VerifiedAt = shouldAutoApprove ? now : null,
+                        RejectionReason = null
                     };
 
-                    ocrResultsToPersist.Add(ocrResult);
+                    await _userIdentityDocumentRepository.AddAsync(document);
+                    createdDocumentIds.Add(document.DocumentId);
+
+                    if (upload.Ocr != null)
+                    {
+                        var ocrIdNumber = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
+                            ? (upload.Ocr.PassportNumber ?? upload.Ocr.IdNumber)
+                            : upload.Ocr.IdNumber;
+
+                        var ocrResult = new IdentityDocumentOcrResult
+                        {
+                            OcrResultId = Guid.NewGuid(),
+                            DocumentId = document.DocumentId,
+                            Provider = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
+                                ? "fpt_passport_recognition"
+                                : "fpt_id_recognition",
+                            ProviderErrorCode = upload.Ocr.ErrorCode,
+                            ProviderErrorMessage = string.IsNullOrWhiteSpace(upload.Ocr.ErrorMessage) ? null : upload.Ocr.ErrorMessage,
+                            CardType = upload.Ocr.CardType,
+                            CardTypeDetail = upload.Ocr.CardTypeDetail,
+                            IdNumber = ocrIdNumber,
+                            FullName = upload.Ocr.FullName,
+                            DateOfBirthRaw = upload.Ocr.DateOfBirth,
+                            IssueDateRaw = upload.Ocr.IssueDate,
+                            OverallConfidence = Convert.ToDecimal(upload.Ocr.OverallConfidence),
+                            ExtractedFieldsJson = upload.Ocr.ExtractedFields.Count > 0 ? JsonSerializer.Serialize(upload.Ocr.ExtractedFields) : null,
+                            FieldConfidencesJson = upload.Ocr.FieldConfidences.Count > 0 ? JsonSerializer.Serialize(upload.Ocr.FieldConfidences) : null,
+                            AutoApproved = shouldAutoApprove,
+                            MatchPassed = shouldAutoApprove,
+                            MatchFailureReason = shouldAutoApprove ? null : "OCR strict matching did not pass.",
+                            ProcessedAt = now
+                        };
+
+                        ocrResultsToPersist.Add(ocrResult);
+                    }
+                }
+
+                await _userIdentityDocumentRepository.SaveChangesAsync();
+
+                if (ocrResultsToPersist.Count > 0)
+                {
+                    foreach (var ocrResult in ocrResultsToPersist)
+                    {
+                        await _identityDocumentOcrResultRepository.AddAsync(ocrResult);
+                    }
+
+                    await _identityDocumentOcrResultRepository.SaveChangesAsync();
                 }
             }
 
-            await _userIdentityDocumentRepository.SaveChangesAsync();
-
-            if (ocrResultsToPersist.Count > 0)
+            if (_dbContext == null)
             {
-                foreach (var ocrResult in ocrResultsToPersist)
+                await ExecuteUploadAsync();
+            }
+            else
+            {
+                await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+                try
                 {
-                    await _identityDocumentOcrResultRepository.AddAsync(ocrResult);
+                    await ExecuteUploadAsync();
+                    await transaction.CommitAsync();
                 }
-
-                await _identityDocumentOcrResultRepository.SaveChangesAsync();
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
             }
 
             if (shouldAutoApprove)
@@ -399,6 +390,59 @@ namespace BLL.Services.Implements
             }
 
             return createdDocumentIds.ToArray();
+        }
+
+        private async Task EnsureNoDuplicateIdentityAsync(Guid userId, string normalizedDocumentType, FptIdRecognitionResult ocrResult)
+        {
+            var ocrIdNumber = string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase)
+                ? (ocrResult.PassportNumber ?? ocrResult.IdNumber)
+                : ocrResult.IdNumber;
+
+            if (string.IsNullOrWhiteSpace(ocrIdNumber))
+            {
+                return;
+            }
+
+            if (string.Equals(normalizedDocumentType, "passport", StringComparison.OrdinalIgnoreCase))
+            {
+                var normalizedPassport = NormalizePassportNumber(ocrIdNumber);
+                if (string.IsNullOrWhiteSpace(normalizedPassport))
+                {
+                    return;
+                }
+
+                var tenantsWithPassport = await _tenantRepository.FindAsync(t => !string.IsNullOrWhiteSpace(t.PassportId));
+                if (tenantsWithPassport.Any(t => string.Equals(NormalizePassportNumber(t.PassportId), normalizedPassport, StringComparison.Ordinal) && t.TenantId != userId))
+                {
+                    throw new ArgumentException("Passport number is already in use by another account.");
+                }
+
+                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
+                if (existingOcrs.Any(r => string.Equals(NormalizePassportNumber(r.IdNumber), normalizedPassport, StringComparison.Ordinal)))
+                {
+                    throw new ArgumentException("Passport number is already in use by another account.");
+                }
+
+                return;
+            }
+
+            var normalizedId = NormalizeIdNumber(ocrIdNumber);
+            if (string.IsNullOrWhiteSpace(normalizedId))
+            {
+                return;
+            }
+
+            var usersWithId = await _userRepository.FindAsync(u => !string.IsNullOrWhiteSpace(u.NationalIdCardNumber));
+            if (usersWithId.Any(u => string.Equals(NormalizeIdNumber(u.NationalIdCardNumber), normalizedId, StringComparison.Ordinal) && u.UserId != userId))
+            {
+                throw new ArgumentException("National ID number is already in use by another account.");
+            }
+
+            var existingNationalIdOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
+            if (existingNationalIdOcrs.Any(r => string.Equals(NormalizeIdNumber(r.IdNumber), normalizedId, StringComparison.Ordinal)))
+            {
+                throw new ArgumentException("National ID number is already in use by another account.");
+            }
         }
 
         public async Task ReviewIdentityDocumentAsync(ReviewIdentityDocumentDto dto)
