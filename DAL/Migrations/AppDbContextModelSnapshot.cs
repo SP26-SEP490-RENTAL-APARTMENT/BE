@@ -2108,20 +2108,11 @@ namespace DAL.Migrations
                         .HasColumnType("varchar(50)")
                         .HasColumnName("passport_id");
 
-                    b.Property<string>("PassportIdNormalized")
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("passport_id_normalized")
-                        .HasComputedColumnSql("NULLIF(REGEXP_REPLACE(UPPER(COALESCE(`passport_id`, '')), '[^0-9A-Z]', ''), '')", true);
-
                     b.HasKey("TenantId")
                         .HasName("PRIMARY");
 
                     b.HasIndex(new[] { "IdentityVerificationStatus" }, "idx_verification_status")
                         .HasDatabaseName("idx_verification_status1");
-
-                    b.HasIndex(new[] { "PassportIdNormalized" }, "uk_tenants_passport_id_normalized")
-                        .IsUnique();
 
                     b.ToTable("tenants", (string)null);
                 });
@@ -2171,12 +2162,6 @@ namespace DAL.Migrations
                         .HasColumnType("enum('tenant','landlord','admin','staff')")
                         .HasColumnName("role");
 
-                    b.Property<string>("NationalIdCardNumberNormalized")
-                        .HasMaxLength(12)
-                        .HasColumnType("varchar(12)")
-                        .HasColumnName("national_id_card_number_normalized")
-                        .HasComputedColumnSql("NULLIF(REGEXP_REPLACE(COALESCE(`national_id_card_number`, ''), '[^0-9]', ''), '')", true);
-
                     b.Property<string>("Token")
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)")
@@ -2190,9 +2175,6 @@ namespace DAL.Migrations
                         .HasName("PRIMARY");
 
                     b.HasIndex(new[] { "Email" }, "email")
-                        .IsUnique();
-
-                    b.HasIndex(new[] { "NationalIdCardNumberNormalized" }, "uk_users_national_id_card_number_normalized")
                         .IsUnique();
 
                     b.HasIndex(new[] { "Role" }, "idx_role");
