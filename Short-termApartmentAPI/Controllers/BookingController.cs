@@ -604,7 +604,11 @@ namespace Short_termApartmentAPI.Controllers
             string? paymentProvider,
             string? devicePlatform,
             string? returnUrl = null,
-            string? cancelUrl = null)
+            string? cancelUrl = null,
+            decimal? amountOverride = null,
+            string? paymentTypeOverride = null,
+            string? paymentPurposeOverride = null,
+            string? descriptionOverride = null)
         {
             if (string.IsNullOrWhiteSpace(paymentProvider))
             {
@@ -612,26 +616,30 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             var normalized = paymentProvider.Trim().ToLowerInvariant();
+            var amount = amountOverride ?? booking.UpfrontPaymentAmount;
+            var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
+            var paymentType = paymentTypeOverride ?? (isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString());
+            var paymentPurpose = paymentPurposeOverride ?? (isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString());
+            var description = descriptionOverride ?? (isFullPayment ? "Full pay" : "Deposit");
 
             if (normalized == "stripe")
             {
-                var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
                 var stripeRequest = new StripeCheckoutRequestDto
                 {
-                    Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
+                    Amount = (long)Math.Round(amount),
                     DevicePlatform = devicePlatform,
                     RelatedEntityId = booking.BookingId,
-                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString()
+                    PaymentType = paymentType,
+                    PaymentPurpose = paymentPurpose
                 };
 
                 var stripeResponse = await _stripeService.CreateCheckoutSessionAsync(stripeRequest);
 
                 var payment = new Payment
                 {
-                    Amount = booking.UpfrontPaymentAmount,
-                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    Amount = amount,
+                    PaymentType = paymentType,
+                    PaymentPurpose = paymentPurpose,
                     RelatedEntityId = booking.BookingId,
                     RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "stripe",
@@ -654,14 +662,13 @@ namespace Short_termApartmentAPI.Controllers
 
             if (normalized == "momo")
             {
-                var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
                 var momoRequest = new MomoCreatePaymentRequest
                 {
-                    Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
-                    OrderInfo = isFullPayment ? $"Booking full payment {booking.BookingId}" : $"Booking deposit {booking.BookingId}",
+                    Amount = (long)Math.Round(amount),
+                    OrderInfo = description,
                     ExtraData = booking.BookingId.ToString(),
-                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    PaymentType = paymentType,
+                    PaymentPurpose = paymentPurpose,
                     RedirectUrl = ResolveMomoRedirectUrl(devicePlatform),
                 };
 
@@ -673,9 +680,9 @@ namespace Short_termApartmentAPI.Controllers
 
                 var payment = new Payment
                 {
-                    Amount = booking.UpfrontPaymentAmount,
-                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    Amount = amount,
+                    PaymentType = paymentType,
+                    PaymentPurpose = paymentPurpose,
                     RelatedEntityId = booking.BookingId,
                     RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "momo_wallet",
@@ -718,7 +725,6 @@ namespace Short_termApartmentAPI.Controllers
             if (normalized == "payos")
             {
                 var isAndroid = string.Equals(devicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase);
-                var isFullPayment = string.Equals(booking.PaymentMode, BookingPaymentMode.full.ToString(), StringComparison.OrdinalIgnoreCase);
                 var resolvedReturnUrl = string.IsNullOrWhiteSpace(returnUrl)
                     ? isAndroid
                         ? "VStay://payos-payment"
@@ -735,13 +741,13 @@ namespace Short_termApartmentAPI.Controllers
                 var payosRequest = new CreatePaymentLinkRequest
                 {
                     OrderCode = orderCode,
-                    Amount = (long)Math.Round(booking.UpfrontPaymentAmount),
-                    Description = isFullPayment ? $"Full pay" : $"Deposit",
+                    Amount = (long)Math.Round(amount),
+                    Description = description,
                     ReturnUrl = resolvedReturnUrl,
                     CancelUrl = resolvedCancelUrl,
                     Items = new List<PaymentLinkItem>
                     {
-                        new PaymentLinkItem { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(booking.UpfrontPaymentAmount), Unit = "booking" }
+                        new PaymentLinkItem { Name = $"Booking {booking.BookingId}", Quantity = 1, Price = (long)Math.Round(amount), Unit = "booking" }
                     }
                 };
 
@@ -757,9 +763,9 @@ namespace Short_termApartmentAPI.Controllers
 
                 var payment = new Payment
                 {
-                    Amount = booking.UpfrontPaymentAmount,
-                    PaymentType = isFullPayment ? PaymentTypes.upfront.ToString() : PaymentTypes.deposit.ToString(),
-                    PaymentPurpose = isFullPayment ? PaymentPurposes.booking_full_payment.ToString() : PaymentPurposes.booking_deposit.ToString(),
+                    Amount = amount,
+                    PaymentType = paymentType,
+                    PaymentPurpose = paymentPurpose,
                     RelatedEntityId = booking.BookingId,
                     RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
                     Method = "payos",
@@ -1539,7 +1545,40 @@ namespace Short_termApartmentAPI.Controllers
                     ? "payos"
                     : dto.PaymentMethod.Trim().ToLowerInvariant();
 
+                var booking = await _bookingService.GetByIdAsync(id);
+                if (booking == null)
+                {
+                    return NotFound(new ApiResponse<string>("Booking not found."));
+                }
+
+                if (booking.TenantId != tenantId)
+                {
+                    return Forbid();
+                }
+
                 var checkTimeDetails = await _bookingService.GetCheckTimeDetailsAsync(id, tenantId);
+
+                if (dto.PaymentMethod is "payos" or "stripe" or "momo")
+                {
+                    var paymentLink = await CreatePaymentLinkIfRequestedAsync(
+                        booking,
+                        dto.PaymentMethod,
+                        dto.DevicePlatform,
+                        dto.ReturnUrl,
+                        dto.CancelUrl,
+                        amountOverride: checkTimeDetails.TotalFee,
+                        paymentTypeOverride: "charge",
+                        paymentPurposeOverride: "check_time_fee",
+                        descriptionOverride: "Check-time fee");
+
+                    if (paymentLink == null)
+                    {
+                        return BadRequest(new ApiResponse<string>("Unsupported paymentProvider."));
+                    }
+
+                    return Ok(new ApiResponse<BookingPaymentLinkDto>(paymentLink, "Payment link created successfully."));
+                }
+
                 var payment = new Payment
                 {
                     PaymentId = Guid.NewGuid(),

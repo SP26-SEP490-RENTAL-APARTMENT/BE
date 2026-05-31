@@ -332,6 +332,12 @@ public class PayClaimFeeDto : IValidatableObject
     [MaxLength(2000)]
     public string? ReturnUrl { get; set; }
 
+    /// <summary>
+    /// Optional cancel URL to override configured cancel URLs.
+    /// </summary>
+    [MaxLength(2000)]
+    public string? CancelUrl { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         yield break;

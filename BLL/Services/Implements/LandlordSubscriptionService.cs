@@ -265,8 +265,16 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             OrderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             Amount = (long)amount,
             Description = "Subscription payment",
-            ReturnUrl = _stripeSettings.SuccessUrl,
-            CancelUrl = _stripeSettings.CancelUrl,
+            ReturnUrl = string.IsNullOrWhiteSpace(dto.ReturnUrl)
+                ? string.Equals(dto.DevicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase)
+                    ? "VStay://payos-payment"
+                    : _stripeSettings.SuccessUrl
+                : dto.ReturnUrl,
+            CancelUrl = string.IsNullOrWhiteSpace(dto.CancelUrl)
+                ? string.Equals(dto.DevicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase)
+                    ? "VStay://payos-payment"
+                    : _stripeSettings.CancelUrl
+                : dto.CancelUrl,
             Items = new List<PaymentLinkItem>
             {
                 new PaymentLinkItem

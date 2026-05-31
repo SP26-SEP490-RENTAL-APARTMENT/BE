@@ -18,6 +18,24 @@ namespace Common.DTOs
         /// Whether the subscription should auto renew when it expires.
         /// </summary>
         public bool AutoRenew { get; set; } = true;
+
+        /// <summary>
+        /// Device platform for redirect payload: 'web', 'ios', 'android'.
+        /// </summary>
+        [MaxLength(20)]
+        public string? DevicePlatform { get; set; }
+
+        /// <summary>
+        /// Optional return URL to override configured success URL.
+        /// </summary>
+        [MaxLength(2000)]
+        public string? ReturnUrl { get; set; }
+
+        /// <summary>
+        /// Optional cancel URL to override configured cancel URL.
+        /// </summary>
+        [MaxLength(2000)]
+        public string? CancelUrl { get; set; }
     }
 
     public class LandlordSubscriptionHistoryDto
