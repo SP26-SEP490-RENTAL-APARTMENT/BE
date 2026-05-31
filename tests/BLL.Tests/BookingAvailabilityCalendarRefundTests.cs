@@ -41,7 +41,25 @@ public class BookingAvailabilityCalendarRefundTests
         Assert.Equal("refunded", fixture.OriginalPayment.Status);
     }
 
-    private static (BookingService Service, Guid ApartmentId, Booking Booking, Payment OriginalPayment, InMemoryRepository<Payment> PaymentRepo) CreateFixture()
+    [Fact]
+    public async Task RecordCheckInAsync_ThrowsWhenRemainingBalanceExists()
+    {
+        var fixture = CreateFixture();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await fixture.Service.RecordCheckInAsync(
+                fixture.Booking.BookingId,
+                new RecordCheckInDto
+                {
+                    ActualCheckIn = fixture.Booking.CheckInDate.ToDateTime(new TimeOnly(14, 0)),
+                    PhotoEvidenceUrl = "https://example.com/checkin.jpg"
+                },
+                Guid.Empty));
+
+        Assert.Equal("Remaining balance must be settled before check-in can be recorded.", exception.Message);
+    }
+
+    private static (BookingService Service, Guid ApartmentId, Guid LandlordId, Booking Booking, Payment OriginalPayment, InMemoryRepository<Payment> PaymentRepo) CreateFixture()
     {
         var apartmentId = Guid.NewGuid();
         var bookingId = Guid.NewGuid();
@@ -140,6 +158,6 @@ public class BookingAvailabilityCalendarRefundTests
             null,
             checkTimeStateEventRepo);
 
-        return (sut, apartmentId, booking, payment, paymentRepo);
+        return (sut, apartmentId, landlordId, booking, payment, paymentRepo);
     }
 }

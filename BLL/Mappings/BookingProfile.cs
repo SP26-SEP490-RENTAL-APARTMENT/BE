@@ -15,6 +15,8 @@ public class BookingProfile : Profile
                 opt => opt.MapFrom(src => src.BookingCheckTime != null ? src.BookingCheckTime.ActualCheckIn : null))
             .ForMember(dest => dest.ActualCheckOut,
                 opt => opt.MapFrom(src => src.BookingCheckTime != null ? src.BookingCheckTime.ActualCheckOut : null))
+            .ForMember(dest => dest.RemainingBalance,
+                opt => opt.MapFrom(src => src.RemainingAmount))
             .ForMember(dest => dest.Images,
                 opt => opt.MapFrom(src => src.Apartment != null && src.Apartment.ApartmentMedia != null
                     ? src.Apartment.ApartmentMedia

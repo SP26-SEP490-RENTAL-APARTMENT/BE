@@ -26,4 +26,17 @@ namespace Short_termApartmentAPI.DTOs
         [Required]
         public IFormFile PhotoEvidence { get; set; } = null!;
     }
+
+    public class RecordBalancePaymentFormDto
+    {
+        [Required]
+        [MaxLength(50)]
+        public string PaymentMethod { get; set; } = null!;
+
+        [MaxLength(200)]
+        public string? TransactionId { get; set; }
+
+        [MaxLength(500)]
+        public string? Notes { get; set; }
+    }
 }

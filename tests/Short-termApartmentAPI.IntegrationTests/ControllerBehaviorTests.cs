@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text;
 using System.Text.Json;
 using AutoMapper;
+using BLL.Mappings;
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using DAL.Models;
@@ -868,6 +869,62 @@ public class ControllerBehaviorTests
         Assert.Equal("Cash payment is only allowed after the deposit has been paid through a gateway.", response.Message);
     }
 
+    [Fact]
+    public async Task TenantController_GetBookingById_ReturnsRemainingBalance()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking
+            {
+                BookingId = bookingId,
+                TenantId = tenantId,
+                RemainingAmount = 1250m
+            }
+        };
+
+        var controller = CreateTenantController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var result = await controller.GetBookingById(bookingId);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<BookingResponseDto>>(ok.Value);
+        Assert.Equal(1250m, response.Data.RemainingBalance);
+    }
+
+    [Fact]
+    public async Task BookingController_RecordBalancePayment_RecordsPaymentAndAppliesBalanceSettlement()
+    {
+        var bookingId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking
+            {
+                BookingId = bookingId,
+                RemainingAmount = 1250m,
+                DepositPaid = true,
+                Status = "confirmed"
+            }
+        };
+        var paymentService = new PaymentServiceStub();
+
+        var controller = CreateBookingController(bookingService: bookingService, paymentService: paymentService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString()), new Claim(ClaimTypes.Role, "staff"));
+
+        var result = await controller.RecordBalancePayment(bookingId, new Short_termApartmentAPI.DTOs.RecordBalancePaymentFormDto
+        {
+            PaymentMethod = "cash",
+            Notes = "Collected at check-in"
+        });
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<object>>(ok.Value);
+        Assert.NotNull(response.Data);
+        Assert.Equal(1, bookingService.MarkBalancePaidCalls);
+    }
+
     private static LandlordController CreateLandlordController(
         ILandlordService? landlordService = null,
         ILandlordSubscriptionService? landlordSubscriptionService = null,
@@ -1013,6 +1070,7 @@ public class ControllerBehaviorTests
     {
         return new MapperConfiguration(cfg =>
         {
+            cfg.AddProfile<BookingProfile>();
             cfg.CreateMap<Payment, PaymentHistoryDto>();
         }, NullLoggerFactory.Instance).CreateMapper();
     }
@@ -1233,7 +1291,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto) => Task.FromResult(new BookingQuoteResponseDto());
     public Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId) => Task.FromResult(new Booking());
     public Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
-        => Task.FromResult(new BookingResponseDto { BookingId = booking.BookingId, Images = new List<string>() });
+        => Task.FromResult(new BookingResponseDto { BookingId = booking.BookingId, Images = new List<string>(), RemainingBalance = booking.RemainingAmount });
     public Task<Booking> MarkDepositPaidAsync(Guid bookingId)
     {
         MarkDepositPaidCalls++;

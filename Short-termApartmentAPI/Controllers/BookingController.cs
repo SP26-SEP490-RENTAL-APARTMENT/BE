@@ -565,8 +565,16 @@ namespace Short_termApartmentAPI.Controllers
             if (payment == null)
                 return NotFound(new ApiResponse<string>("Payment not found."));
 
+            var currentStatus = (payment.Status ?? string.Empty).Trim();
+
             if (dto.Approve)
             {
+                // Idempotent: if already confirmed, return success without re-applying effects
+                if (string.Equals(currentStatus, PaymentStatus.success.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return Ok(new ApiResponse<object>(new { payment.PaymentId, payment.Status }, "Offline payment already confirmed."));
+                }
+
                 payment.Status = PaymentStatus.success.ToString();
                 payment.ConfirmedBy = requesterId;
                 payment.ConfirmedAt = Common.Utils.VietnamTime.Now;
@@ -575,7 +583,7 @@ namespace Short_termApartmentAPI.Controllers
 
                 await _paymentService.UpdateAsync(payment);
 
-                // Apply booking-side effects
+                // Apply booking-side effects (MarkBalancePaidAsync / MarkDepositPaidAsync are already idempotent)
                 try
                 {
                     if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
@@ -594,12 +602,94 @@ namespace Short_termApartmentAPI.Controllers
             }
             else
             {
+                // Idempotent: if already rejected/failed, return success
+                if (string.Equals(currentStatus, PaymentStatus.failed.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return Ok(new ApiResponse<object>(new { payment.PaymentId, payment.Status }, "Offline payment already marked as rejected."));
+                }
+
                 payment.Status = PaymentStatus.failed.ToString();
                 if (!string.IsNullOrWhiteSpace(dto.Notes))
                     payment.Notes = (payment.Notes ?? string.Empty) + "\n" + dto.Notes;
                 await _paymentService.UpdateAsync(payment);
                 return Ok(new ApiResponse<object>(new { payment.PaymentId, payment.Status }, "Offline payment marked as rejected."));
             }
+        }
+
+        [HttpPost("{id:guid}/record-balance-payment")]
+        [Authorize(Roles = "landlord,staff,admin")]
+        public async Task<IActionResult> RecordBalancePayment(Guid id, [FromBody] Short_termApartmentAPI.DTOs.RecordBalancePaymentFormDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+            {
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+            }
+
+            if (dto == null)
+            {
+                return BadRequest(new ApiResponse<string>("Request body is required."));
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+            {
+                return NotFound(new ApiResponse<string>("Booking not found."));
+            }
+
+            if (User.IsInRole("landlord") && booking.Apartment != null && booking.Apartment.LandlordId != requesterId)
+            {
+                return Forbid();
+            }
+
+            if (booking.RemainingAmount <= 0m)
+            {
+                return BadRequest(new ApiResponse<string>("No remaining balance is due."));
+            }
+
+            if (booking.DepositPaid != true)
+            {
+                return BadRequest(new ApiResponse<string>("Balance payment is only allowed after the deposit has been paid."));
+            }
+
+            var paymentMethod = dto.PaymentMethod.Trim().ToLowerInvariant();
+            if (paymentMethod is not ("cash" or "bank_transfer" or "online"))
+            {
+                return BadRequest(new ApiResponse<string>("Unsupported payment method."));
+            }
+
+            var now = Common.Utils.VietnamTime.Now;
+            var payment = new Payment
+            {
+                Amount = booking.RemainingAmount,
+                PaymentType = PaymentTypes.balance.ToString(),
+                PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
+                RelatedEntityId = booking.BookingId,
+                RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                Method = paymentMethod,
+                Status = PaymentStatus.success.ToString(),
+                TransactionId = string.IsNullOrWhiteSpace(dto.TransactionId) ? null : dto.TransactionId.Trim(),
+                PaidAt = now,
+                ConfirmedBy = requesterId,
+                ConfirmedAt = now,
+                Notes = string.IsNullOrWhiteSpace(dto.Notes) ? null : dto.Notes.Trim()
+            };
+
+            await _paymentService.CreateAsync(payment);
+            await _bookingService.MarkBalancePaidAsync(booking.BookingId);
+
+            return Ok(new ApiResponse<object>(new
+            {
+                payment.PaymentId,
+                payment.Status,
+                payment.Method,
+                payment.Amount
+            }, "Balance payment recorded and applied."));
         }
 
         private async Task<BookingPaymentLinkDto?> CreatePaymentLinkIfRequestedAsync(

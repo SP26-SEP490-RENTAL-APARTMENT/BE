@@ -193,6 +193,7 @@ public class BookingResponseDto
     public decimal? PackagePrice { get; set; }
     public decimal DepositAmount { get; set; }
     public decimal UpfrontPaymentAmount { get; set; }
+    public decimal RemainingBalance { get; set; }
     public bool? DepositPaid { get; set; }
     public string? PaymentMode { get; set; }
     public DateOnly BalanceDueDate { get; set; }

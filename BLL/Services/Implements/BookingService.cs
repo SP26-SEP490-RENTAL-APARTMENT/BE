@@ -2386,6 +2386,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             throw new InvalidOperationException("Booking must be in confirmed or paid status to record check-in.");
         }
 
+        if (booking.RemainingAmount > 0m)
+        {
+            throw new InvalidOperationException("Remaining balance must be settled before check-in can be recorded.");
+        }
+
         if (bookingIsRecoveringFromNoShow)
         {
             booking.Status = GetBookingPaymentMode(booking) == BookingPaymentMode.full
