@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Globalization;
+using System.ComponentModel.DataAnnotations;
 using System.Text;
 using System.Text.Json;
 using AutoMapper;
@@ -818,6 +819,53 @@ public class ControllerBehaviorTests
         Assert.Equal("Occupant removed successfully.", response.Message);
         Assert.Single(bookingService.OccupantsByBooking[bookingId]);
         Assert.Equal(1, bookingService.OccupantsByBooking[bookingId][0].Order);
+    }
+
+    [Fact]
+    public void CreateBookingRequestDto_RequiresPaymentProvider_ForPartialBookings()
+    {
+        var dto = new CreateBookingRequestDto
+        {
+            ApartmentId = Guid.NewGuid(),
+            PaymentMode = Common.Enums.BookingPaymentMode.partial,
+            CheckInDate = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(1)),
+            CheckOutDate = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(2)),
+            NoOfAdults = 1
+        };
+
+        var results = new List<ValidationResult>();
+        var isValid = Validator.TryValidateObject(dto, new ValidationContext(dto), results, validateAllProperties: true);
+
+        Assert.False(isValid);
+        Assert.Contains(results, result => result.ErrorMessage == "PaymentProvider is required for partial bookings so the deposit can be paid through a gateway.");
+    }
+
+    [Fact]
+    public async Task BookingController_SubmitOfflinePayment_ReturnsBadRequest_WhenDepositIsNotPaid()
+    {
+        var bookingId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingService = new BookingServiceStub
+        {
+            BookingById = new Booking
+            {
+                BookingId = bookingId,
+                TenantId = tenantId,
+                DepositPaid = false,
+                DepositAmount = 500m,
+                RemainingAmount = 1500m,
+                Status = "pending"
+            }
+        };
+
+        var controller = CreateBookingController(bookingService: bookingService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, tenantId.ToString()), new Claim(ClaimTypes.Role, "tenant"));
+
+        var result = await controller.SubmitOfflinePayment(bookingId, new BookingController.SubmitOfflinePaymentFormDto());
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<Short_termApartmentAPI.Middlewares.ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("Cash payment is only allowed after the deposit has been paid through a gateway.", response.Message);
     }
 
     private static LandlordController CreateLandlordController(

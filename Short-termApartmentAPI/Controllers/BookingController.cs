@@ -502,11 +502,14 @@ namespace Short_termApartmentAPI.Controllers
             if (booking.TenantId != userId)
                 return Forbid();
 
-            // Determine payment type: deposit if deposit not paid, otherwise balance
-            var isDeposit = booking.DepositPaid != true && booking.DepositAmount > 0;
-            var amount = isDeposit ? booking.DepositAmount : booking.RemainingAmount;
+            if (booking.DepositPaid != true)
+            {
+                return BadRequest(new ApiResponse<string>("Cash payment is only allowed after the deposit has been paid through a gateway."));
+            }
+
+            var amount = booking.RemainingAmount;
             if (amount <= 0)
-                return BadRequest(new ApiResponse<string>("No amount due for offline payment."));
+                return BadRequest(new ApiResponse<string>("No remaining balance is due for cash payment."));
 
             string? proofUrl = null;
             if (dto?.Proof != null)
@@ -525,11 +528,11 @@ namespace Short_termApartmentAPI.Controllers
             var payment = new Payment
             {
                 Amount = amount,
-                PaymentType = isDeposit ? PaymentTypes.deposit.ToString() : PaymentTypes.balance.ToString(),
-                PaymentPurpose = isDeposit ? PaymentPurposes.booking_deposit.ToString() : PaymentPurposes.booking_balance.ToString(),
+                PaymentType = PaymentTypes.balance.ToString(),
+                PaymentPurpose = PaymentPurposes.booking_balance.ToString(),
                 RelatedEntityId = booking.BookingId,
                 RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
-                Method = "offline",
+                Method = "cash",
                 Status = PaymentStatus.pending.ToString(),
                 TransactionId = null,
                 ProofUrl = proofUrl,
@@ -538,7 +541,7 @@ namespace Short_termApartmentAPI.Controllers
 
             await _paymentService.CreateAsync(payment);
 
-            return CreatedAtAction(nameof(GetById), new { id = booking.BookingId }, new ApiResponse<object>(new { PaymentId = payment.PaymentId, Status = payment.Status }, "Offline payment submitted and pending confirmation."));
+            return CreatedAtAction(nameof(GetById), new { id = booking.BookingId }, new ApiResponse<object>(new { PaymentId = payment.PaymentId, Status = payment.Status }, "Cash payment submitted and pending confirmation."));
         }
 
         [HttpPost("{id:guid}/confirm-offline-payment")]

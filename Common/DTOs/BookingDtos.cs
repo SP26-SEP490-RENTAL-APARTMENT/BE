@@ -53,6 +53,11 @@ public class CreateBookingRequestDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        if (PaymentMode == BookingPaymentMode.partial && string.IsNullOrWhiteSpace(PaymentProvider))
+        {
+            yield return new ValidationResult("PaymentProvider is required for partial bookings so the deposit can be paid through a gateway.", new[] { nameof(PaymentProvider) });
+        }
+
         var hasDateTimes = CheckInDateTime.HasValue || CheckOutDateTime.HasValue;
         var hasDates = CheckInDate.HasValue || CheckOutDate.HasValue;
 
