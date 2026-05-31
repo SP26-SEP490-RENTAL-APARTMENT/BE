@@ -7,11 +7,42 @@ public class OccupiedRoomAlternativeOptionDto
 {
     public Guid ApartmentId { get; set; }
     public string ApartmentTitle { get; set; } = null!;
+    public double? DistanceKm { get; set; }
     public decimal BasePricePerNight { get; set; }
     public decimal EstimatedTotalPrice { get; set; }
     public decimal PriceDifference { get; set; }
     public string AdjustmentType { get; set; } = null!;
     public ApartmentResponseDto Apartment { get; set; } = null!;
+}
+
+public class OccupiedRoomAlternativeAssessmentDto
+{
+    public Guid ApartmentId { get; set; }
+    public string ApartmentTitle { get; set; } = null!;
+    public bool CanBeAlternative { get; set; }
+    public List<string> Reasons { get; set; } = new();
+    public double? DistanceKm { get; set; }
+    public decimal BasePricePerNight { get; set; }
+    public decimal EstimatedTotalPrice { get; set; }
+    public decimal PriceDifference { get; set; }
+    public string AdjustmentType { get; set; } = null!;
+    public ApartmentResponseDto Apartment { get; set; } = null!;
+}
+
+public class OccupiedRoomAlternativePageDto
+{
+    public IReadOnlyList<OccupiedRoomAlternativeOptionDto> Items { get; set; } = Array.Empty<OccupiedRoomAlternativeOptionDto>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+}
+
+public class OccupiedRoomAlternativeAssessmentPageDto
+{
+    public IReadOnlyList<OccupiedRoomAlternativeAssessmentDto> Items { get; set; } = Array.Empty<OccupiedRoomAlternativeAssessmentDto>();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
 }
 
 public class CreateBookingOfferRequestDto

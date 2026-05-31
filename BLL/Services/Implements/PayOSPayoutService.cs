@@ -14,6 +14,8 @@ namespace BLL.Services.Implements;
 
 public class PayOSPayoutService : IPayOSPayoutService
 {
+    private const long MinPayoutAmount = 2000;
+
     private static readonly HashSet<string> SuccessStates = new(StringComparer.OrdinalIgnoreCase)
     {
         "APPROVED",
@@ -57,6 +59,11 @@ public class PayOSPayoutService : IPayOSPayoutService
 
     public async Task<PayOSPayoutResult> CreateBankPayoutAsync(string receiverName, string accountOrCard, string bankCode, long amount, string reference, CancellationToken cancellationToken = default)
     {
+        if (amount < MinPayoutAmount)
+        {
+            throw new ArgumentException($"Payment amount must be at least {MinPayoutAmount}.", nameof(amount));
+        }
+
         var payoutRequest = new PayoutRequest
         {
             ReferenceId = reference,

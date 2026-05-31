@@ -132,7 +132,16 @@ public interface IBookingService : IBaseService<Booking>
 		Guid landlordId,
 		RemoveApartmentAvailabilityRequestDto dto);
 
-	Task<IReadOnlyList<OccupiedRoomAlternativeOptionDto>> FindAlternativeApartmentsAsync(Guid bookingId, int maxResults = 5, int? radiusMeters = null);
+	Task<(IReadOnlyList<OccupiedRoomAlternativeOptionDto> Items, int TotalCount)> FindAlternativeApartmentsAsync(
+		Guid bookingId,
+		int page = 1,
+		int pageSize = 5,
+		double? radiusKilometers = null);
+	Task<(IReadOnlyList<OccupiedRoomAlternativeAssessmentDto> Items, int TotalCount)> EvaluateAlternativeApartmentsAsync(
+		Guid bookingId,
+		int page = 1,
+		int pageSize = 5,
+		double? radiusKilometers = null);
 
 	Task<BookingOfferResponseDto> CreateAlternativeOfferAsync(
 		Guid bookingId,

@@ -52,7 +52,7 @@ public class LandlordPayoutServiceTests
         var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
         var request = new CreateLandlordPayoutRequestDto
         {
-            Amount = 1500,
+            Amount = 2000,
             Channel = "bank",
             ToBin = "970415",
             ToAccountNumber = "1234567890",
@@ -62,7 +62,7 @@ public class LandlordPayoutServiceTests
         var result = await sut.CreatePayoutAsync(landlordId, request, CancellationToken.None);
 
         Assert.Equal("success", result.Status);
-        Assert.Equal(1500, result.Amount);
+        Assert.Equal(2000, result.Amount);
         Assert.Single(walletService.ReservedAmounts);
         Assert.Single(walletService.FinalizedAmounts);
         Assert.Empty(walletService.RolledBackAmounts);
@@ -100,7 +100,7 @@ public class LandlordPayoutServiceTests
         var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
         var request = new CreateLandlordPayoutRequestDto
         {
-            Amount = 1500,
+            Amount = 2000,
             Channel = "bank",
             ToBin = "970415",
             ToAccountNumber = "1234567890",
@@ -140,7 +140,7 @@ public class LandlordPayoutServiceTests
         var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
         var request = new CreateLandlordPayoutRequestDto
         {
-            Amount = 1500,
+            Amount = 2000,
             Channel = "bank",
             ToBin = "970415",
             ToAccountNumber = "1234567890",
@@ -163,7 +163,7 @@ public class LandlordPayoutServiceTests
         var detailsType = serviceType.GetNestedType("ProviderErrorDetails", BindingFlags.NonPublic);
         Assert.NotNull(detailsType);
 
-        var constructor = detailsType!.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).Single();
+        var constructor = detailsType!.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).First();
         var details = constructor.Invoke(new object?[] { 200, "624", "Insufficient balance", null });
 
         var method = serviceType.GetMethod("MapApiExceptionToDomainException", BindingFlags.NonPublic | BindingFlags.Static);
@@ -537,6 +537,79 @@ public class BookingServiceQuoteValidationTests
     }
 }
 
+public class BookingServiceOccupiedIncidentTests
+{
+    [Fact]
+    public async Task ConfirmOccupiedIncidentPenaltyAsync_DoesNotRollbackPendingCredit_WhenNoPendingCreditWasRecorded()
+    {
+        var landlordId = Guid.NewGuid();
+        var tenantId = Guid.NewGuid();
+        var bookingId = Guid.NewGuid();
+        var apartmentId = Guid.NewGuid();
+        var ticketId = Guid.NewGuid();
+
+        var apartment = FinancialTestHelpers.CreateApartment(apartmentId);
+        apartment.LandlordId = landlordId;
+        apartment.Title = "Occupied Incident Apartment";
+
+        var booking = new Booking
+        {
+            BookingId = bookingId,
+            ApartmentId = apartmentId,
+            TenantId = tenantId,
+            Status = "confirmed",
+            DepositAmount = 300000m,
+            PaymentMode = "partial",
+            CheckInDate = new DateOnly(2026, 5, 10),
+            CheckOutDate = new DateOnly(2026, 5, 12)
+        };
+
+        var payment = new Payment
+        {
+            PaymentId = Guid.NewGuid(),
+            Amount = 300000m,
+            PaymentType = "deposit",
+            PaymentPurpose = "booking_deposit",
+            RelatedEntityId = bookingId,
+            RelatedEntityType = "booking",
+            Method = "stripe",
+            Status = "success",
+            TransactionId = "cs_test_123",
+            PaidAt = DateTime.UtcNow
+        };
+
+        var ticket = new SupportTicket
+        {
+            TicketId = ticketId,
+            BookingId = bookingId,
+            UserId = tenantId,
+            Category = "booking_issue",
+            Subject = "Occupied incident report",
+            Description = "Guest reported an occupied room for booking " + bookingId,
+            Status = "open",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var walletService = new RecordingWalletService();
+        var sut = FinancialTestHelpers.CreateBookingService(
+            apartment: apartment,
+            bookings: [booking],
+            payments: [payment],
+            supportTickets: [ticket],
+            landlordWalletService: walletService);
+
+        var result = await sut.ConfirmOccupiedIncidentPenaltyAsync(
+            bookingId,
+            Guid.NewGuid(),
+            new ConfirmOccupiedIncidentPenaltyRequestDto { TicketId = ticketId });
+
+        Assert.Equal(bookingId, result.BookingId);
+        Assert.Empty(walletService.RolledBackAmounts);
+        Assert.Single(walletService.OccupiedIncidentPenalties);
+        Assert.Equal(booking.DepositAmount, walletService.OccupiedIncidentPenalties[0]);
+    }
+}
+
 public class BookingServiceResidenceReportTests
 {
     [Fact]
@@ -742,7 +815,31 @@ public class LandlordPayoutValidationTests
 
         var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
 
-        Assert.Contains("Amount must be between 1000 and 200,000,000", ex.Message);
+        Assert.Contains("Amount must be between 2000 and 200,000,000", ex.Message);
+    }
+
+    [Fact]
+    public async Task CreatePayoutAsync_ThrowsWhenAmountIsBelowPayosMinimum()
+    {
+        var landlordId = Guid.NewGuid();
+        var sut = FinancialTestHelpers.CreatePayoutService(
+            landlord: new Landlord
+            {
+                LandlordId = landlordId,
+                PayoutReceiverName = "Landlord"
+            });
+
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 1999,
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = "1234567890"
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
+
+        Assert.Contains("Amount must be between 2000 and 200,000,000", ex.Message);
     }
 
     [Fact]
@@ -817,9 +914,12 @@ internal static class FinancialTestHelpers
     public static BookingService CreateBookingService(
         Apartment? apartment = null,
         IEnumerable<Booking>? bookings = null,
+        IEnumerable<Payment>? payments = null,
+        IEnumerable<SupportTicket>? supportTickets = null,
         IEnumerable<ApartmentAvailability>? availabilities = null,
         IEnumerable<ApartmentPriceCalendar>? calendars = null,
-        IEnumerable<Package>? packages = null)
+        IEnumerable<Package>? packages = null,
+        ILandlordWalletService? landlordWalletService = null)
     {
         var apartmentRepo = apartment == null
             ? new InMemoryApartmentRepository()
@@ -835,8 +935,8 @@ internal static class FinancialTestHelpers
         var tenantRepo = new InMemoryRepository<Tenant>(t => t.TenantId);
         var userRepo = new InMemoryRepository<User>(u => u.UserId);
         var availabilityRepo = new InMemoryRepository<ApartmentAvailability>(a => a.AvailabilityId, availabilities?.ToArray() ?? Array.Empty<ApartmentAvailability>());
-        var supportTicketRepo = new FakeSupportTicketRepository(new InMemoryRepository<SupportTicket>(s => s.TicketId));
-        var paymentRepo = new InMemoryRepository<Payment>(p => p.PaymentId);
+        var supportTicketRepo = new FakeSupportTicketRepository(new InMemoryRepository<SupportTicket>(s => s.TicketId, supportTickets?.ToArray() ?? Array.Empty<SupportTicket>()));
+        var paymentRepo = new InMemoryRepository<Payment>(p => p.PaymentId, payments?.ToArray() ?? Array.Empty<Payment>());
         var identityVerificationService = new NoOpIdentityVerificationService();
         var walletService = new RecordingWalletService();
         var configuration = new ConfigurationManager();
@@ -848,7 +948,7 @@ internal static class FinancialTestHelpers
         var payOsClient = new FakePayOSClient();   // or whatever is required
         var stripeSettings = Options.Create(new StripeSettings());
         var payOsPayoutService = new FakePayOSPayoutService();
-        var landlordWalletService = new FakeLandlordWalletService();
+        landlordWalletService ??= new FakeLandlordWalletService();
 
         return new BookingService(
             bookingRepo,
@@ -1275,6 +1375,8 @@ internal sealed class RecordingWalletService : ILandlordWalletService
 
     public List<long> RolledBackAmounts { get; } = new();
 
+    public List<decimal> OccupiedIncidentPenalties { get; } = new();
+
     public Task<LandlordWallet> GetOrCreateAsync(Guid landlordId)
     {
         return Task.FromResult(new LandlordWallet { LandlordId = landlordId });
@@ -1292,6 +1394,7 @@ internal sealed class RecordingWalletService : ILandlordWalletService
 
     public Task RollbackPendingAsync(Guid landlordId, decimal amount)
     {
+        RolledBackAmounts.Add(Convert.ToInt64(Math.Round(amount, 0, MidpointRounding.AwayFromZero)));
         return Task.CompletedTask;
     }
 
@@ -1302,7 +1405,14 @@ internal sealed class RecordingWalletService : ILandlordWalletService
 
     public Task<LandlordPenaltyApplicationResultDto> ApplyOccupiedIncidentPenaltyAsync(Guid landlordId, decimal amount)
     {
-        throw new NotImplementedException();
+        OccupiedIncidentPenalties.Add(amount);
+        return Task.FromResult(new LandlordPenaltyApplicationResultDto
+        {
+            RequestedAmount = amount,
+            DeductedFromAvailable = 0m,
+            DeductedFromPending = 0m,
+            DebtRecorded = 0m
+        });
     }
 
     public Task ReserveForPayoutAsync(Guid landlordId, long amount)

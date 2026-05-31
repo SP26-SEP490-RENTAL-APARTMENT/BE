@@ -8,6 +8,7 @@ namespace BLL.Services.Implements;
 
 public class LandlordPayoutService : ILandlordPayoutService
 {
+    private const long MinPayoutAmount = 2000;
     private static readonly HashSet<int> PendingCodes = [7000, 7002];
 
     private readonly IRepository<LandlordPayout> _payoutRepository;
@@ -42,8 +43,8 @@ public class LandlordPayoutService : ILandlordPayoutService
         var landlord = await _landlordRepository.GetByIdAsync(landlordId)
             ?? throw new ArgumentException("Landlord profile not found.");
 
-        if (request.Amount < 1000 || request.Amount > 200000000)
-            throw new ArgumentException("Amount must be between 1000 and 200,000,000.");
+        if (request.Amount < MinPayoutAmount || request.Amount > 200000000)
+            throw new ArgumentException($"Amount must be between {MinPayoutAmount} and 200,000,000.");
 
         if (string.IsNullOrWhiteSpace(request.ToBin))
             throw new ArgumentException("ToBin (bank code) is required.");
@@ -53,6 +54,19 @@ public class LandlordPayoutService : ILandlordPayoutService
 
         await EnsureDailyPayoutLimitAsync(landlordId);
         await _walletService.ReserveForPayoutAsync(landlordId, request.Amount);
+
+        var walletRolledBack = false;
+
+        async Task RollbackWalletAsync()
+        {
+            if (walletRolledBack)
+            {
+                return;
+            }
+
+            walletRolledBack = true;
+            await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+        }
 
         try
         {
@@ -73,19 +87,19 @@ public class LandlordPayoutService : ILandlordPayoutService
             }
             catch (InvalidOperationException)
             {
-                await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+                await RollbackWalletAsync();
                 throw;
             }
             catch (Exception ex)
             {
                 // Provider failed - rollback wallet immediately
-                await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+                await RollbackWalletAsync();
                 throw new InvalidOperationException("Payout provider request failed. Wallet has been restored.", ex);
             }
 
             if (payosResult == null)
             {
-                await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+                await RollbackWalletAsync();
                 throw new InvalidOperationException("Payout provider returned null result.");
             }
 
@@ -124,7 +138,7 @@ public class LandlordPayoutService : ILandlordPayoutService
             catch (Exception ex)
             {
                 // Payout save failed - rollback wallet
-                await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+                await RollbackWalletAsync();
                 throw new InvalidOperationException("Failed to save payout record to database. Wallet has been restored.", ex);
             }
 
@@ -159,14 +173,14 @@ public class LandlordPayoutService : ILandlordPayoutService
             }
             else if (IsFailed(resultCode))
             {
-                await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+                await RollbackWalletAsync();
             }
 
             return Map(payout);
         }
         catch
         {
-            await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+            await RollbackWalletAsync();
             throw;
         }
     }

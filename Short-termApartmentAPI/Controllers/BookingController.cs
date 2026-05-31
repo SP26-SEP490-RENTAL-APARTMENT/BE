@@ -1728,13 +1728,13 @@ namespace Short_termApartmentAPI.Controllers
 
         [HttpGet("{id:guid}/occupied-alternatives")]
         [Authorize(Roles = "tenant,staff,admin")]
-        public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int maxResults = 5, [FromQuery] int? radiusMeters = null)
+        public async Task<IActionResult> GetOccupiedAlternatives(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 5, [FromQuery] double? radiusKilometers = null)
         {
             try
             {
-                if (maxResults > 10)
+                if (pageSize > 10)
                 {
-                    maxResults = 10;
+                    pageSize = 10;
                 }
 
                 var requesterClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -1752,8 +1752,59 @@ namespace Short_termApartmentAPI.Controllers
                     }
                 }
 
-                var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, maxResults, radiusMeters);
-                return Ok(new ApiResponse<IReadOnlyList<OccupiedRoomAlternativeOptionDto>>(alternatives));
+                var (items, totalCount) = await _bookingService.FindAlternativeApartmentsAsync(id, page, pageSize, radiusKilometers);
+                var result = new OccupiedRoomAlternativePageDto
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    Page = page,
+                    PageSize = pageSize
+                };
+
+                return Ok(new ApiResponse<OccupiedRoomAlternativePageDto>(result));
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new ApiResponse<string>(ex.Message));
+            }
+        }
+
+        [HttpGet("{id:guid}/occupied-alternatives/assessment")]
+        [Authorize(Roles = "tenant,staff,admin")]
+        public async Task<IActionResult> GetOccupiedAlternativesAssessment(Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 5, [FromQuery] double? radiusKilometers = null)
+        {
+            try
+            {
+                if (pageSize > 20)
+                {
+                    pageSize = 20;
+                }
+
+                var requesterClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (!Guid.TryParse(requesterClaim, out var requesterId))
+                {
+                    return Unauthorized(new ApiResponse<string>("Invalid user token."));
+                }
+
+                if (User.IsInRole("tenant"))
+                {
+                    var booking = await _bookingService.GetByIdAsync(id);
+                    if (booking == null || booking.TenantId != requesterId)
+                    {
+                        return NotFound(new ApiResponse<string>("Booking not found."));
+                    }
+                }
+
+                var (items, totalCount) = await _bookingService.EvaluateAlternativeApartmentsAsync(id, page, pageSize, radiusKilometers);
+                var result = new OccupiedRoomAlternativeAssessmentPageDto
+                {
+                    Items = items,
+                    TotalCount = totalCount,
+                    Page = page,
+                    PageSize = pageSize
+                };
+
+                return Ok(new ApiResponse<OccupiedRoomAlternativeAssessmentPageDto>(result));
             }
             catch (ArgumentException ex)
             {
@@ -1813,7 +1864,7 @@ namespace Short_termApartmentAPI.Controllers
 
             try
             {
-                var alternatives = await _bookingService.FindAlternativeApartmentsAsync(id, 1);
+                var (alternatives, _) = await _bookingService.FindAlternativeApartmentsAsync(id, 1, 1);
                 var firstAlternative = alternatives.FirstOrDefault();
 
                 if (firstAlternative != null)

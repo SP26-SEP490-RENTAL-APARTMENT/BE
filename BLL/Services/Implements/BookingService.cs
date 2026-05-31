@@ -16,6 +16,7 @@ using System.Text.Json;
 using Common.Settings;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
+using NetTopologySuite.Geometries;
 
 namespace BLL.Services.Implements;
 
@@ -427,8 +428,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new ArgumentException("Booking not found.");
 
-        if (booking.DepositAmount <= 0)
-            throw new InvalidOperationException("Booking deposit amount is not valid for penalty calculation.");
+        if (booking.TotalPrice <= 0)
+            throw new InvalidOperationException("Booking total price is not valid for penalty calculation.");
 
         var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId)
             ?? throw new ArgumentException("Apartment not found for this booking.");
@@ -505,13 +506,15 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var penaltyTransactionId = $"occupied_penalty_{bookingId:N}";
+        var penaltyRate = _configuration.GetValue<decimal>("Booking:OccupiedIncidentPenaltyRate", 0.30m);
+        var penaltyAmount = Math.Round(booking.TotalPrice * penaltyRate, 2, MidpointRounding.AwayFromZero);
         var existingPenalty = (await _paymentRepository.FindAsync(p => p.TransactionId == penaltyTransactionId)).FirstOrDefault();
         LandlordPenaltyApplicationResultDto settlement;
         if (existingPenalty != null)
         {
             settlement = new LandlordPenaltyApplicationResultDto
             {
-                RequestedAmount = booking.DepositAmount,
+                RequestedAmount = penaltyAmount,
                 DeductedFromAvailable = 0m,
                 DeductedFromPending = 0m,
                 DebtRecorded = 0m
@@ -519,12 +522,12 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
         else
         {
-            settlement = await _landlordWalletService.ApplyOccupiedIncidentPenaltyAsync(apartment.LandlordId, booking.DepositAmount);
+            settlement = await _landlordWalletService.ApplyOccupiedIncidentPenaltyAsync(apartment.LandlordId, penaltyAmount);
 
             var payment = new Payment
             {
                 PaymentId = Guid.NewGuid(),
-                Amount = booking.DepositAmount,
+                Amount = penaltyAmount,
                 PaymentType = Common.Enums.PaymentTypes.refund.ToString(),
                 PaymentPurpose = Common.Enums.PaymentPurposes.other.ToString(),
                 RelatedEntityId = booking.BookingId,
@@ -541,10 +544,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         ticket.Status = "resolved";
         ticket.ResolvedAt = Common.Utils.VietnamTime.Now;
         ticket.ResolvedBy = confirmedBy;
-        var supportNotes = $"Occupied incident penalty applied. Amount: {booking.DepositAmount:0.00}. " +
-                           $"From available: {settlement.DeductedFromAvailable:0.00}, " +
-                           $"from pending: {settlement.DeductedFromPending:0.00}, " +
-                           $"debt: {settlement.DebtRecorded:0.00}.";
+        var supportNotes = $"Occupied incident penalty applied. Amount: {penaltyAmount:0.00}. " +
+                   $"From available: {settlement.DeductedFromAvailable:0.00}, " +
+                   $"from pending: {settlement.DeductedFromPending:0.00}, " +
+                   $"debt: {settlement.DebtRecorded:0.00}.";
         if (dto != null && !string.IsNullOrWhiteSpace(dto.Notes))
         {
             supportNotes += $" Staff notes: {dto.Notes}";
@@ -563,20 +566,20 @@ public class BookingService : BaseService<Booking>, IBookingService
             apartment.LandlordId,
             NotificationType.system_announcement.ToString(),
             "Occupied incident penalty applied",
-            $"A penalty of {booking.DepositAmount:0.00} was applied for booking {booking.BookingId} due to occupied-room incident.",
+            $"A penalty of {penaltyAmount:0.00} was applied for booking {booking.BookingId} due to occupied-room incident.",
             booking.BookingId);
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
             NotificationType.system_announcement.ToString(),
             "Occupied incident penalty confirmed",
-            "Support staff confirmed your occupied-room incident and applied landlord penalty equal to the booking deposit.",
+            $"Support staff confirmed your occupied-room incident and applied landlord penalty of {penaltyAmount:0.00}.",
             booking.BookingId);
 
         // Audit event for occupied incident penalty confirmation (staff action)
         try
         {
-            await CreateCheckTimeStateEventAsync(booking.BookingId, null, confirmedBy, "occupied_penalty_confirmed", new { TicketId = ticket.TicketId, PenaltyAmount = booking.DepositAmount, Notes = dto?.Notes });
+            await CreateCheckTimeStateEventAsync(booking.BookingId, null, confirmedBy, "occupied_penalty_confirmed", new { TicketId = ticket.TicketId, PenaltyAmount = penaltyAmount, Notes = dto?.Notes });
         }
         catch
         {
@@ -587,7 +590,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             BookingId = booking.BookingId,
             TicketId = ticket.TicketId,
-            PenaltyAmount = booking.DepositAmount,
+            PenaltyAmount = penaltyAmount,
             AlreadyApplied = existingPenalty != null,
             Message = existingPenalty != null
                 ? "Occupied incident was already settled. Refund and offer handling were verified."
@@ -1327,15 +1330,14 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         await _paymentRepository.AddAsync(refundPayment);
 
-        // Mark original payments as refunded and rollback landlord pending amounts proportionally (preserve prior behavior)
+        // Mark original payments as refunded.
         foreach (var payment in refundedPayments)
         {
             payment.Status = PaymentStatus.refunded.ToString();
             _paymentRepository.Update(payment);
-
-            var landlordShare = Math.Round(payment.Amount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
-            await _landlordWalletService.RollbackPendingAsync(apartment.LandlordId, landlordShare);
         }
+
+        await ReverseLandlordRefundCreditAsync(apartment.LandlordId, checkTime);
 
         booking.Status = "cancelled";
         _bookingRepository.Update(booking);
@@ -1575,10 +1577,9 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             payment.Status = PaymentStatus.refunded.ToString();
             _paymentRepository.Update(payment);
-
-            var landlordShare = Math.Round(payment.Amount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
-            await _landlordWalletService.RollbackPendingAsync(apartment.LandlordId, landlordShare);
         }
+
+        await ReverseLandlordRefundCreditAsync(apartment.LandlordId, checkTime);
 
         booking.Status = "cancelled";
         _bookingRepository.Update(booking);
@@ -1688,6 +1689,23 @@ public class BookingService : BaseService<Booking>, IBookingService
     private static decimal GetUpfrontPaymentAmount(Booking booking)
     {
         return booking.UpfrontPaymentAmount > 0 ? booking.UpfrontPaymentAmount : booking.DepositAmount;
+    }
+
+    private async Task ReverseLandlordRefundCreditAsync(Guid landlordId, BookingCheckTime checkTime)
+    {
+        var creditedAmount = checkTime.LandlordPendingCreditAmount ?? 0m;
+        if (creditedAmount <= 0m)
+        {
+            return;
+        }
+
+        if (checkTime.LandlordFundsReleasedAt.HasValue)
+        {
+            await _landlordWalletService.DebitAvailableAsync(landlordId, creditedAmount);
+            return;
+        }
+
+        await _landlordWalletService.RollbackPendingAsync(landlordId, creditedAmount);
     }
 
     public async Task<(IEnumerable<Booking> Items, int TotalCount)> GetLandlordBookingHistoryAsync(
@@ -4933,10 +4951,16 @@ public class BookingService : BaseService<Booking>, IBookingService
         return "available";
     }
 
-    public async Task<IReadOnlyList<OccupiedRoomAlternativeOptionDto>> FindAlternativeApartmentsAsync(Guid bookingId, int maxResults = 5, int? radiusMeters = null)
+    public async Task<(IReadOnlyList<OccupiedRoomAlternativeOptionDto> Items, int TotalCount)> FindAlternativeApartmentsAsync(
+        Guid bookingId,
+        int page = 1,
+        int pageSize = 5,
+        double? radiusKilometers = null)
     {
-        if (maxResults <= 0)
-            throw new ArgumentException("maxResults must be greater than zero.");
+        if (page <= 0)
+            throw new ArgumentException("page must be greater than zero.");
+        if (pageSize <= 0)
+            throw new ArgumentException("pageSize must be greater than zero.");
 
         var booking = await _bookingRepository.GetByIdAsync(bookingId)
             ?? throw new ArgumentException("Booking not found.");
@@ -4951,24 +4975,19 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var hasPets = (booking.NoOfPets ?? 0) > 0;
-        var tolerance = _configuration.GetValue<decimal>("OccupiedRoomAlternatives:PriceTolerancePercent", DefaultPriceTolerancePercent);
-        if (tolerance < 0)
-        {
-            tolerance = DefaultPriceTolerancePercent;
-        }
 
         var sourceCity = NormalizeLocationValue(sourceApartment.City);
         var sourceDistrict = NormalizeLocationValue(sourceApartment.District);
         if (sourceCity == null || sourceDistrict == null)
         {
-            return Array.Empty<OccupiedRoomAlternativeOptionDto>();
+            return (Array.Empty<OccupiedRoomAlternativeOptionDto>(), 0);
         }
+
+        var sourceLocation = GetApartmentLocation(sourceApartment);
 
         var candidateApartments = await _apartmentRepository.FindAsync(a =>
             a.ApartmentId != booking.ApartmentId &&
             a.Status == "posted" &&
-            a.City != null && a.City.Trim().ToUpper() == sourceCity &&
-            a.District != null && a.District.Trim().ToUpper() == sourceDistrict &&
             (!hasPets || a.IsPetAllowed == true) &&
             (!a.MaxOccupants.HasValue || (int)a.MaxOccupants >= occupantCount) &&
             (!a.MaxInfants.HasValue || (booking.NoOfInfants ?? 0) <= a.MaxInfants.Value));
@@ -4976,17 +4995,48 @@ public class BookingService : BaseService<Booking>, IBookingService
         var alternatives = new List<OccupiedRoomAlternativeOptionDto>();
         foreach (var candidate in candidateApartments)
         {
+            double? distanceKm = null;
+            if (radiusKilometers.HasValue && radiusKilometers.Value > 0)
+            {
+                var candidateLocation = GetApartmentLocation(candidate);
+                if (sourceLocation == null || candidateLocation == null)
+                {
+                    continue;
+                }
+
+                distanceKm = CalculateDistanceKm(sourceLocation, candidateLocation);
+                if (distanceKm.Value > radiusKilometers.Value)
+                {
+                    continue;
+                }
+            }
+            else if (sourceLocation != null)
+            {
+                var candidateLocation = GetApartmentLocation(candidate);
+                if (candidateLocation != null)
+                {
+                    distanceKm = CalculateDistanceKm(sourceLocation, candidateLocation);
+                }
+            }
+
+            var candidateCity = NormalizeLocationValue(candidate.City);
+            var candidateDistrict = NormalizeLocationValue(candidate.District);
+            if (candidateCity == null || candidateDistrict == null)
+            {
+                continue;
+            }
+
+            if (!string.Equals(candidateCity, sourceCity, StringComparison.Ordinal) ||
+                !string.Equals(candidateDistrict, sourceDistrict, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             try
             {
                 await EnsureNoConflictingBookingsAsync(candidate.ApartmentId, booking.CheckInDate, booking.CheckOutDate);
             }
             catch (InvalidOperationException)
-            {
-                continue;
-            }
-
-            var alternativeTotal = EstimateAlternativeTotalPrice(candidate, booking);
-            if (!IsWithinPriceTolerance(booking.TotalPrice, alternativeTotal, tolerance))
             {
                 continue;
             }
@@ -4997,10 +5047,13 @@ public class BookingService : BaseService<Booking>, IBookingService
                 continue;
             }
 
+            var alternativeTotal = EstimateAlternativeTotalPrice(detailedApartment, booking);
+
             alternatives.Add(new OccupiedRoomAlternativeOptionDto
             {
                 ApartmentId = detailedApartment.ApartmentId,
                 ApartmentTitle = detailedApartment.Title,
+                DistanceKm = distanceKm.HasValue ? Math.Round(distanceKm.Value, 2, MidpointRounding.AwayFromZero) : null,
                 BasePricePerNight = detailedApartment.BasePricePerNight,
                 EstimatedTotalPrice = alternativeTotal,
                 PriceDifference = Math.Round(alternativeTotal - booking.TotalPrice, 2, MidpointRounding.AwayFromZero),
@@ -5009,11 +5062,165 @@ public class BookingService : BaseService<Booking>, IBookingService
             });
         }
 
-        return alternatives
+        var ordered = alternatives
             .OrderBy(o => Math.Abs(o.PriceDifference))
             .ThenBy(o => o.EstimatedTotalPrice)
-            .Take(maxResults)
             .ToList();
+
+        var totalCount = ordered.Count;
+        var items = ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
+    }
+
+    public async Task<(IReadOnlyList<OccupiedRoomAlternativeAssessmentDto> Items, int TotalCount)> EvaluateAlternativeApartmentsAsync(
+        Guid bookingId,
+        int page = 1,
+        int pageSize = 5,
+        double? radiusKilometers = null)
+    {
+        if (page <= 0)
+            throw new ArgumentException("page must be greater than zero.");
+        if (pageSize <= 0)
+            throw new ArgumentException("pageSize must be greater than zero.");
+
+        var booking = await _bookingRepository.GetByIdAsync(bookingId)
+            ?? throw new ArgumentException("Booking not found.");
+
+        var sourceApartment = await _apartmentRepository.GetApartmentWithDetailsAsync(booking.ApartmentId)
+            ?? throw new ArgumentException("Apartment not found for this booking.");
+
+        var occupantCount = (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0);
+        if (occupantCount <= 0)
+        {
+            occupantCount = 1;
+        }
+
+        var sourceCity = NormalizeLocationValue(sourceApartment.City);
+        var sourceDistrict = NormalizeLocationValue(sourceApartment.District);
+        var sourceLocation = GetApartmentLocation(sourceApartment);
+        var hasPets = (booking.NoOfPets ?? 0) > 0;
+
+        var candidates = await _apartmentRepository.FindAsync(a => a.ApartmentId != booking.ApartmentId);
+        var assessments = new List<OccupiedRoomAlternativeAssessmentDto>();
+
+        foreach (var candidate in candidates)
+        {
+            var reasons = new List<string>();
+            var candidateLocation = GetApartmentLocation(candidate);
+            double? distanceKm = null;
+
+            if (!string.Equals(candidate.Status, "posted", StringComparison.OrdinalIgnoreCase))
+            {
+                reasons.Add("Apartment listing status is not posted.");
+            }
+
+            if (sourceLocation != null && candidateLocation != null)
+            {
+                distanceKm = CalculateDistanceKm(sourceLocation, candidateLocation);
+            }
+
+            if (radiusKilometers.HasValue && radiusKilometers.Value > 0)
+            {
+                if (sourceLocation == null)
+                {
+                    reasons.Add("Original apartment does not have coordinates for radius filtering.");
+                }
+                else if (candidateLocation == null)
+                {
+                    reasons.Add("Candidate apartment does not have coordinates for radius filtering.");
+                }
+                else if (distanceKm.HasValue && distanceKm.Value > radiusKilometers.Value)
+                {
+                    reasons.Add($"Outside requested radius of {radiusKilometers.Value:0.##} km.");
+                }
+            }
+
+            var candidateCity = NormalizeLocationValue(candidate.City);
+            var candidateDistrict = NormalizeLocationValue(candidate.District);
+            if (sourceCity == null || sourceDistrict == null)
+            {
+                reasons.Add("Original apartment is missing city or district information.");
+            }
+            else if (candidateCity == null || candidateDistrict == null)
+            {
+                reasons.Add("Candidate apartment is missing city or district information.");
+            }
+            else if (!string.Equals(candidateCity, sourceCity, StringComparison.Ordinal) ||
+                     !string.Equals(candidateDistrict, sourceDistrict, StringComparison.Ordinal))
+            {
+                reasons.Add("Candidate apartment is not in the same city and district as the original apartment.");
+            }
+
+            if (hasPets && candidate.IsPetAllowed != true)
+            {
+                reasons.Add("Candidate apartment does not allow pets for this booking.");
+            }
+
+            if (candidate.MaxOccupants.HasValue && (int)candidate.MaxOccupants.Value < occupantCount)
+            {
+                reasons.Add("Candidate apartment does not satisfy occupancy requirements.");
+            }
+
+            if (candidate.MaxInfants.HasValue && (booking.NoOfInfants ?? 0) > candidate.MaxInfants.Value)
+            {
+                reasons.Add("Candidate apartment does not satisfy infant capacity requirements.");
+            }
+
+            try
+            {
+                await EnsureNoConflictingBookingsAsync(candidate.ApartmentId, booking.CheckInDate, booking.CheckOutDate);
+            }
+            catch (InvalidOperationException)
+            {
+                reasons.Add("Candidate apartment has conflicting bookings for the requested dates.");
+            }
+
+            var detailedApartment = await _apartmentRepository.GetApartmentWithDetailsAsync(candidate.ApartmentId);
+            if (detailedApartment == null)
+            {
+                reasons.Add("Candidate apartment details could not be loaded.");
+            }
+
+            var canBeAlternative = reasons.Count == 0;
+            if (canBeAlternative)
+            {
+                reasons.Add("Meets all occupied alternative requirements.");
+            }
+
+            var apartmentForEstimate = detailedApartment ?? candidate;
+            var alternativeTotal = EstimateAlternativeTotalPrice(apartmentForEstimate, booking);
+            assessments.Add(new OccupiedRoomAlternativeAssessmentDto
+            {
+                ApartmentId = apartmentForEstimate.ApartmentId,
+                ApartmentTitle = apartmentForEstimate.Title,
+                CanBeAlternative = canBeAlternative,
+                Reasons = reasons,
+                DistanceKm = distanceKm.HasValue ? Math.Round(distanceKm.Value, 2, MidpointRounding.AwayFromZero) : null,
+                BasePricePerNight = apartmentForEstimate.BasePricePerNight,
+                EstimatedTotalPrice = alternativeTotal,
+                PriceDifference = Math.Round(alternativeTotal - booking.TotalPrice, 2, MidpointRounding.AwayFromZero),
+                AdjustmentType = GetAdjustmentType(alternativeTotal - booking.TotalPrice),
+                Apartment = _mapper.Map<ApartmentResponseDto>(apartmentForEstimate)
+            });
+        }
+
+        var ordered = assessments
+            .OrderByDescending(a => a.CanBeAlternative)
+            .ThenBy(a => a.DistanceKm ?? double.MaxValue)
+            .ThenBy(a => Math.Abs(a.PriceDifference))
+            .ToList();
+
+        var totalCount = ordered.Count;
+        var items = ordered
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, totalCount);
     }
 
     public async Task<BookingOfferResponseDto> CreateAlternativeOfferAsync(
@@ -5182,7 +5389,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             try
             {
-                var alternatives = await FindAlternativeApartmentsAsync(offer.OriginalBookingId, 1);
+                var (alternatives, _) = await FindAlternativeApartmentsAsync(offer.OriginalBookingId, 1, 1);
                 var nextAlternative = alternatives.FirstOrDefault();
 
                 if (nextAlternative != null)
@@ -5237,16 +5444,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         return Math.Round(alternativeApartment.BasePricePerNight * nights, 2, MidpointRounding.AwayFromZero);
     }
 
-    private static bool IsWithinPriceTolerance(decimal originalPrice, decimal alternativePrice, decimal tolerancePercent)
-    {
-        if (originalPrice <= 0)
-            return true;
-
-        var min = originalPrice * (1 - tolerancePercent);
-        var max = originalPrice * (1 + tolerancePercent);
-        return alternativePrice >= min && alternativePrice <= max;
-    }
-
     private static string GetAdjustmentType(decimal priceDifference)
     {
         if (priceDifference > 0)
@@ -5265,6 +5462,39 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         return value.Trim().ToUpperInvariant();
     }
+
+    private static Point? GetApartmentLocation(Apartment apartment)
+    {
+        if (apartment.Location != null)
+        {
+            return apartment.Location;
+        }
+
+        if (apartment.Latitude.HasValue && apartment.Longitude.HasValue)
+        {
+            return new Point((double)apartment.Longitude.Value, (double)apartment.Latitude.Value) { SRID = 4326 };
+        }
+
+        return null;
+    }
+
+    private static double CalculateDistanceKm(Point origin, Point destination)
+    {
+        const double earthRadiusKm = 6371d;
+
+        var originLat = DegreesToRadians(origin.Y);
+        var destinationLat = DegreesToRadians(destination.Y);
+        var deltaLat = DegreesToRadians(destination.Y - origin.Y);
+        var deltaLon = DegreesToRadians(destination.X - origin.X);
+
+        var a = Math.Pow(Math.Sin(deltaLat / 2), 2)
+            + Math.Cos(originLat) * Math.Cos(destinationLat) * Math.Pow(Math.Sin(deltaLon / 2), 2);
+
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return earthRadiusKm * c;
+    }
+
+    private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180d;
 
     private BookingOfferResponseDto MapOfferToResponse(BookingOffer offer)
     {
