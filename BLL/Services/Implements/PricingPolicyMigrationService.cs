@@ -72,6 +72,21 @@ public sealed class PricingPolicyMigrationService
     }
 
     /// <summary>
+    /// Regenerates all enabled pricing policy calendar rows for a specific apartment.
+    /// </summary>
+    public async Task RegeneratePricingPoliciesForApartmentAsync(Guid apartmentId)
+    {
+        var applications = (await _applicationRepository.FindAsync(a =>
+            a.ApartmentId == apartmentId &&
+            a.IsEnabled == true)).ToList();
+
+        foreach (var application in applications)
+        {
+            await RegeneratePricingPolicyAsync(application);
+        }
+    }
+
+    /// <summary>
     /// Regenerates calendar rows for a specific pricing policy application.
     /// </summary>
     public async Task RegeneratePricingPolicyAsync(ApartmentPricingPolicyApplication application)
@@ -84,14 +99,16 @@ public sealed class PricingPolicyMigrationService
 
         var parameters = (await _parameterRepository.FindAsync(p => p.TemplateId == template.TemplateId)).ToList();
 
-        // Remove old calendar rows
-        var oldRows = await _calendarRepository.FindAsync(row =>
-            row.VersionId == application.ApplicationId &&
-            (row.PriceType == PolicyPriceType || row.PriceType!.StartsWith(PolicyPriceType + ":")));
+        // Remove all overlapping calendar rows for the apartment before regenerating.
+        var recordsToDelete = await _calendarRepository.GetPriceCalendarRecordsForDeletionAsync(
+            application.ApartmentId,
+            application.StartDate,
+            application.EndDate);
 
-        foreach (var row in oldRows.ToList())
+        if (recordsToDelete.Any())
         {
-            _calendarRepository.Remove(row);
+            _calendarRepository.DeleteRange(recordsToDelete);
+            await _calendarRepository.SaveChangesAsync();
         }
 
         // Regenerate with parameter keys

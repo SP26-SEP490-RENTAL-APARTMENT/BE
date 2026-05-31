@@ -10,17 +10,14 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
 {
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IAuthService _authService;
-    private readonly ICacheService _cacheService;
     private readonly AppDbContext _dbContext;
     public ApartmentPriceCalendarService(
         IApartmentPriceCalendarRepository repository,
         IAuthService authService,
-        ICacheService cacheService,
         AppDbContext dbContext) : base(repository)
     {
         _authService = authService;
         _apartmentPriceCalendarRepository = repository;
-        _cacheService = cacheService;
         _dbContext = dbContext;
     }
 

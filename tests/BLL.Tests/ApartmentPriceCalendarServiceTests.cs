@@ -38,9 +38,7 @@ public class ApartmentPriceCalendarServiceTests
         var repo = new InMemoryApartmentPriceCalendarRepository(new[] { manualRecord });
         var db = CreateDbContext(apartmentId, 135m);
         var auth = new NoOpAuthService();
-        var cache = new NoOpCacheService();
-
-        var service = new ApartmentPriceCalendarService(repo, auth, cache, db);
+        var service = new ApartmentPriceCalendarService(repo, auth, db);
 
         var resolutions = (await service.GetResolvedCalendarAsync(apartmentId, start, end)).ToList();
 
@@ -70,9 +68,7 @@ public class ApartmentPriceCalendarServiceTests
         var repo = new InMemoryApartmentPriceCalendarRepository(new[] { manualRecord });
         var db = CreateDbContext(apartmentId, 135m);
         var auth = new NoOpAuthService();
-        var cache = new NoOpCacheService();
-
-        var service = new ApartmentPriceCalendarService(repo, auth, cache, db);
+        var service = new ApartmentPriceCalendarService(repo, auth, db);
 
         var resolutions = (await service.GetResolvedCalendarAsync(apartmentId, start, end)).ToList();
 

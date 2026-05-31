@@ -25,6 +25,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IUserRepository _userRepository;
     private readonly IRepository<Notification> _notificationRepository;
     private readonly IRepository<PropertyInspection> _propertyInspectionRepository;
+    private readonly PricingPolicyMigrationService? _pricingPolicyMigrationService;
 
     public ApartmentService(
         IApartmentRepository repository,
@@ -39,7 +40,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IRepository<PropertyInspection> propertyInspectionRepository,
         IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
         IHolidayService holidayService,
-        INearbyAttractionRepository nearbyAttractionRepository)
+        INearbyAttractionRepository nearbyAttractionRepository,
+        PricingPolicyMigrationService? pricingPolicyMigrationService = null)
         : base(repository)
     {
         _apartmentRepository = repository;
@@ -55,6 +57,20 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _holidayService = holidayService;
         _nearbyAttractionRepository = nearbyAttractionRepository;
+        _pricingPolicyMigrationService = pricingPolicyMigrationService;
+    }
+
+    public override async Task UpdateAsync(Apartment entity)
+    {
+        var existingApartment = (await _apartmentRepository.FindNoTrackingAsync(a => a.ApartmentId == entity.ApartmentId)).FirstOrDefault();
+        var basePriceChanged = existingApartment != null && existingApartment.BasePricePerNight != entity.BasePricePerNight;
+
+        await base.UpdateAsync(entity);
+
+        if (basePriceChanged && _pricingPolicyMigrationService != null)
+        {
+            await _pricingPolicyMigrationService.RegeneratePricingPoliciesForApartmentAsync(entity.ApartmentId);
+        }
     }
 
     public override async Task<(IEnumerable<Apartment> Items, int TotalCount)> GetAllAsync(
