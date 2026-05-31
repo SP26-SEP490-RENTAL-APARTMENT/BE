@@ -217,7 +217,7 @@ public class PayOsController : ControllerBase
                         else if (paymentType == Common.Enums.PaymentTypes.deposit.ToString() ||
                                  paymentType == Common.Enums.PaymentTypes.upfront.ToString())
                         {
-                            await _bookingService.MarkDepositPaidAsync(bookingId);
+                            await _bookingService.MarkDepositPaidAsync(bookingId, skipConflictCheck: true);
                         }
                     }
                     catch (Exception ex)

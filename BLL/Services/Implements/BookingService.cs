@@ -1016,7 +1016,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         return checkTime;
     }
 
-    public async Task<Booking> MarkDepositPaidAsync(Guid bookingId)
+    public async Task<Booking> MarkDepositPaidAsync(Guid bookingId, bool skipConflictCheck = false)
     {
         var booking = await _bookingRepository.GetByIdAsync(bookingId);
         if (booking == null)
@@ -1087,7 +1087,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
 
             booking.DepositPaid = true;
-            if (existingWinner)
+            if (existingWinner && !skipConflictCheck)
             {
                 await RefundBookingAsync(
                     booking.BookingId,
@@ -1171,7 +1171,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking.DepositPaid != true)
             throw new InvalidOperationException("Deposit must be paid before settling remaining balance.");
 
-        booking.Status = "paid";
         // Recalculate paid amounts from payment ledger
         var paidPayments = (await _paymentRepository.FindAsync(p =>
             p.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
@@ -1182,6 +1181,17 @@ public class BookingService : BaseService<Booking>, IBookingService
         var totalPaid = paidPayments.Sum(p => p.Amount);
         booking.AmountPaid = Math.Round(totalPaid, 2, MidpointRounding.AwayFromZero);
         booking.RemainingAmount = Math.Max(0m, Math.Round(booking.TotalPrice - booking.AmountPaid, 2, MidpointRounding.AwayFromZero));
+
+        const decimal tolerance = 0.00m; // or 0.01m if rounding is accepted
+        if (booking.RemainingAmount <= tolerance)
+        {
+            booking.Status = "paid";
+        }
+        else
+        {
+            // Optionally throw or leave status unchanged
+            throw new InvalidOperationException($"Cannot mark booking as paid; remaining balance is {booking.RemainingAmount:C}");
+        }
 
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();

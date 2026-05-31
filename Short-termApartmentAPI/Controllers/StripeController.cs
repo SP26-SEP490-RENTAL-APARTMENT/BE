@@ -89,7 +89,7 @@ public sealed class StripeController : ControllerBase
                                     if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
                                         || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
                                     {
-                                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value, skipConflictCheck: true);
                                     }
                                     else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
                                     {

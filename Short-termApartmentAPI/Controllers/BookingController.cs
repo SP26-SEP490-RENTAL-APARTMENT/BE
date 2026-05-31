@@ -578,6 +578,7 @@ namespace Short_termApartmentAPI.Controllers
                 payment.Status = PaymentStatus.success.ToString();
                 payment.ConfirmedBy = requesterId;
                 payment.ConfirmedAt = Common.Utils.VietnamTime.Now;
+                
                 if (!string.IsNullOrWhiteSpace(dto.Notes))
                     payment.Notes = (payment.Notes ?? string.Empty) + "\n" + dto.Notes;
 
@@ -589,7 +590,7 @@ namespace Short_termApartmentAPI.Controllers
                     if (string.Equals(payment.PaymentType, PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
                         || string.Equals(payment.PaymentType, PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
                     {
-                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId!.Value);
+                        await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId!.Value, skipConflictCheck: true);
                     }
                     else if (string.Equals(payment.PaymentType, PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
                     {

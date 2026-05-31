@@ -14,7 +14,7 @@ public interface IBookingService : IBaseService<Booking>
 		Guid? requesterId = null,
 		string? requesterRole = null);
 	Task<BookingResponseDto> MapBookingResponseAsync(Booking booking);
-	Task<Booking> MarkDepositPaidAsync(Guid bookingId);
+	Task<Booking> MarkDepositPaidAsync(Guid bookingId, bool skipConflictCheck = false);
 	Task<Booking> MarkBalancePaidAsync(Guid bookingId);
 	Task<BookingRefundResponseDto> RefundBookingViaPayOsAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto);
 	Task<BookingRefundResponseDto> RefundBookingAsync(Guid bookingId, Guid requesterId, RequestBookingRefundDto dto);

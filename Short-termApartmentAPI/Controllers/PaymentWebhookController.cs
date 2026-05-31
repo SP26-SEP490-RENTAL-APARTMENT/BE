@@ -124,7 +124,7 @@ public class PaymentWebhookController : ControllerBase
                                         if (string.Equals(payment.PaymentType, Common.Enums.PaymentTypes.deposit.ToString(), StringComparison.OrdinalIgnoreCase)
                                             || string.Equals(payment.PaymentType, Common.Enums.PaymentTypes.upfront.ToString(), StringComparison.OrdinalIgnoreCase))
                                         {
-                                            await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value);
+                                            await _bookingService.MarkDepositPaidAsync(payment.RelatedEntityId.Value, skipConflictCheck: true);
                                         }
                                         else if (string.Equals(payment.PaymentType, Common.Enums.PaymentTypes.balance.ToString(), StringComparison.OrdinalIgnoreCase))
                                         {
