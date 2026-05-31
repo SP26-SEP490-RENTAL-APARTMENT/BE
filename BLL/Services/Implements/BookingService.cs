@@ -1286,6 +1286,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         {
             payosResult = await _payOSPayoutService.CreateBankPayoutAsync(receiverName, accountNumber, bankCode, payoutAmountLong, reference);
         }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             throw new InvalidOperationException("PayOS payout request failed.", ex);

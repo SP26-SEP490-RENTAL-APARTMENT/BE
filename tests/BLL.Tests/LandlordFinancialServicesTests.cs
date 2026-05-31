@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoMapper;
@@ -113,6 +114,63 @@ public class LandlordPayoutServiceTests
         Assert.Empty(walletService.FinalizedAmounts);
         Assert.Single(walletService.RolledBackAmounts);
         Assert.Single(payoutRepo.Items);
+    }
+
+    [Fact]
+    public async Task CreatePayoutAsync_PreservesProviderMessage_WhenProviderThrowsInvalidOperationException()
+    {
+        var landlordId = Guid.NewGuid();
+        var landlordRepo = new InMemoryRepository<Landlord>(l => l.LandlordId, new Landlord
+        {
+            LandlordId = landlordId,
+            PayoutReceiverName = "Landlord C",
+            MomoWalletPhone = "0900000003"
+        });
+
+        var payoutRepo = new InMemoryRepository<LandlordPayout>(p => p.PayoutId);
+        var payosService = new FakePayOSPayoutService
+        {
+            CreateBankPayoutException = new InvalidOperationException("PayOS payout failed because the provider account balance is insufficient.")
+        };
+
+        var walletService = new RecordingWalletService();
+        var momoTransactionService = new InMemoryMomoTransactionService();
+        var momoService = new FakeMomoService();
+
+        var sut = new LandlordPayoutService(payoutRepo, landlordRepo, momoService, walletService, momoTransactionService, payosService);
+        var request = new CreateLandlordPayoutRequestDto
+        {
+            Amount = 1500,
+            Channel = "bank",
+            ToBin = "970415",
+            ToAccountNumber = "1234567890",
+            OrderInfo = "payout"
+        };
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.CreatePayoutAsync(landlordId, request, CancellationToken.None));
+
+        Assert.Contains("provider account balance is insufficient", ex.Message);
+        Assert.Single(walletService.ReservedAmounts);
+        Assert.Single(walletService.RolledBackAmounts);
+        Assert.Empty(walletService.FinalizedAmounts);
+        Assert.Empty(payoutRepo.Items);
+    }
+
+    [Fact]
+    public void MapApiExceptionToDomainException_TreatsProviderCode624AsInsufficientBalance()
+    {
+        var serviceType = typeof(BLL.Services.Implements.PayOSPayoutService);
+        var detailsType = serviceType.GetNestedType("ProviderErrorDetails", BindingFlags.NonPublic);
+        Assert.NotNull(detailsType);
+
+        var constructor = detailsType!.GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public).Single();
+        var details = constructor.Invoke(new object?[] { 200, "624", "Insufficient balance", null });
+
+        var method = serviceType.GetMethod("MapApiExceptionToDomainException", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var exception = Assert.IsType<InvalidOperationException>(method!.Invoke(null, new[] { details, new Exception("inner") }));
+        Assert.Contains("provider account balance is insufficient", exception.Message);
     }
 
     [Fact]
@@ -1191,8 +1249,15 @@ internal sealed class FakePayOSPayoutService : IPayOSPayoutService
         TransId: "TRX-1"
     );
 
+    public Exception? CreateBankPayoutException { get; set; }
+
     public Task<PayOSPayoutResult> CreateBankPayoutAsync(string receiverName, string accountOrCard, string bankCode, long amount, string reference, CancellationToken cancellationToken = default)
     {
+        if (CreateBankPayoutException != null)
+        {
+            return Task.FromException<PayOSPayoutResult>(CreateBankPayoutException);
+        }
+
         return Task.FromResult(CreateBankPayoutResult);
     }
 

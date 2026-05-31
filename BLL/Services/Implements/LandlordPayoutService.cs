@@ -71,6 +71,11 @@ public class LandlordPayoutService : ILandlordPayoutService
                     reference,
                     cancellationToken);
             }
+            catch (InvalidOperationException)
+            {
+                await _walletService.RollbackPayoutAsync(landlordId, request.Amount);
+                throw;
+            }
             catch (Exception ex)
             {
                 // Provider failed - rollback wallet immediately

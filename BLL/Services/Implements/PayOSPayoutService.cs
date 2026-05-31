@@ -235,6 +235,11 @@ public class PayOSPayoutService : IPayOSPayoutService
 
     private static Exception MapApiExceptionToDomainException(ProviderErrorDetails details, Exception inner)
     {
+        if (IsInsufficientBalanceError(details))
+        {
+            return new InvalidOperationException("PayOS payout failed because the provider account balance is insufficient. Please top up the PayOS wallet and retry.", inner);
+        }
+
         return details.StatusCode switch
         {
             400 => new ArgumentException("Payout request was rejected by provider. Please verify bank code, destination account, and amount.", inner),
@@ -244,6 +249,25 @@ public class PayOSPayoutService : IPayOSPayoutService
             429 => new InvalidOperationException("Payout provider is rate limiting requests. Please retry shortly.", inner),
             _ => new InvalidOperationException("Payout provider failed to process the payout request.", inner)
         };
+    }
+
+    private static bool IsInsufficientBalanceError(ProviderErrorDetails details)
+    {
+        if (string.Equals(details.ProviderCode, "624", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var providerMessage = details.ProviderMessage;
+        if (string.IsNullOrWhiteSpace(providerMessage))
+        {
+            return false;
+        }
+
+        return providerMessage.Contains("insufficient balance", StringComparison.OrdinalIgnoreCase)
+            || providerMessage.Contains("khong du", StringComparison.OrdinalIgnoreCase)
+            || providerMessage.Contains("so du", StringComparison.OrdinalIgnoreCase)
+            || providerMessage.Contains("balance is insufficient", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ProviderErrorDetails ExtractProviderErrorDetails(Exception ex)
