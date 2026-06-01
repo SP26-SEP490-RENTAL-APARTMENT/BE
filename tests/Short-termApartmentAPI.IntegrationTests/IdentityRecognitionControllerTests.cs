@@ -73,7 +73,8 @@ public class IdentityRecognitionControllerTests
             OverallConfidence = 0.95,
             FullName = "Nguyen Van A",
             DateOfBirth = "01/02/1995",
-            IdNumber = "012345678901"
+            IdNumber = "012345678901",
+            ExpiryDate = "01/01/2030"
         };
 
         var userService = new UserServiceStub(user);
@@ -97,6 +98,42 @@ public class IdentityRecognitionControllerTests
         Assert.Equal(DateOnly.ParseExact("01/02/1995", "dd/MM/yyyy", CultureInfo.InvariantCulture), user.Birthday);
         Assert.Equal("VN", user.Nationality);
         Assert.True(user.IdentityVerified);
+    }
+
+    [Fact]
+    public async Task UploadAndUpdateProfile_ReturnsBadRequest_WhenExpiryDateIsExpired()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            UserId = userId,
+            Email = "user@example.com"
+        };
+
+        var recognition = new FptIdRecognitionResult
+        {
+            Success = true,
+            OverallConfidence = 0.95,
+            FullName = "Nguyen Van A",
+            DateOfBirth = "01/02/1995",
+            IdNumber = "012345678901",
+            ExpiryDate = "01/01/2020"
+        };
+
+        var controller = CreateController(new IdentityRecognitionServiceStub
+        {
+            RecognitionResult = recognition
+        }, null, new UserServiceStub(user));
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
+
+        var result = await controller.UploadAndUpdateProfile(new IdentityRecognitionUploadDto
+        {
+            Image = CreateImageFile()
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("Identity document has expired.", response.Message);
     }
 
     private static IdentityRecognitionController CreateController(
@@ -131,7 +168,8 @@ public class IdentityRecognitionControllerTests
             OverallConfidence = 0.85,
             PassportNumber = "P1234567",
             FullName = "John Doe",
-            DateOfBirth = "1990-01-15"
+            DateOfBirth = "1990-01-15",
+            ExpiryDate = "2030-01-01"
         };
 
         var userService = new UserServiceStub(user);
@@ -151,6 +189,40 @@ public class IdentityRecognitionControllerTests
         Assert.Equal("John Doe", user.FullName);
         Assert.Equal(DateOnly.ParseExact("1990-01-15", "yyyy-MM-dd", CultureInfo.InvariantCulture), user.Birthday);
         Assert.True(user.IdentityVerified);
+    }
+
+    [Fact]
+    public async Task UploadPassport_ReturnsBadRequest_WhenExpiryDateIsExpired()
+    {
+        var userId = Guid.NewGuid();
+        var user = new User
+        {
+            UserId = userId,
+            Email = "foreign@example.com"
+        };
+
+        var recognition = new FptIdRecognitionResult
+        {
+            Success = true,
+            OverallConfidence = 0.85,
+            PassportNumber = "P1234567",
+            FullName = "John Doe",
+            DateOfBirth = "1990-01-15",
+            ExpiryDate = "2020-01-01"
+        };
+
+        var userService = new UserServiceStub(user);
+        var controller = CreateController(new IdentityRecognitionServiceStub(), new FptPassportRecognitionServiceStub { RecognitionResult = recognition }, userService);
+        SetUser(controller, new Claim(ClaimTypes.NameIdentifier, userId.ToString()));
+
+        var result = await controller.UploadPassport(new IdentityRecognitionUploadDto
+        {
+            Image = CreateImageFile()
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var response = Assert.IsType<ApiResponse<string>>(badRequest.Value);
+        Assert.Equal("Identity document has expired.", response.Message);
     }
 
     private static IMapper CreateMapper()

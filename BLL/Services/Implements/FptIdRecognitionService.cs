@@ -90,7 +90,11 @@ public class FptIdRecognitionService : IFptIdRecognitionService
                 IdNumber = TryGetString(data, "id"),
                 FullName = TryGetString(data, "name"),
                 DateOfBirth = TryGetString(data, "dob"),
+                Home = TryGetString(data, "home"),
+                Address = TryGetString(data, "address"),
+                Nationality = TryGetString(data, "nationality"),
                 IssueDate = TryGetString(data, "issue_date"),
+                ExpiryDate = TryGetString(data, "doe"),
                 Sex = TryGetString(data, "sex")
             };
 

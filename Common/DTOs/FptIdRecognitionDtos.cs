@@ -20,6 +20,12 @@ public class FptIdRecognitionResult
 
     public string? DateOfBirth { get; set; }
 
+    public string? Home { get; set; }
+
+    public string? Address { get; set; }
+
+    public string? Nationality { get; set; }
+
     public string? IssueDate { get; set; }
 
     public string? PassportNumber { get; set; }

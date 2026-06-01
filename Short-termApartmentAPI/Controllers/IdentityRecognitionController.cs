@@ -115,6 +115,11 @@ namespace Short_termApartmentAPI.Controllers
                 return false;
             }
 
+            if (!ValidateExpiryDate(recognition.ExpiryDate, "Identity recognition", out errorMessage))
+            {
+                return false;
+            }
+
             user.FullName = recognition.FullName.Trim();
             user.NationalIdCardNumber = recognition.IdNumber.Trim();
             user.Birthday = birthday;
@@ -146,6 +151,24 @@ namespace Short_termApartmentAPI.Controllers
 
             date = default;
             return false;
+        }
+
+        private static bool ValidateExpiryDate(string? rawValue, string context, out string errorMessage)
+        {
+            if (!TryParseDateOnly(rawValue, out var expiryDate))
+            {
+                errorMessage = $"{context} did not return a valid expiry date.";
+                return false;
+            }
+
+            if (expiryDate < Common.Utils.VietnamTime.Today)
+            {
+                errorMessage = "Identity document has expired.";
+                return false;
+            }
+
+            errorMessage = string.Empty;
+            return true;
         }
 
         [HttpPost("passport")]
@@ -231,6 +254,11 @@ namespace Short_termApartmentAPI.Controllers
             if (TryParseDateOnly(recognition.DateOfBirth, out var birthday))
             {
                 user.Birthday = birthday;
+            }
+
+            if (!ValidateExpiryDate(recognition.ExpiryDate, "Passport recognition", out errorMessage))
+            {
+                return false;
             }
 
             user.Nationality = string.IsNullOrWhiteSpace(user.Nationality) ? null : user.Nationality;
