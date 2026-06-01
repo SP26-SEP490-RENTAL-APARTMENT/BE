@@ -23,43 +23,35 @@ public class RedisCacheService : ICacheService
     /// </summary>
     public async Task<T?> GetAsync<T>(string key)
     {
-        // Execute Redis GET command
-        RedisValue cachedValue = await _db.StringGetAsync(key);
-
-        if (cachedValue.IsNullOrEmpty)
-        {
-            return default;
-        }
-
-        // Deserialize the JSON string back into the expected type T
         try
         {
-            var jsonString = cachedValue.ToString();
-            T? result = JsonSerializer.Deserialize<T>(jsonString);
-            return result;
+            RedisValue cachedValue = await _db.StringGetAsync(key);
+
+            if (cachedValue.IsNullOrEmpty)
+                return default;
+
+            return JsonSerializer.Deserialize<T>(cachedValue.ToString());
         }
-        catch (JsonException ex)
+        catch (Exception ex)
         {
-            // Log the deserialization error
-            Console.WriteLine($"Error deserializing cached item for key {key}: {ex.Message}");
+            Console.WriteLine($"Redis GetAsync failed for key {key}: {ex.Message}");
             return default;
         }
     }
 
-    /// <summary>
-    /// Serializes the object to JSON and sets it in Redis with a Time-To-Live (TTL).
-    /// </summary>
     public async Task SetAsync<T>(string key, T value, TimeSpan expiry)
     {
         if (value == null)
-        {
             return;
-        }
 
-        // Serialize the object into a JSON string
-        var jsonString = JsonSerializer.Serialize(value);
-        
-        // Execute Redis SET command with the expiry option
-        await _db.StringSetAsync(key, jsonString, expiry);
+        try
+        {
+            var jsonString = JsonSerializer.Serialize(value);
+            await _db.StringSetAsync(key, jsonString, expiry);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Redis SetAsync failed for key {key}: {ex.Message}");
+        }
     }
 }

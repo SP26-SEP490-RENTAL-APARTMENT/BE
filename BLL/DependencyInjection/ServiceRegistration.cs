@@ -3,8 +3,6 @@ using BLL.Services.Implements;
 using BLL.Services.Interfaces;
 using DAL.Repository.Implements;
 using DAL.Repository.Interfaces;
-using StackExchange.Redis;
-
 namespace BLL.DependencyInjection
 {
     public static class ServiceRegistration
@@ -63,7 +61,6 @@ namespace BLL.DependencyInjection
             services.AddScoped<ICheckTimeRequestService, CheckTimeRequestService>();
             services.AddScoped<EmailService, EmailService>();
             services.AddScoped<PricingPolicyMigrationService>();
-            services.AddScoped<ICacheService, RedisCacheService>();
             services.AddScoped<IPayOsClientAdapter, PayOsHttpAdapter>();
             services.AddScoped<IPayOsService, PayOsService>();
             return services;
