@@ -4,10 +4,24 @@ using Common.DTOs;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using NetTopologySuite.Geometries;
+using System.IO;
 using NotificationType = Common.Enums.Notification;
 using ApartmentBookingStatusEnum = Common.Enums.ApartmentBookingStatus;
 
+
+
 namespace BLL.Services.Implements;
+
+file static class MediaTypeHelper
+{
+    private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".mov", ".avi", ".mkv", ".webm"
+    };
+
+    public static string Resolve(string fileName) =>
+        VideoExtensions.Contains(Path.GetExtension(fileName)) ? "video" : "photo";
+}
 
 public class ApartmentService : BaseService<Apartment>, IApartmentService
 {
@@ -370,14 +384,13 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         if (apartment == null)
             throw new ArgumentException("Apartment not found.");
 
-        // remove existing apartment media entries
         var existingMedia = apartment.ApartmentMedia.ToList();
         foreach (var m in existingMedia)
         {
-            _apartmentMediumService.DeleteAsync(m.MediaId).Wait();
+            await _imageService.DeleteImageAsync(m.Url);
+            await _apartmentMediumService.DeleteAsync(m.MediaId);
         }
 
-        // upload new photos
         foreach (var photo in photos)
         {
             var url = await _imageService.UploadImageAsync(photo);
@@ -387,11 +400,50 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 {
                     ApartmentId = apartment.ApartmentId,
                     Url = url,
-                    Type = "photo",
+                    Type = MediaTypeHelper.Resolve(photo.FileName),
                 };
                 await _apartmentMediumService.CreateAsync(medium);
             }
         }
+    }
+
+    public async Task AddApartmentAttachmentsAsync(Guid apartmentId, List<Microsoft.AspNetCore.Http.IFormFile> files)
+    {
+        if (files == null || files.Count == 0)
+            throw new ArgumentException("At least one file is required.");
+
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        foreach (var file in files)
+        {
+            var url = await _imageService.UploadImageAsync(file);
+            if (!string.IsNullOrEmpty(url))
+            {
+                var medium = new ApartmentMedium
+                {
+                    ApartmentId = apartment.ApartmentId,
+                    Url = url,
+                    Type = MediaTypeHelper.Resolve(file.FileName),
+                };
+                await _apartmentMediumService.CreateAsync(medium);
+            }
+        }
+    }
+
+    public async Task RemoveApartmentAttachmentAsync(Guid apartmentId, Guid mediaId)
+    {
+        var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+        if (apartment == null)
+            throw new ArgumentException("Apartment not found.");
+
+        var medium = apartment.ApartmentMedia.FirstOrDefault(m => m.MediaId == mediaId);
+        if (medium == null)
+            throw new KeyNotFoundException("Attachment not found on this apartment.");
+
+        await _imageService.DeleteImageAsync(medium.Url);
+        await _apartmentMediumService.DeleteAsync(mediaId);
     }
 
     public async Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId)
@@ -417,7 +469,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                 {
                     ApartmentId = created.ApartmentId,
                     Url = url,
-                    Type = "photo",
+                    Type = MediaTypeHelper.Resolve(photo.FileName),
                 };
                 await _apartmentMediumService.CreateAsync(medium);
             }

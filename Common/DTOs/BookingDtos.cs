@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using Common.Enums;
+using Common.Utils;
 using Microsoft.AspNetCore.Http;
 
 namespace Common.DTOs;
@@ -537,6 +538,7 @@ public class AddBookingOccupantFormDto
     public string? Email { get; set; }
 
     [Required]
+    [ImageFile]
     public IFormFile ProofPhoto { get; set; } = null!;
 }
 
@@ -632,6 +634,7 @@ public class UpdateBookingOccupantFormDto
     [MaxLength(255)]
     public string? Email { get; set; }
 
+    [ImageFile]
     public IFormFile? ProofPhoto { get; set; }
 }
 
@@ -645,6 +648,7 @@ public class FillBookingOccupantsDto
 public class BookingOccupantOcrUploadDto
 {
     [Required]
+    [ImageFile]
     public IFormFile Image { get; set; } = null!;
 }
 

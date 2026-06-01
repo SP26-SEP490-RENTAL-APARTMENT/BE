@@ -52,6 +52,8 @@ public interface IApartmentService : IBaseService<Apartment>
     Task AddAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds);
     Task RemoveAmenitiesAsync(Guid apartmentId, List<Guid> amenityIds);
     Task UpdateApartmentPhotosAsync(Guid apartmentId, List<Microsoft.AspNetCore.Http.IFormFile> photos);
+    Task AddApartmentAttachmentsAsync(Guid apartmentId, List<Microsoft.AspNetCore.Http.IFormFile> files);
+    Task RemoveApartmentAttachmentAsync(Guid apartmentId, Guid mediaId);
 
     /// <summary>
     /// Landlord submits apartment for admin review. Validates draft status and required details.

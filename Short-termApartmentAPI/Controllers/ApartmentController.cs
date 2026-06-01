@@ -446,6 +446,76 @@ public sealed class ApartmentsController : ControllerBase
         }
     }
 
+    [HttpPost("{id:guid}/attachments")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> AddAttachments(Guid id, [FromForm] List<Microsoft.AspNetCore.Http.IFormFile> files)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var apartment = await _apartmentService.GetByIdAsync(id);
+        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        try
+        {
+            await _apartmentService.AddApartmentAttachmentsAsync(id, files);
+            return Ok(new ApiResponse<string>("Attachments added successfully."));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
+    [HttpDelete("{id:guid}/attachments/{mediaId:guid}")]
+    [Authorize(Roles = "landlord")]
+    public async Task<IActionResult> RemoveAttachment(Guid id, Guid mediaId)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+        {
+            return Unauthorized(new ApiResponse<string>("Invalid user token."));
+        }
+
+        var landlord = await _landlordService.GetByUserIdAsync(userId);
+        if (landlord == null)
+        {
+            return NotFound(new ApiResponse<string>("Landlord profile not found."));
+        }
+
+        var apartment = await _apartmentService.GetByIdAsync(id);
+        if (apartment == null || apartment.LandlordId != landlord.LandlordId)
+        {
+            return NotFound(new ApiResponse<string>("Apartment not found."));
+        }
+
+        try
+        {
+            await _apartmentService.RemoveApartmentAttachmentAsync(id, mediaId);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ApiResponse<string>(ex.Message));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ApiResponse<string>(ex.Message));
+        }
+    }
+
     /// <summary>
     /// Landlord submits apartment for admin review. Validates ownership and listing details.
     /// Transitions apartment from 'draft' to 'pending_review'.
