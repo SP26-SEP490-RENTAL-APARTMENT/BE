@@ -137,7 +137,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     public async Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
     {
         var response = _mapper.Map<BookingResponseDto>(booking);
-        response.Images = await GetApartmentImageUrlsAsync(booking.ApartmentId);
+        response.Media = await GetApartmentMediaAsync(booking.ApartmentId);
         response.TicketId = await ResolveBookingSupportTicketIdAsync(booking.BookingId, booking.TenantId);
         response.IsRefundable = await IsBookingRefundableForTenantAsync(booking);
         return response;
@@ -280,14 +280,14 @@ public class BookingService : BaseService<Booking>, IBookingService
             isExceptionOverride);
     }
 
-    private async Task<List<string>> GetApartmentImageUrlsAsync(Guid apartmentId)
+    private async Task<List<MediaAssetDto>> GetApartmentMediaAsync(Guid apartmentId)
     {
         var apartment = await _apartmentRepository.GetApartmentWithDetailsAsync(apartmentId);
+
         return apartment?.ApartmentMedia
             .Where(media => !string.IsNullOrWhiteSpace(media.Url))
-            .Select(media => media.Url)
-            .ToList()
-            ?? new List<string>();
+            .Select(_mapper.Map<MediaAssetDto>)
+            .ToList() ?? new List<MediaAssetDto>();
     }
 
     private async Task<Guid?> ResolveBookingSupportTicketIdAsync(Guid bookingId, Guid tenantId)
@@ -2453,6 +2453,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.IsEarlyCheckIn = isEarlyCheckIn;
         checkTime.EarlyCheckInFee = isEarlyCheckIn ? earlyCheckInFee : 0m;
         checkTime.CheckInPhotoUrl = dto.PhotoEvidenceUrl;
+        checkTime.CheckInMediaType = dto.MediaType;
         ApplyFeeSettlementState(checkTime, earlyCheckInFee, Common.Utils.VietnamTime.Now);
         checkTime.RecordedBy = recordedBy;
         checkTime.RecordedAt = Common.Utils.VietnamTime.Now;
@@ -2562,6 +2563,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         checkTime.IsLateCheckOut = isLateCheckOut;
         checkTime.LateCheckOutFee = isLateCheckOut ? lateCheckOutFee : 0m;
         checkTime.CheckOutPhotoUrl = dto.PhotoEvidenceUrl;
+        checkTime.CheckOutMediaType = dto.MediaType;
         checkTime.ClaimOpenedAt = now;
         checkTime.ClaimExpiresAt = now.AddHours(24);
         checkTime.ClaimLockedAt = null;
@@ -2739,11 +2741,14 @@ public class BookingService : BaseService<Booking>, IBookingService
             RecordedAt = checkTime.RecordedAt,
             Notes = checkTime.Notes,
             CheckInPhotoUrl = checkTime.CheckInPhotoUrl,
+            CheckInMediaType = checkTime.CheckInMediaType,
             CheckOutPhotoUrl = checkTime.CheckOutPhotoUrl,
+            CheckOutMediaType = checkTime.CheckOutMediaType,
             GuestArrivalConfirmedAt = latestGuestArrival?.ArrivedAt,
             GuestArrivalConfirmedBy = latestGuestArrival?.CreatedBy,
             GuestArrivalNotes = latestGuestArrival?.Notes,
             GuestArrivalPhotoUrl = latestGuestArrival?.PhotoEvidenceUrl,
+            GuestArrivalMediaType = null,
             ClaimOpenedAt = checkTime.ClaimOpenedAt,
             ClaimExpiresAt = claimExpiresAt,
             ClaimLockedAt = claimLockedAt,
@@ -6053,7 +6058,12 @@ public class BookingService : BaseService<Booking>, IBookingService
             var supportTicketImageUrls = ticketsForBooking
                 .SelectMany(t => t.SupportTicketAttachments ?? [])
                 .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
-                .Select(a => a.FileUrl)
+                .Select(a => new MediaAssetDto
+                {
+                    MediaId = a.AttachmentId,
+                    Url = a.FileUrl,
+                    MediaType = a.MediaType
+                })
                 .Distinct()
                 .ToList();
 
@@ -6071,31 +6081,46 @@ public class BookingService : BaseService<Booking>, IBookingService
                 supportTicketImageUrls.AddRange(
                     loadedTicket.SupportTicketAttachments
                         .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
-                        .Select(a => a.FileUrl));
+                        .Select(a => new MediaAssetDto
+                        {
+                            MediaId = a.AttachmentId,
+                            Url = a.FileUrl,
+                            MediaType = a.MediaType
+                        }));
             }
 
-            List<string> checkTimeImageUrls = new();
+            List<MediaAssetDto> checkTimeImageUrls = new();
             if (checkTime != null)
             {
                 if (!string.IsNullOrWhiteSpace(checkTime.CheckInPhotoUrl))
                 {
-                    checkTimeImageUrls.Add(checkTime.CheckInPhotoUrl);
+                    checkTimeImageUrls.Add(new MediaAssetDto
+                    {
+                        Url = checkTime.CheckInPhotoUrl,
+                        MediaType = checkTime.CheckInMediaType
+                    });
                 }
 
                 if (!string.IsNullOrWhiteSpace(checkTime.CheckOutPhotoUrl))
                 {
-                    checkTimeImageUrls.Add(checkTime.CheckOutPhotoUrl);
+                    checkTimeImageUrls.Add(new MediaAssetDto
+                    {
+                        Url = checkTime.CheckOutPhotoUrl,
+                        MediaType = checkTime.CheckOutMediaType
+                    });
                 }
             }
 
             supportTicketImageUrls = supportTicketImageUrls
-                .Where(url => !string.IsNullOrWhiteSpace(url))
-                .Distinct()
+                .Where(media => !string.IsNullOrWhiteSpace(media.Url))
+                .GroupBy(media => new { media.Url, media.MediaType })
+                .Select(group => group.First())
                 .ToList();
 
             checkTimeImageUrls = checkTimeImageUrls
-                .Where(url => !string.IsNullOrWhiteSpace(url))
-                .Distinct()
+                .Where(media => !string.IsNullOrWhiteSpace(media.Url))
+                .GroupBy(media => new { media.Url, media.MediaType })
+                .Select(group => group.First())
                 .ToList();
 
             var reportedDto = new ReportedBookingDto

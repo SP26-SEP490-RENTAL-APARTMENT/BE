@@ -92,6 +92,7 @@ namespace Common.DTOs
     {
         public Guid PhotoId { get; set; }
         public string FileUrl { get; set; } = null!;
+        public string? MediaType { get; set; }
         public string? FileKey { get; set; }
         public string? Description { get; set; }
         public bool? IsIssue { get; set; }
@@ -108,7 +109,7 @@ namespace Common.DTOs
 
         [MinLength(1, ErrorMessage = "At least one inspection photo is required.")]
         [Required]
-        public List<IFormFile> Photos { get; set; } = null!;
+        public List<IFormFile> Files { get; set; } = null!;
     }
 
     public class CancelPropertyInspectionDto

@@ -60,7 +60,7 @@ public class ReportOccupiedIncidentRequestDto
     [MaxLength(2000)]
     public string Details { get; set; } = null!;
 
-    public List<IFormFile> EvidencePhotos { get; set; } = new();
+    public List<IFormFile> Evidence { get; set; } = new();
 }
 
 public class BookingOfferResponseDto

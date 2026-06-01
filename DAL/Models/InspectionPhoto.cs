@@ -11,6 +11,8 @@ public partial class InspectionPhoto
 
     public string FileUrl { get; set; } = null!;
 
+    public string? MediaType { get; set; }
+
     public string? FileKey { get; set; }
 
     public string? Description { get; set; }

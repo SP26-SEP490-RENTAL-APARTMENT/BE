@@ -13,7 +13,8 @@ namespace BLL.Mappings
                 .ReverseMap();
             CreateMap<CreateSupportTicketDto, SupportTicket>();
             CreateMap<UpdateSupportTicketDto, SupportTicket>();
-            CreateMap<SupportTicketAttachment, SupportTicketAttachmentDto>().ReverseMap();
+            CreateMap<SupportTicketAttachment, SupportTicketAttachmentDto>()
+                .ReverseMap();
         }
     }
 }

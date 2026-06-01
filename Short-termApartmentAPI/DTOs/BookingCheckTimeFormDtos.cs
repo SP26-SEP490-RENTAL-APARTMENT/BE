@@ -12,7 +12,7 @@ namespace Short_termApartmentAPI.DTOs
         public string? Notes { get; set; }
 
         [Required]
-        public IFormFile PhotoEvidence { get; set; } = null!;
+        public IFormFile FileEvidence { get; set; } = null!;
     }
 
     public class RecordCheckOutFormDto
@@ -24,7 +24,7 @@ namespace Short_termApartmentAPI.DTOs
         public string? Notes { get; set; }
 
         [Required]
-        public IFormFile PhotoEvidence { get; set; } = null!;
+        public IFormFile FileEvidence { get; set; } = null!;
     }
 
     public class RecordBalancePaymentFormDto

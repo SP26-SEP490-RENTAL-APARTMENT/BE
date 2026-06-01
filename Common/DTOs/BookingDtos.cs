@@ -180,7 +180,7 @@ public class BookingResponseDto
     public DateTime? ActualCheckOut { get; set; }
     public Guid ApartmentId { get; set; }
     public Guid? TicketId { get; set; }
-    public List<string> Images { get; set; } = new();
+    public List<MediaAssetDto> Media  { get; set; } = new();
     public DateOnly CheckInDate { get; set; }
     public DateOnly CheckOutDate { get; set; }
     public int Nights { get; set; }
@@ -690,8 +690,8 @@ public class ReportedBookingDto
     /// <summary>
     /// URLs of images/attachments associated with the related support ticket (if any).
     /// </summary>
-    public List<string> Images { get; set; } = new();
-    public List<string> CheckTimeImages { get; set; } = new();
+    public List<MediaAssetDto> Images { get; set; } = new();
+    public List<MediaAssetDto> CheckTimeImages { get; set; } = new();
 
     public DateTime? CreatedAt { get; set; }
 }

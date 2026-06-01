@@ -53,8 +53,8 @@ public class CreateApartmentRequestDto
     public decimal basePricePerNight { get; set; }
 
     [Required]
-    [MinLength(1, ErrorMessage = "At least one photo is required to submit an apartment.")]
-    public List<IFormFile> photos { get; set; } = new List<IFormFile>();
+    [MinLength(1, ErrorMessage = "At least one file is required to submit an apartment.")]
+    public List<IFormFile> files { get; set; } = new List<IFormFile>();
 }
 
 public class UpdateApartmentRequestDto
@@ -131,7 +131,7 @@ public class CreateApartmentResponseDto
 
     public DateTime? CreatedAt { get; set; }
 
-    public List<string> Photos { get; set; } = new List<string>();
+    public List<MediaAssetDto> Photos { get; set; } = new List<MediaAssetDto>();
 }
 
 public class ApartmentResponseDto
@@ -158,7 +158,7 @@ public class ApartmentResponseDto
     public Guid? CollectionId { get; set; }
     public string? InspectionStatus { get; set; }
     public List<ApartmentPriceChangeDto> PriceChanges { get; set; } = new List<ApartmentPriceChangeDto>();
-    public List<string> Photos { get; set; } = new List<string>();
+    public List<MediaAssetDto> Photos { get; set; } = new List<MediaAssetDto>();
     public RoomResponseDto? Room { get; set; }
     public List<AmenityResponseDto> Amenities { get; set; } = new List<AmenityResponseDto>();
     public ApartmentNearbyAttractionsDto NearbyAttractions { get; set; } = new ApartmentNearbyAttractionsDto();

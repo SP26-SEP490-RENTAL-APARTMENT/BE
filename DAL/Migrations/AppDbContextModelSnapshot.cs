@@ -298,10 +298,10 @@ namespace DAL.Migrations
                         .HasColumnName("is_primary")
                         .HasDefaultValueSql("'0'");
 
-                    b.Property<string>("Type")
+                    b.Property<string>("MediaType")
                         .IsRequired()
-                        .HasColumnType("enum('photo','video')")
-                        .HasColumnName("type");
+                        .HasColumnType("enum('image','video')")
+                        .HasColumnName("media_type");
 
                     b.Property<string>("Url")
                         .IsRequired()
@@ -610,10 +610,18 @@ namespace DAL.Migrations
                         .HasColumnType("longtext")
                         .HasColumnName("check_in_photo_url");
 
+                    b.Property<string>("CheckInMediaType")
+                        .HasColumnType("enum('image','video')")
+                        .HasColumnName("check_in_media_type");
+
                     b.Property<string>("CheckOutPhotoUrl")
                         .HasMaxLength(500)
                         .HasColumnType("longtext")
                         .HasColumnName("check_out_photo_url");
+
+                    b.Property<string>("CheckOutMediaType")
+                        .HasColumnType("enum('image','video')")
+                        .HasColumnName("check_out_media_type");
 
                     b.Property<DateTime?>("RecordedAt")
                         .HasColumnType("datetime")
@@ -808,6 +816,10 @@ namespace DAL.Migrations
                         .HasColumnType("tinyint(1)")
                         .HasColumnName("is_issue")
                         .HasDefaultValueSql("'0'");
+
+                    b.Property<string>("MediaType")
+                        .HasColumnType("enum('image','video')")
+                        .HasColumnName("media_type");
 
                     b.Property<DateTime?>("UploadedAt")
                         .ValueGeneratedOnAdd()

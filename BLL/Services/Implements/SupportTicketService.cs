@@ -466,8 +466,23 @@ namespace BLL.Services.Implements
 
                 try
                 {
-                    // Upload image to Cloudinary
-                    var fileUrl = await _imageService.UploadImageAsync(file);
+                    string fileUrl;
+                    string mediaType;
+
+                    if (ImageService.IsImage(file))
+                    {
+                        fileUrl = await _imageService.UploadImageAsync(file);
+                        mediaType = "image";
+                    }
+                    else if (ImageService.IsVideo(file))
+                    {
+                        fileUrl = await _imageService.UploadMediaAsync(file);
+                        mediaType = "video";
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported file type: {file.FileName}");
+                    }
 
                     // Create attachment record
                     var attachment = new SupportTicketAttachment
@@ -477,6 +492,7 @@ namespace BLL.Services.Implements
                         FileUrl = fileUrl,
                         MimeType = file.ContentType,
                         FileSize = file.Length,
+                        MediaType = mediaType,
                         UploadedAt = Common.Utils.VietnamTime.Now,
                         UploadedBy = uploadedByUserId,
                         Caption = dto.Caption,

@@ -14,6 +14,7 @@ using PayOS;
 using PayOS.Models.V2.PaymentRequests;
 using System.Security.Claims;
 using Short_termApartmentAPI.Middlewares;
+using BLL.Services.Implements;
 
 namespace Short_termApartmentAPI.Controllers
 {
@@ -578,7 +579,7 @@ namespace Short_termApartmentAPI.Controllers
                 payment.Status = PaymentStatus.success.ToString();
                 payment.ConfirmedBy = requesterId;
                 payment.ConfirmedAt = Common.Utils.VietnamTime.Now;
-                
+
                 if (!string.IsNullOrWhiteSpace(dto.Notes))
                     payment.Notes = (payment.Notes ?? string.Empty) + "\n" + dto.Notes;
 
@@ -1375,19 +1376,37 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (form.PhotoEvidence == null || form.PhotoEvidence.Length == 0)
+            if (form.FileEvidence == null || form.FileEvidence.Length == 0)
             {
-                return BadRequest(new ApiResponse<string>("Photo evidence is required."));
+                return BadRequest(new ApiResponse<string>("File evidence is required."));
             }
 
             try
             {
-                var photoUrl = await _imageService.UploadImageAsync(form.PhotoEvidence);
+                string evidenceUrl = string.Empty; // <-- initialize to avoid CS0165
+                string mediaType = string.Empty;
+
+                if (ImageService.IsImage(form.FileEvidence))
+                {
+                    evidenceUrl = await _imageService.UploadImageAsync(form.FileEvidence);
+                    mediaType = "image";
+                }
+                else if (ImageService.IsVideo(form.FileEvidence))
+                {
+                    evidenceUrl = await _imageService.UploadMediaAsync(form.FileEvidence);
+                    mediaType = "video";
+                }
+                else
+                {
+                    return BadRequest(new ApiResponse<string>("Unsupported file type. Allowed types are image or video."));
+                }
+
                 var dto = new Common.DTOs.RecordCheckInDto
                 {
                     ActualCheckIn = form.ActualCheckIn,
                     Notes = form.Notes,
-                    PhotoEvidenceUrl = photoUrl
+                    PhotoEvidenceUrl = evidenceUrl,
+                    MediaType = mediaType
                 };
 
                 var checkTimeResponse = await _bookingService.RecordCheckInAsync(id, dto, recordedBy);
@@ -1419,19 +1438,37 @@ namespace Short_termApartmentAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            if (form.PhotoEvidence == null || form.PhotoEvidence.Length == 0)
+            if (form.FileEvidence == null || form.FileEvidence.Length == 0)
             {
-                return BadRequest(new ApiResponse<string>("Photo evidence is required."));
+                return BadRequest(new ApiResponse<string>("File evidence is required."));
             }
 
             try
             {
-                var photoUrl = await _imageService.UploadImageAsync(form.PhotoEvidence);
-                var dto = new Common.DTOs.RecordCheckOutDto
+                string evidenceUrl = string.Empty;
+                string mediaType = string.Empty;
+
+                if (ImageService.IsImage(form.FileEvidence))
+                {
+                    evidenceUrl = await _imageService.UploadImageAsync(form.FileEvidence);
+                    mediaType = "image";
+                }
+                else if (ImageService.IsVideo(form.FileEvidence))
+                {
+                    evidenceUrl = await _imageService.UploadMediaAsync(form.FileEvidence);
+                    mediaType = "video";
+                }
+                else
+                {
+                    return BadRequest(new ApiResponse<string>("Unsupported file type. Allowed types are image or video."));
+                }
+
+                var dto = new RecordCheckOutDto
                 {
                     ActualCheckOut = form.ActualCheckOut,
                     Notes = form.Notes,
-                    PhotoEvidenceUrl = photoUrl
+                    PhotoEvidenceUrl = evidenceUrl,
+                    MediaType = mediaType
                 };
 
                 var checkTimeResponse = await _bookingService.RecordCheckOutAsync(id, dto, recordedBy);
@@ -1944,11 +1981,11 @@ namespace Short_termApartmentAPI.Controllers
 
             var created = await _supportTicketService.CreateTicketAsync(supportTicket);
 
-            if (dto.EvidencePhotos != null && dto.EvidencePhotos.Any())
+            if (dto.Evidence != null && dto.Evidence.Any())
             {
                 var uploadDto = new UploadSupportTicketAttachmentDto
                 {
-                    Files = dto.EvidencePhotos,
+                    Files = dto.Evidence,
                     Caption = "Occupied room incident evidence",
                     IsEvidence = true
                 };

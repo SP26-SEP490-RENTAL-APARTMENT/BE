@@ -377,28 +377,48 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             _apartmentMediumService.DeleteAsync(m.MediaId).Wait();
         }
 
-        // upload new photos
-        foreach (var photo in photos)
+        foreach (var file in photos)
         {
-            var url = await _imageService.UploadImageAsync(photo);
+            if (file == null || file.Length == 0)
+            {
+                continue;
+            }
+
+            string url;
+            string mediaType;
+
+            if (ImageService.IsImage(file))
+            {
+                url = await _imageService.UploadImageAsync(file);
+                mediaType = "image";
+            }
+            else if (ImageService.IsVideo(file))
+            {
+                url = await _imageService.UploadMediaAsync(file);
+                mediaType = "video";
+            }
+            else
+            {
+                throw new ArgumentException($"Unsupported file type: {file.FileName}. Allowed types are image or video.");
+            }
+
             if (!string.IsNullOrEmpty(url))
             {
-                var medium = new ApartmentMedium
+                await _apartmentMediumService.CreateAsync(new ApartmentMedium
                 {
                     ApartmentId = apartment.ApartmentId,
                     Url = url,
-                    Type = "photo",
-                };
-                await _apartmentMediumService.CreateAsync(medium);
+                    MediaType = mediaType,
+                });
             }
         }
     }
 
     public async Task<CreateApartmentResponseDto> CreateApartmentWithPhotosAsync(CreateApartmentRequestDto requestDto, Guid landlordId)
     {
-        if (requestDto.photos == null || !requestDto.photos.Any())
+        if (requestDto.files == null || !requestDto.files.Any())
         {
-            throw new ArgumentException("At least one photo is required to submit an apartment.");
+            throw new ArgumentException("At least one file is required to submit an apartment.");
         }
 
         var apartment = _mapper.Map<Apartment>(requestDto);
@@ -407,19 +427,38 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         var created = await CreateAsync(apartment);
 
-        foreach (var photo in requestDto.photos)
+        foreach (var file in requestDto.files)
         {
-            var url = await _imageService.UploadImageAsync(photo);
-
-            if (!string.IsNullOrEmpty(url))
+            if (ImageService.IsImage(file))        // you can define this helper
             {
-                var medium = new ApartmentMedium
+                var url = await _imageService.UploadImageAsync(file);
+                if (!string.IsNullOrEmpty(url))
                 {
-                    ApartmentId = created.ApartmentId,
-                    Url = url,
-                    Type = "photo",
-                };
-                await _apartmentMediumService.CreateAsync(medium);
+                    await _apartmentMediumService.CreateAsync(new ApartmentMedium
+                    {
+                        ApartmentId = created.ApartmentId,
+                        Url = url,
+                        MediaType = "image"
+                    });
+                }
+            }
+            else if (ImageService.IsVideo(file))
+            {
+                var url = await _imageService.UploadMediaAsync(file);
+                if (!string.IsNullOrEmpty(url))
+                {
+                    await _apartmentMediumService.CreateAsync(new ApartmentMedium
+                    {
+                        ApartmentId = created.ApartmentId,
+                        Url = url,
+                        MediaType = "video"
+                    });
+                }
+            }
+            else
+            {
+                // Optionally throw or skip unsupported files
+                throw new ArgumentException($"Unsupported file type: {file.FileName}");
             }
         }
 

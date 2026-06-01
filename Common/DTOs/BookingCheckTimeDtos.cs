@@ -19,6 +19,7 @@ public class RecordCheckInDto : IValidatableObject
     /// URL of uploaded photo evidence (controller should upload file and set this).
     /// </summary>
     public string? PhotoEvidenceUrl { get; set; }
+    public string? MediaType { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -55,6 +56,7 @@ public class RecordCheckOutDto : IValidatableObject
     /// URL of uploaded photo evidence (controller should upload file and set this).
     /// </summary>
     public string? PhotoEvidenceUrl { get; set; }
+    public string? MediaType { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -164,12 +166,15 @@ public class BookingCheckTimeResponseDto
     /// URLs for the uploaded photo evidence for check-in and check-out.
     /// </summary>
     public string? CheckInPhotoUrl { get; set; }
+    public string? CheckInMediaType { get; set; }
     public string? CheckOutPhotoUrl { get; set; }
+    public string? CheckOutMediaType { get; set; }
 
     public DateTime? GuestArrivalConfirmedAt { get; set; }
     public Guid? GuestArrivalConfirmedBy { get; set; }
     public string? GuestArrivalNotes { get; set; }
     public string? GuestArrivalPhotoUrl { get; set; }
+    public string? GuestArrivalMediaType { get; set; }
 
     /// <summary>
     /// Claim metadata for the checkout snapshot.

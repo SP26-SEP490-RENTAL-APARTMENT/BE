@@ -9,6 +9,8 @@ public class ApartmentProfile : Profile
 {
     public ApartmentProfile()
     {
+        CreateMap<ApartmentMedium, MediaAssetDto>();
+
         CreateMap<CreateApartmentRequestDto, Apartment>()
             .ForMember(dest => dest.Location, opt => opt.MapFrom(src => new NetTopologySuite.Geometries.Point((double)src.longitude.GetValueOrDefault(), (double)src.latitude.GetValueOrDefault()) { SRID = 4326 }))
             .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => Common.Utils.VietnamTime.Now))
@@ -19,13 +21,13 @@ public class ApartmentProfile : Profile
 
         CreateMap<UpdateApartmentRequestDto, Apartment>()
             .ForMember(dest => dest.Location, opt => opt.Condition(src => src.Latitude.HasValue && src.Longitude.HasValue))
-            .ForMember(dest => dest.Location, opt => opt.MapFrom(src => src.Longitude.HasValue && src.Latitude.HasValue 
-                ? new NetTopologySuite.Geometries.Point((double)src.Longitude.Value, (double)src.Latitude.Value) { SRID = 4326 } 
+            .ForMember(dest => dest.Location, opt => opt.MapFrom(src => src.Longitude.HasValue && src.Latitude.HasValue
+                ? new NetTopologySuite.Geometries.Point((double)src.Longitude.Value, (double)src.Latitude.Value) { SRID = 4326 }
                 : null))
             .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
 
         CreateMap<Apartment, CreateApartmentResponseDto>()
-            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
+            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia));
         CreateMap<CreateApartmentResponseDto, Apartment>(MemberList.Source);
 
         CreateMap<Apartment, ApartmentResponseDto>()
@@ -33,7 +35,7 @@ public class ApartmentProfile : Profile
                 src.Landlord != null && src.Landlord.LandlordNavigation != null
                     ? src.Landlord.LandlordNavigation.FullName
                     : null))
-            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
+            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia));
 
         CreateMap<Room, RoomResponseDto>();
         CreateMap<CreateRoomRequestDto, Room>()

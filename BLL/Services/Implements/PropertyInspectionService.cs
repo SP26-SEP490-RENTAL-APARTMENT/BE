@@ -140,6 +140,10 @@ public sealed class PropertyInspectionService(
             throw new InvalidOperationException("Only in-progress inspections can be completed.");
         }
 
+        // Validate files exist
+        if (dto.Files == null || dto.Files.Count == 0)
+            throw new ArgumentException("At least one inspection photo or video is required.");
+
         inspection.OverallCondition = dto.OverallCondition;
         inspection.IssuesFound = dto.IssuesFound;
         inspection.Recommendations = dto.Recommendations;
@@ -148,19 +152,29 @@ public sealed class PropertyInspectionService(
 
         _repository.Update(inspection);
 
-        if (dto.Photos == null || dto.Photos.Count == 0)
+        foreach (var file in dto.Files)
         {
-            throw new ArgumentException("At least one inspection photo is required.");
-        }
-
-        foreach (var photo in dto.Photos)
-        {
-            if (photo == null || photo.Length == 0)
+            if (file == null || file.Length == 0)
             {
-                throw new ArgumentException("Each inspection photo must be a non-empty file.");
+                throw new ArgumentException("Each inspection file must be a non-empty file.");
             }
 
-            var fileUrl = await _imageService.UploadImageAsync(photo);
+            if (!ImageService.IsImage(file) && !ImageService.IsVideo(file))
+                throw new ArgumentException($"Unsupported file type: {file.FileName}. Allowed types: jpg, png, mp4, mov, etc.");
+
+            string fileUrl;
+            string mediaType;
+
+            if (ImageService.IsImage(file))
+            {
+                fileUrl = await _imageService.UploadImageAsync(file);
+                mediaType = "image";
+            }
+            else // it's a video
+            {
+                fileUrl = await _imageService.UploadMediaAsync(file);
+                mediaType = "video";
+            }
 
             var inspectionPhoto = new InspectionPhoto
             {
@@ -168,6 +182,7 @@ public sealed class PropertyInspectionService(
                 InspectionId = inspection.InspectionId,
                 FileUrl = fileUrl,
                 FileKey = null,
+                MediaType = mediaType,
                 UploadedAt = Common.Utils.VietnamTime.Now
             };
 

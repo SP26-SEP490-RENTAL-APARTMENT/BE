@@ -317,9 +317,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.IsPrimary)
                 .HasDefaultValueSql("'0'")
                 .HasColumnName("is_primary");
-            entity.Property(e => e.Type)
-                .HasColumnType("enum('photo','video')")
-                .HasColumnName("type");
+            entity.Property(e => e.MediaType)
+                .HasColumnType("enum('image','video')")
+                .HasColumnName("media_type");
             entity.Property(e => e.Url)
                 .HasMaxLength(500)
                 .HasColumnName("url");
@@ -824,9 +824,15 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.CheckInPhotoUrl)
                 .HasMaxLength(500)
                 .HasColumnName("check_in_photo_url");
+            entity.Property(e => e.CheckInMediaType)
+                .HasColumnType("enum('image','video')")
+                .HasColumnName("check_in_media_type");
             entity.Property(e => e.CheckOutPhotoUrl)
                 .HasMaxLength(500)
                 .HasColumnName("check_out_photo_url");
+            entity.Property(e => e.CheckOutMediaType)
+                .HasColumnType("enum('image','video')")
+                .HasColumnName("check_out_media_type");
             entity.Property(e => e.RecordedAt)
                 .HasColumnType("datetime")
                 .HasColumnName("recorded_at");
@@ -932,6 +938,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.FileUrl)
                 .HasMaxLength(500)
                 .HasColumnName("file_url");
+            entity.Property(e => e.MediaType)
+                .HasColumnType("enum('image','video')")
+                .HasColumnName("media_type");
             entity.Property(e => e.InspectionId).HasColumnName("inspection_id");
             entity.Property(e => e.IsIssue)
                 .HasDefaultValueSql("'0'")
@@ -2136,6 +2145,9 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(1000)
                 .HasColumnName("file_url");
 
+            entity.Property(e => e.MediaType)
+                .HasColumnType("enum('image','video')")
+                .HasColumnName("media_type");
             entity.Property(e => e.MimeType).HasColumnName("mime_type");
             entity.Property(e => e.FileSize).HasColumnName("file_size");
             entity.Property(e => e.UploadedAt).HasColumnName("uploaded_at");

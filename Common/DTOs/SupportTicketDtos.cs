@@ -28,6 +28,7 @@ namespace Common.DTOs
         public Guid AttachmentId { get; set; }
         public Guid TicketId { get; set; }
         public string FileUrl { get; set; } = null!;
+        public string? MediaType { get; set; }
         public string? MimeType { get; set; }
         public long? FileSize { get; set; }
         public DateTime? UploadedAt { get; set; }

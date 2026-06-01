@@ -17,13 +17,12 @@ public class BookingProfile : Profile
                 opt => opt.MapFrom(src => src.BookingCheckTime != null ? src.BookingCheckTime.ActualCheckOut : null))
             .ForMember(dest => dest.RemainingBalance,
                 opt => opt.MapFrom(src => src.RemainingAmount))
-            .ForMember(dest => dest.Images,
+            .ForMember(dest => dest.Media,
                 opt => opt.MapFrom(src => src.Apartment != null && src.Apartment.ApartmentMedia != null
                     ? src.Apartment.ApartmentMedia
                         .Where(media => !string.IsNullOrWhiteSpace(media.Url))
-                        .Select(media => media.Url)
                         .ToList()
-                    : new List<string>()));
+                    : new List<ApartmentMedium>()));
         CreateMap<CreateBookingRequestDto, Booking>()
             .ForMember(dest => dest.BookingId, opt => opt.Ignore())
             .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => Common.Utils.VietnamTime.Now))

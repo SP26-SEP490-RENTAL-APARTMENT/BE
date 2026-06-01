@@ -11,7 +11,7 @@ public partial class ApartmentMedium
 
     public string Url { get; set; } = null!;
 
-    public string Type { get; set; } = null!;
+    public string MediaType { get; set; } = null!;
 
     public bool? IsPrimary { get; set; }
 

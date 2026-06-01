@@ -1291,7 +1291,7 @@ internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingSer
     public Task<BookingQuoteResponseDto> GetQuoteAsync(BookingQuoteRequestDto dto) => Task.FromResult(new BookingQuoteResponseDto());
     public Task<Booking> CreateWithQuoteAsync(CreateBookingRequestDto requestDto, Guid tenantId) => Task.FromResult(new Booking());
     public Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
-        => Task.FromResult(new BookingResponseDto { BookingId = booking.BookingId, Images = new List<string>(), RemainingBalance = booking.RemainingAmount });
+        => Task.FromResult(new BookingResponseDto { BookingId = booking.BookingId, Images = new List<MediaAssetDto>(), RemainingBalance = booking.RemainingAmount });
     public Task<Booking> MarkDepositPaidAsync(Guid bookingId, bool skipConflictCheck = false)
     {
         MarkDepositPaidCalls++;
