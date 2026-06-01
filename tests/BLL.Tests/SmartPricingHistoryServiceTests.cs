@@ -49,7 +49,7 @@ public class SmartPricingHistoryServiceTests
         var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
 
         // Assert
-        var expectedMultiplier = 1 + (occupancyRate * 0.25m); // no holiday/location impact
+        var expectedMultiplier = Math.Clamp(1m + ((occupancyRate - 0.55m) * 0.8m), 0.85m, 1.35m); // no holiday/location impact
         var expectedPrice = basePrice * expectedMultiplier;
 
         Assert.Equal(expectedMultiplier, pricing.Multiplier);
@@ -93,7 +93,7 @@ public class SmartPricingHistoryServiceTests
         var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
 
         // Assert
-        var occupancyComponent = 1 + (occupancyRate * 0.25m);
+        var occupancyComponent = Math.Clamp(1m + ((occupancyRate - 0.55m) * 0.8m), 0.85m, 1.35m);
         var expectedMultiplier = occupancyComponent * 1.25m; // national holiday multiplier
         var expectedPrice = basePrice * expectedMultiplier;
 
@@ -139,7 +139,7 @@ public class SmartPricingHistoryServiceTests
         var pricing = await service.SuggestPriceAsync(apartmentId, date, occupancyRate);
 
         // Assert
-        var occupancyComponent = 1 + (occupancyRate * 0.25m);
+        var occupancyComponent = Math.Clamp(1m + ((occupancyRate - 0.55m) * 0.8m), 0.85m, 1.35m);
         var expectedMultiplier = occupancyComponent * 1.15m; // high-density location multiplier
         var expectedPrice = basePrice * expectedMultiplier;
 

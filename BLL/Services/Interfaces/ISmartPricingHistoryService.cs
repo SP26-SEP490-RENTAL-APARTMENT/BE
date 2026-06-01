@@ -6,8 +6,8 @@ public interface ISmartPricingHistoryService : IBaseService<SmartPricingHistory>
 {
     /// <summary>
     /// Generates a smart price suggestion for an apartment on a specific date based on occupancy rate.
-    /// Algorithm: SuggestedPrice = BasePrice × (1 + (OccupancyRate × PriceAdjustmentFactor))
-    /// Example: BasePrice=100, OccupancyRate=0.8, Factor=0.25 → SuggestedPrice = 100 × (1 + 0.2) = 120
+    /// Algorithm: SuggestedPrice = BasePrice × OccupancyMultiplier × HolidayMultiplier × LocationMultiplier
+    /// OccupancyMultiplier uses a clamped baseline formula with a 55% baseline and 0.8 sensitivity.
     /// </summary>
     /// <param name="apartmentId">The apartment to price</param>
     /// <param name="date">The date for pricing</param>

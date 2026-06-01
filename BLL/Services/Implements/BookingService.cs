@@ -51,6 +51,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private readonly IBookingOfferRepository _bookingOfferRepository;
     private readonly IApartmentRepository _apartmentRepository;
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
+    private readonly INearbyOccupancyService? _nearbyOccupancyService;
     private readonly IRepository<Package> _packageRepository;
     private readonly IRepository<DAL.Models.Notification> _notificationRepository;
     private readonly IRepository<BookingCheckTime> _bookingCheckTimeRepository;
@@ -100,7 +101,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         IRepository<BookingOccupant>? bookingOccupantRepository = null,
         ICheckTimeRequestRepository? checkTimeRequestRepository = null,
         IRepository<BookingCheckTimeStateEvent>? checkTimeStateEventRepository = null,
-        ILogger<BookingService>? logger = null) : base(repository)
+        ILogger<BookingService>? logger = null,
+        INearbyOccupancyService? nearbyOccupancyService = null) : base(repository)
     {
         _bookingRepository = repository;
         _bookingOfferRepository = bookingOfferRepository;
@@ -129,6 +131,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         _checkTimeRequestRepository = checkTimeRequestRepository;
         _checkTimeStateEventRepository = checkTimeStateEventRepository;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<BookingService>.Instance;
+        _nearbyOccupancyService = nearbyOccupancyService;
     }
 
     public async Task<BookingResponseDto> MapBookingResponseAsync(Booking booking)
@@ -748,15 +751,17 @@ public class BookingService : BaseService<Booking>, IBookingService
             }
         }
 
-        var priceCalendar = BuildPriceCalendarBreakdown(
+        var priceCalendar = await BuildPriceCalendarBreakdownAsync(
             checkInDate,
             checkOutDate,
+            dto.ApartmentId,
             apartment.BasePricePerNight,
             priceCalendars);
 
-        var baseAmount = CalculateBaseAmountForRange(
+        var baseAmount = await CalculateBaseAmountForRangeAsync(
             checkInDate,
             checkOutDate,
+            dto.ApartmentId,
             apartment.BasePricePerNight,
             priceCalendars);
 
@@ -3227,7 +3232,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             _paymentRepository.Update(payment);
             await _paymentRepository.SaveChangesAsync();
 
-            checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
+            checkTime.ClaimLockedAt ??= claimExpiresAt!.Value;
             checkTime.ClaimStatus = "payment_pending";
             checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
             checkTime.FeeSettlementNotes = $"[PAYMENT_INITIATED] Checkout: {payosResponse.CheckoutUrl}";
@@ -3268,7 +3273,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             await _paymentRepository.SaveChangesAsync();
 
             // Mark checkTime as awaiting payment verification
-            checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
+            checkTime.ClaimLockedAt ??= claimExpiresAt!.Value;
             checkTime.ClaimStatus = "payment_pending";
             checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
             checkTime.FeeSettlementNotes = $"[PAYMENT_INITIATED] Checkout: {checkout.Url}";
@@ -3284,7 +3289,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             return response;
         }
         // For other methods (e.g., momo), we can implement later; return initiated response
-        checkTime.ClaimLockedAt ??= claimExpiresAt.Value;
+        checkTime.ClaimLockedAt ??= claimExpiresAt!.Value;
         checkTime.ClaimStatus = "payment_pending";
         checkTime.FeeSettlementStatus = "payment_submitted_pending_verification";
         checkTime.FeeSettlementNotes = $"[PAYMENT_INITIATED] Method: {payment.Method}";
@@ -4496,9 +4501,10 @@ public class BookingService : BaseService<Booking>, IBookingService
         return defaultPrice;
     }
 
-    private decimal CalculateBaseAmountForRange(
+    private async Task<decimal> CalculateBaseAmountForRangeAsync(
         DateOnly checkInDate,
         DateOnly checkOutDate,
+        Guid apartmentId,
         decimal defaultPrice,
         List<DAL.Models.ApartmentPriceCalendar> calendars)
     {
@@ -4507,16 +4513,17 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         while (cursor < checkOutDate)
         {
-            total += ResolveNightlyPrice(cursor, defaultPrice, calendars);
+            total += await ResolveNightlyPriceAsync(cursor, apartmentId, defaultPrice, calendars);
             cursor = cursor.AddDays(1);
         }
 
         return total;
     }
 
-    private List<DailyPriceResolutionDto> BuildPriceCalendarBreakdown(
+    private async Task<List<DailyPriceResolutionDto>> BuildPriceCalendarBreakdownAsync(
         DateOnly checkInDate,
         DateOnly checkOutDate,
+        Guid apartmentId,
         decimal defaultPrice,
         List<DAL.Models.ApartmentPriceCalendar> calendars)
     {
@@ -4525,14 +4532,15 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         while (cursor < checkOutDate)
         {
-            var (nightlyRate, source) = ResolveNightlyPriceDetails(cursor, defaultPrice, calendars);
+            var (nightlyRate, source, occupancyRate, occupancyMultiplier) =
+                await ResolveNightlyPriceDetailsAsync(cursor, apartmentId, defaultPrice, calendars);
             priceCalendar.Add(new DailyPriceResolutionDto
             {
                 Date = cursor,
                 FinalPricePerNight = Math.Round(nightlyRate, 2, MidpointRounding.AwayFromZero),
                 TotalNightlyCost = Math.Round(nightlyRate, 2, MidpointRounding.AwayFromZero),
                 Source = source,
-                Notes = $"Rate calculated based on {source} rule."
+                Notes = $"Rate calculated based on {source} rule and nearby occupancy {occupancyRate:P0} (multiplier {occupancyMultiplier:F2})."
             });
 
             cursor = cursor.AddDays(1);
@@ -4541,24 +4549,28 @@ public class BookingService : BaseService<Booking>, IBookingService
         return priceCalendar;
     }
 
-    private decimal ResolveNightlyPrice(
+    private async Task<decimal> ResolveNightlyPriceAsync(
         DateOnly date,
+        Guid apartmentId,
         decimal defaultPrice,
         List<DAL.Models.ApartmentPriceCalendar> calendars)
     {
-        return ResolveNightlyPriceDetails(date, defaultPrice, calendars).Price;
+        return (await ResolveNightlyPriceDetailsAsync(date, apartmentId, defaultPrice, calendars)).Price;
     }
 
-    private (decimal Price, string Source) ResolveNightlyPriceDetails(
+    private async Task<(decimal Price, string Source, decimal OccupancyRate, decimal OccupancyMultiplier)> ResolveNightlyPriceDetailsAsync(
         DateOnly date,
+        Guid apartmentId,
         decimal defaultPrice,
         List<DAL.Models.ApartmentPriceCalendar> calendars)
     {
         var matching = calendars.Where(c => c.StartDate <= date && c.EndDate >= date).ToList();
+        var basePrice = defaultPrice;
+        var source = "BaseRate";
 
         if (!matching.Any())
         {
-            return (defaultPrice, "BaseRate");
+            basePrice = defaultPrice;
         }
 
         var manualOverride = matching
@@ -4570,11 +4582,10 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (manualOverride != null)
         {
-            return (
-                manualOverride.FixedPricePerNight!.Value,
-                string.IsNullOrWhiteSpace(manualOverride.PriceType)
-                    ? "ManualOverride"
-                    : manualOverride.PriceType.Replace('_', ' '));
+            basePrice = manualOverride.FixedPricePerNight!.Value;
+            source = string.IsNullOrWhiteSpace(manualOverride.PriceType)
+                ? "ManualOverride"
+                : manualOverride.PriceType.Replace('_', ' ');
         }
 
         var discountCalendar = matching
@@ -4584,11 +4595,10 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (discountCalendar != null)
         {
-            return (
-                defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m),
-                string.IsNullOrWhiteSpace(discountCalendar.PriceType)
-                    ? "CalendarDiscount"
-                    : discountCalendar.PriceType.Replace('_', ' '));
+            basePrice = defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m);
+            source = string.IsNullOrWhiteSpace(discountCalendar.PriceType)
+                ? "CalendarDiscount"
+                : discountCalendar.PriceType.Replace('_', ' ');
         }
 
         var fallbackCalendar = matching
@@ -4597,14 +4607,19 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         if (fallbackCalendar?.FixedPricePerNight.HasValue == true)
         {
-            return (
-                fallbackCalendar.FixedPricePerNight.Value,
-                string.IsNullOrWhiteSpace(fallbackCalendar.PriceType)
-                    ? "CalendarPeriod"
-                    : fallbackCalendar.PriceType.Replace('_', ' '));
+            basePrice = fallbackCalendar.FixedPricePerNight.Value;
+            source = string.IsNullOrWhiteSpace(fallbackCalendar.PriceType)
+                ? "CalendarPeriod"
+                : fallbackCalendar.PriceType.Replace('_', ' ');
         }
 
-        return (defaultPrice, "BaseRate");
+        var occupancyRate = _nearbyOccupancyService == null
+            ? 0.55m
+            : await _nearbyOccupancyService.GetOccupancyRateAsync(apartmentId, date, date);
+        var occupancyMultiplier = OccupancyPricingFormula.CalculateMultiplier(occupancyRate);
+        var finalPrice = Math.Round(basePrice * occupancyMultiplier, 2, MidpointRounding.AwayFromZero);
+
+        return (finalPrice, source, occupancyRate, occupancyMultiplier);
     }
 
     public async Task<SetApartmentAvailabilityResponseDto> SetApartmentAvailabilityAsync(

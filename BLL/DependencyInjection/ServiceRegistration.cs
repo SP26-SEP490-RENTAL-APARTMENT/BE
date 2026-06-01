@@ -20,6 +20,8 @@ namespace BLL.DependencyInjection
             services.AddScoped<IApartmentMediumService, ApartmentMediumService>();
             services.AddScoped<IAuthService, AuthService>();    
             services.AddScoped<IApartmentPriceCalendarService, ApartmentPriceCalendarService>();
+            services.AddScoped<INearbyOccupancyService, NearbyOccupancyService>();
+            services.AddScoped<IOccupancyAggregationService, NearbyOccupancyService>();
             services.AddScoped<IBookingService, BookingService>();
             services.AddScoped<IHolidaysEventService, HolidaysEventService>();
             services.AddScoped<IHolidayService, HolidayService>();

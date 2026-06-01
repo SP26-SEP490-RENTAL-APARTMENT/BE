@@ -14,9 +14,9 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IHolidaysEventRepository _holidaysEventRepository;
     private readonly INearbyAttractionRepository _nearbyAttractionRepository;
+    private readonly INearbyOccupancyService? _nearbyOccupancyService;
 
     private const decimal DefaultOccupancyRate = 0.7m;
-    private const decimal PriceAdjustmentFactor = 0.25m; // 25% increase per occupancy percentage
     private const int ReasonMaxLength = 255;
     private static readonly string[] AllowedColumns =
     [
@@ -40,7 +40,8 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         IApartmentRepository apartmentRepository,
         IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
         IHolidaysEventRepository holidaysEventRepository,
-        INearbyAttractionRepository nearbyAttractionRepository)
+        INearbyAttractionRepository nearbyAttractionRepository,
+        INearbyOccupancyService? nearbyOccupancyService = null)
         : base(repository)
     {
         _repository = repository;
@@ -48,6 +49,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _holidaysEventRepository = holidaysEventRepository;
         _nearbyAttractionRepository = nearbyAttractionRepository;
+        _nearbyOccupancyService = nearbyOccupancyService;
     }
 
     public async Task<SmartPricingHistory> SuggestPriceAsync(Guid apartmentId, DateOnly date, decimal? occupancyRate = null)
@@ -64,35 +66,37 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         if (apartment == null)
             throw new ArgumentException("Apartment not found.");
 
-        // Use provided occupancy rate or default
-        var rate = occupancyRate ?? DefaultOccupancyRate;
-
-        // Validate occupancy rate is between 0 and 1
-        if (rate < 0 || rate > 1)
+        if (occupancyRate.HasValue && (occupancyRate.Value < 0 || occupancyRate.Value > 1))
             throw new ArgumentException("Occupancy rate must be between 0 and 1.");
-
-        // Base occupancy component: BasePrice × (1 + (OccupancyRate × PriceAdjustmentFactor))
-        var occupancyComponent = 1 + (rate * PriceAdjustmentFactor);
 
         // Holiday and location multipliers
         var locationMultiplier = await GetLocationMultiplierAsync(apartment);
         decimal holidayMultiplierTotal = 0m;
         decimal finalMultiplierTotal = 0m;
         decimal suggestedPriceTotal = 0m;
+        decimal occupancyRateTotal = 0m;
         var dayCount = 0;
 
         for (var currentDate = startDate; currentDate <= endDate; currentDate = currentDate.AddDays(1))
         {
+            var dailyOccupancyRate = occupancyRate
+                ?? await ResolveNearbyOccupancyRateAsync(apartmentId, currentDate);
+
+            var occupancyComponent = OccupancyPricingFormula.CalculateMultiplier(dailyOccupancyRate);
             var holidayMultiplier = await GetHolidayMultiplierAsync(apartment, currentDate);
             var finalMultiplier = occupancyComponent * holidayMultiplier * locationMultiplier;
             var suggestedPrice = apartment.BasePricePerNight * finalMultiplier;
 
+            occupancyRateTotal += dailyOccupancyRate;
             holidayMultiplierTotal += holidayMultiplier;
             finalMultiplierTotal += finalMultiplier;
             suggestedPriceTotal += suggestedPrice;
             dayCount++;
         }
 
+        var averageOccupancyRate = occupancyRate.HasValue
+            ? occupancyRate.Value
+            : occupancyRateTotal / dayCount;
         var averageHolidayMultiplier = holidayMultiplierTotal / dayCount;
         var averageFinalMultiplier = finalMultiplierTotal / dayCount;
         var averageSuggestedPrice = suggestedPriceTotal / dayCount;
@@ -107,7 +111,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
             // Update existing suggestion
             pricing = existing.First();
             pricing.BasePrice = apartment.BasePricePerNight;
-            pricing.OccupancyRate = rate;
+            pricing.OccupancyRate = averageOccupancyRate;
             pricing.Date = startDate;
             pricing.StartDate = startDate;
             pricing.EndDate = endDate;
@@ -117,8 +121,8 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
                 isUpdated: true,
                 startDate: startDate,
                 endDate: endDate,
-                occupancyRate: rate,
-                occupancyComponent: occupancyComponent,
+                occupancyRate: averageOccupancyRate,
+                occupancyComponent: OccupancyPricingFormula.CalculateMultiplier(averageOccupancyRate),
                 holidayMultiplier: averageHolidayMultiplier,
                 locationMultiplier: locationMultiplier,
                 finalMultiplier: averageFinalMultiplier,
@@ -140,15 +144,15 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
                 StartDate = startDate,
                 EndDate = endDate,
                 BasePrice = apartment.BasePricePerNight,
-                OccupancyRate = rate,
+                OccupancyRate = averageOccupancyRate,
                 Multiplier = averageFinalMultiplier,
                 SuggestedPrice = averageSuggestedPrice,
                 Reason = BuildPricingReasonForSpan(
                     isUpdated: false,
                     startDate: startDate,
                     endDate: endDate,
-                    occupancyRate: rate,
-                    occupancyComponent: occupancyComponent,
+                    occupancyRate: averageOccupancyRate,
+                    occupancyComponent: OccupancyPricingFormula.CalculateMultiplier(averageOccupancyRate),
                     holidayMultiplier: averageHolidayMultiplier,
                     locationMultiplier: locationMultiplier,
                     finalMultiplier: averageFinalMultiplier,
@@ -165,6 +169,16 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         pricing.Apartment = apartmentDetails ?? apartment;
 
         return pricing;
+    }
+
+    private async Task<decimal> ResolveNearbyOccupancyRateAsync(Guid apartmentId, DateOnly date)
+    {
+        if (_nearbyOccupancyService != null)
+        {
+            return await _nearbyOccupancyService.GetOccupancyRateAsync(apartmentId, date, date);
+        }
+
+        return DefaultOccupancyRate;
     }
 
     public async Task<SmartPricingHistory> AcceptPriceSuggestionAsync(Guid pricingId, decimal? overridePrice = null)
@@ -476,7 +490,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         var holidayReason = DescribeHolidayReason(holidayMultiplier);
         var locationReason = DescribeLocationReason(locationMultiplier);
 
-        var occupancyFormula = $"occFactor=1+({occupancyRate:F2}x{PriceAdjustmentFactor:F2})={occupancyComponent:F4}";
+        var occupancyFormula = OccupancyPricingFormula.DescribeMultiplier(occupancyRate, occupancyComponent);
         var multiplierFormula = $"finalMultiplier={occupancyComponent:F4}x{holidayMultiplier:F2}x{locationMultiplier:F2}={finalMultiplier:F4}";
         var priceFormula = $"price={basePrice:F2}x{finalMultiplier:F4}={suggestedPrice:F2}";
 
@@ -505,7 +519,7 @@ public sealed class SmartPricingHistoryService : BaseService<SmartPricingHistory
         var holidayReason = DescribeHolidayReason(holidayMultiplier);
         var locationReason = DescribeLocationReason(locationMultiplier);
 
-        var occupancyFormula = $"occFactor=1+({occupancyRate:F2}x{PriceAdjustmentFactor:F2})={occupancyComponent:F4}";
+        var occupancyFormula = OccupancyPricingFormula.DescribeMultiplier(occupancyRate, occupancyComponent);
         var multiplierFormula = $"finalMultiplier={occupancyComponent:F4}x{holidayMultiplier:F2}x{locationMultiplier:F2}={finalMultiplier:F4}";
         var priceFormula = $"price={basePrice:F2}x{finalMultiplier:F4}={suggestedPrice:F2}";
 
