@@ -1,9 +1,14 @@
 using AutoMapper;
 using BLL.Services.Interfaces;
 using Common.DTOs;
+using Common.Settings;
 using DAL.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using PayOS;
+using PayOS.Models.V2.PaymentRequests;
 using Short_termApartmentAPI.Middlewares;
 using System.Security.Claims;
 
@@ -21,6 +26,8 @@ public sealed class LandlordController : ControllerBase
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly ILandlordPayoutService _landlordPayoutService;
     private readonly IMapper _mapper;
+    private readonly PayOSClient _payOsClient;
+    private readonly StripeSettings _stripeSettings;
 
     public LandlordController(
         ILandlordService landlordService,
@@ -29,7 +36,9 @@ public sealed class LandlordController : ControllerBase
         IBookingService bookingService,
         ILandlordWalletService landlordWalletService,
         ILandlordPayoutService landlordPayoutService,
-        IMapper mapper)
+        IMapper mapper,
+        [FromKeyedServices("OrderClient")] PayOSClient payOsClient,
+        IOptions<StripeSettings> stripeSettings)
     {
         _landlordService = landlordService;
         _landlordSubscriptionService = landlordSubscriptionService;
@@ -38,6 +47,8 @@ public sealed class LandlordController : ControllerBase
         _landlordWalletService = landlordWalletService;
         _landlordPayoutService = landlordPayoutService;
         _mapper = mapper;
+        _payOsClient = payOsClient;
+        _stripeSettings = stripeSettings.Value;
     }
     [HttpGet("ping")]
     public IActionResult Ping() => Ok(new { message = "landlord ok" });
@@ -308,12 +319,51 @@ public sealed class LandlordController : ControllerBase
 
         try
         {
-            var payosResult = await _landlordSubscriptionService.CreatePayOsSubscriptionCheckoutAsync(
+            var (plan, _, amount) = await _landlordSubscriptionService.ResolvePlanAndAmountAsync(dto);
+
+            var isAndroid = string.Equals(dto.DevicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase);
+            var payosRequest = new CreatePaymentLinkRequest
+            {
+                OrderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Amount = (long)Math.Round(amount),
+                Description = "Subscription payment",
+                ReturnUrl = string.IsNullOrWhiteSpace(dto.ReturnUrl)
+                    ? isAndroid ? "VStay://payos-payment" : _stripeSettings.SuccessUrl
+                    : dto.ReturnUrl,
+                CancelUrl = string.IsNullOrWhiteSpace(dto.CancelUrl)
+                    ? isAndroid ? "VStay://payos-payment" : _stripeSettings.CancelUrl
+                    : dto.CancelUrl,
+                Items = [new PaymentLinkItem { Name = plan.Name, Quantity = 1, Price = (long)Math.Round(amount), Unit = "subscription" }]
+            };
+
+            CreatePaymentLinkResponse payosResponse;
+            try
+            {
+                payosResponse = await _payOsClient.PaymentRequests.CreateAsync(payosRequest);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status502BadGateway,
+                    new ApiResponse<string>($"PayOS payment link creation failed: {ex.Message}"));
+            }
+
+            var result = await _landlordSubscriptionService.CreatePayOsSubscriptionCheckoutAsync(
                 landlord.LandlordId,
                 dto,
+                payosRequest,
+                payosResponse,
                 cancellationToken);
 
-            return Ok(new ApiResponse<Common.DTOs.PayOsCreatePaymentResponse>(payosResult));
+            return Ok(new ApiResponse<BookingPaymentLinkDto>(new BookingPaymentLinkDto
+            {
+                Provider = "payos",
+                Url = result.Url,
+                Deeplink = null,
+                QrCodeUrl = result.QrCodeUrl,
+                TransactionId = result.OrderId,
+                Status = Common.Enums.PaymentStatus.pending.ToString(),
+                PaymentId = result.PaymentId
+            }));
         }
         catch (ArgumentException ex)
         {

@@ -1593,7 +1593,10 @@ internal sealed class LandlordSubscriptionServiceStub : BaseServiceStub<Landlord
     public Task<MomoCreatePaymentResponse> CreateMomoSubscriptionCheckoutAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
         => Task.FromResult(new MomoCreatePaymentResponse());
 
-    public Task<Common.DTOs.PayOsCreatePaymentResponse> CreatePayOsSubscriptionCheckoutAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, CancellationToken cancellationToken = default)
+    public Task<(DAL.Models.SubscriptionPlan plan, string renewalType, decimal amount)> ResolvePlanAndAmountAsync(StartLandlordSubscriptionRequestDto dto)
+        => Task.FromResult((new DAL.Models.SubscriptionPlan(), "monthly", 0m));
+
+    public Task<Common.DTOs.PayOsCreatePaymentResponse> CreatePayOsSubscriptionCheckoutAsync(Guid landlordId, StartLandlordSubscriptionRequestDto dto, PayOS.Models.V2.PaymentRequests.CreatePaymentLinkRequest payosRequest, PayOS.Models.V2.PaymentRequests.CreatePaymentLinkResponse payosResult, CancellationToken cancellationToken = default)
         => Task.FromResult(new Common.DTOs.PayOsCreatePaymentResponse());
 
     // PayOS checkout for subscriptions (stubbed)

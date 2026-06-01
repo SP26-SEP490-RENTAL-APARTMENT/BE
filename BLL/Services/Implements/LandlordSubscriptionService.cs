@@ -1,12 +1,10 @@
 using BLL.Services.Interfaces;
 using Common.DTOs;
 using Common.Enums;
-using Common.Settings;
 using DAL.Models;
 using DAL.Repository.Interfaces;
 using Microsoft.Extensions.Options;
 using MoMoApi;
-using PayOS;
 using PayOS.Models.V2.PaymentRequests;
 
 namespace BLL.Services.Implements;
@@ -17,12 +15,10 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
     private readonly IRepository<Landlord> _landlordRepository;
     private readonly ISubscriptionPlanService _subscriptionPlanService;
     private readonly IMomoService _momoService;
-    private readonly PayOSClient _payOsClient;
     private readonly IPaymentService _paymentService;
     private readonly IMomoTransactionService _momoTransactionService;
     private readonly ILandlordWalletService _landlordWalletService;
     private readonly MomoOptions _momoOptions;
-    private readonly StripeSettings _stripeSettings;
 
     public LandlordSubscriptionService(
         ILandlordSubscriptionRepository repository,
@@ -32,9 +28,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         IPaymentService paymentService,
         IMomoTransactionService momoTransactionService,
         ILandlordWalletService landlordWalletService,
-        PayOSClient payOsClient,
-        IOptions<MomoOptions> momoOptions,
-        IOptions<StripeSettings> stripeSettings)
+        IOptions<MomoOptions> momoOptions)
         : base(repository)
     {
         _repository = repository;
@@ -44,9 +38,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         _paymentService = paymentService;
         _momoTransactionService = momoTransactionService;
         _landlordWalletService = landlordWalletService;
-        _payOsClient = payOsClient;
         _momoOptions = momoOptions.Value;
-        _stripeSettings = stripeSettings.Value;
     }
 
     public async Task<(IEnumerable<LandlordSubscription> Items, int TotalCount)> GetHistoryForLandlordAsync(
@@ -186,6 +178,8 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
     public async Task<Common.DTOs.PayOsCreatePaymentResponse> CreatePayOsSubscriptionCheckoutAsync(
         Guid landlordId,
         StartLandlordSubscriptionRequestDto dto,
+        CreatePaymentLinkRequest payosRequest,
+        CreatePaymentLinkResponse payosResult,
         CancellationToken cancellationToken = default)
     {
         var landlord = await _landlordRepository.GetByIdAsync(landlordId);
@@ -257,50 +251,11 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             RelatedEntityId = landlordSubscription.SubscriptionId,
             RelatedEntityType = PaymentRelatedEntityType.host_subscription.ToString(),
             Method = "payos",
-            Status = PaymentStatus.pending.ToString()
+            Status = PaymentStatus.pending.ToString(),
+            TransactionId = payosResult.PaymentLinkId
         };
-
-        var payosRequest = new CreatePaymentLinkRequest
-        {
-            OrderCode = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            Amount = (long)amount,
-            Description = "Subscription payment",
-            ReturnUrl = string.IsNullOrWhiteSpace(dto.ReturnUrl)
-                ? string.Equals(dto.DevicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase)
-                    ? "VStay://payos-payment"
-                    : _stripeSettings.SuccessUrl
-                : dto.ReturnUrl,
-            CancelUrl = string.IsNullOrWhiteSpace(dto.CancelUrl)
-                ? string.Equals(dto.DevicePlatform?.Trim(), "android", StringComparison.OrdinalIgnoreCase)
-                    ? "VStay://payos-payment"
-                    : _stripeSettings.CancelUrl
-                : dto.CancelUrl,
-            Items = new List<PaymentLinkItem>
-            {
-                new PaymentLinkItem
-                {
-                    Name = plan.Name,
-                    Quantity = 1,
-                    Price = (long)amount,
-                    Unit = "subscription"
-                }
-            }
-        };
-
-        CreatePaymentLinkResponse payosResult;
-        try
-        {
-            payosResult = await _payOsClient.PaymentRequests.CreateAsync(payosRequest);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"PayOS payment creation failed: {ex.Message}");
-        }
 
         await _paymentService.CreateAsync(payment);
-
-        payment.TransactionId = payosResult.PaymentLinkId;
-        await _paymentService.UpdateAsync(payment);
 
         await _momoTransactionService.CreateAsync(new MomoTransaction
         {
@@ -332,7 +287,8 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             RequestId = payosResult.PaymentLinkId ?? string.Empty,
             Amount = (long)amount,
             RequestRaw = System.Text.Json.JsonSerializer.Serialize(payosRequest),
-            ResponseRaw = System.Text.Json.JsonSerializer.Serialize(payosResult)
+            ResponseRaw = System.Text.Json.JsonSerializer.Serialize(payosResult),
+            PaymentId = payment.PaymentId
         };
     }
 
@@ -418,7 +374,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
         }
     }
 
-    private async Task<(SubscriptionPlan plan, string renewalType, decimal amount)> ResolvePlanAndAmountAsync(StartLandlordSubscriptionRequestDto dto)
+    public async Task<(SubscriptionPlan plan, string renewalType, decimal amount)> ResolvePlanAndAmountAsync(StartLandlordSubscriptionRequestDto dto)
     {
         var plan = await _subscriptionPlanService.GetByIdAsync(dto.PlanId);
         if (plan == null || plan.IsActive == false)

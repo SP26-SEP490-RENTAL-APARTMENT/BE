@@ -47,5 +47,6 @@ namespace Common.DTOs
         public string RequestId { get; set; } = string.Empty;
         public long Amount { get; set; }
         public string? RequestRaw { get; set; }
+        public Guid? PaymentId { get; set; }
     }
 }
