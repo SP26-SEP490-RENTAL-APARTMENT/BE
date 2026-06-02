@@ -85,6 +85,8 @@ namespace Common.DTOs
         public bool? ApprovedForListing { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public Guid? ApprovedBy { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
         public List<InspectionPhotoResponseDto> Photos { get; set; } = new();
     }
 

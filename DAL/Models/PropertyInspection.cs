@@ -29,6 +29,10 @@ public partial class PropertyInspection
 
     public Guid? ApprovedBy { get; set; }
 
+    public DateTime? CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
+
     public virtual Apartment Apartment { get; set; } = null!;
 
     public virtual User? ApprovedByNavigation { get; set; }

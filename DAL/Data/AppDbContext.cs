@@ -1473,6 +1473,12 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("'pending'")
                 .HasColumnType("enum('pending','scheduled','in_progress','passed','failed','re_inspection_needed')")
                 .HasColumnName("status");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp")
+                .HasColumnName("updated_at");
 
             entity.HasOne(d => d.Apartment).WithMany(p => p.PropertyInspections)
                 .HasForeignKey(d => d.ApartmentId)

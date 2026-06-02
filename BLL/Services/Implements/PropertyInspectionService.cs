@@ -26,7 +26,9 @@ public sealed class PropertyInspectionService(
         "ApprovedForListing",
         "ApprovedAt",
         "ApprovedBy",
-        "ApartmentName"
+        "ApartmentName",
+        "CreatedAt",
+        "UpdatedAt"
     };
 
     public override async Task<(IEnumerable<PropertyInspection> Items, int TotalCount)> GetAllAsync(
@@ -120,6 +122,7 @@ public sealed class PropertyInspectionService(
         }
 
         inspection.Status = "in_progress";
+        inspection.UpdatedAt = Common.Utils.VietnamTime.Now;
         _repository.Update(inspection);
         await _repository.SaveChangesAsync();
         return inspection;
@@ -145,6 +148,7 @@ public sealed class PropertyInspectionService(
         inspection.Recommendations = dto.Recommendations;
         inspection.CompletedDate = DateOnly.FromDateTime(Common.Utils.VietnamTime.Now);
         inspection.Status = "pending";
+        inspection.UpdatedAt = Common.Utils.VietnamTime.Now;
 
         _repository.Update(inspection);
 
@@ -200,6 +204,7 @@ public sealed class PropertyInspectionService(
         inspection.Recommendations = string.IsNullOrWhiteSpace(inspection.Recommendations)
             ? $"Cancellation reason: {reason}"
             : $"{inspection.Recommendations}\nCancellation reason: {reason}";
+        inspection.UpdatedAt = Common.Utils.VietnamTime.Now;
 
         _repository.Update(inspection);
         await _repository.SaveChangesAsync();
@@ -222,6 +227,7 @@ public sealed class PropertyInspectionService(
         inspection.ApprovedAt = Common.Utils.VietnamTime.Now;
         inspection.ApprovedForListing = isApprove;
         inspection.Status = isApprove ? "passed" : "re_inspection_needed";
+        inspection.UpdatedAt = Common.Utils.VietnamTime.Now;
 
         if (!isApprove && !string.IsNullOrWhiteSpace(reason))
         {

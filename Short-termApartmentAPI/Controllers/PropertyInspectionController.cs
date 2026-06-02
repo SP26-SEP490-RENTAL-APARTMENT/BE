@@ -149,6 +149,7 @@ namespace Short_termApartmentAPI.Controllers
 
             var propertyInspection = _mapper.Map<PropertyInspection>(propertyInspectionDto);
             propertyInspection.Status = "scheduled";
+            propertyInspection.CreatedAt = Common.Utils.VietnamTime.Now;
             var created = await _propertyInspectionService.CreateAsync(propertyInspection);
             return CreatedAtAction(nameof(GetById), new { id = created.InspectionId }, _mapper.Map<PropertyInspectionResponseDto>(created));
         }
@@ -288,6 +289,7 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             _mapper.Map(propertyInspectionDto, propertyInspection);
+            propertyInspection.UpdatedAt = Common.Utils.VietnamTime.Now;
             await _propertyInspectionService.UpdateAsync(propertyInspection);
             return NoContent();
         }
