@@ -927,6 +927,20 @@ public class ReportExecutionService : IReportExecutionService
         return previous;
     }
 
+    // Metrics that are rates/averages — must be weighted-averaged over review_count, not summed.
+    private static readonly HashSet<string> WeightedAverageMetricKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "review_avg_rating", "average_rating",
+        "response_rate",
+        "five_star_review_percent", "five_star_reviews_percent",
+        "one_star_review_percent",  "one_star_reviews_percent",
+    };
+
+    private static readonly HashSet<string> ReviewCountKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "review_count", "total_reviews",
+    };
+
     private static Dictionary<string, decimal> CalculateTotalMetrics(IEnumerable<ReportResultRowDto> rows)
     {
         var materialized = rows as IReadOnlyCollection<ReportResultRowDto> ?? rows.ToList();
@@ -937,10 +951,32 @@ public class ReportExecutionService : IReportExecutionService
             return totalMetrics;
         }
 
+        // Precompute per-row review count weight (used for weighted average metrics).
+        // Look for any key in ReviewCountKeys; fall back to 1 so pure-average reports still work.
+        var weights = materialized.Select(r =>
+        {
+            foreach (var ck in ReviewCountKeys)
+                if (r.Metrics.TryGetValue(ck, out var w) && w > 0) return w;
+            return 1m;
+        }).ToList();
+
+        decimal totalWeight = weights.Sum();
+
         var firstRow = materialized.First();
         foreach (var metricKey in firstRow.Metrics.Keys)
         {
-            totalMetrics[metricKey] = materialized.Sum(r => r.Metrics.TryGetValue(metricKey, out var v) ? v : 0m);
+            if (WeightedAverageMetricKeys.Contains(metricKey) && totalWeight > 0)
+            {
+                // Weighted mean: sum(value_i * weight_i) / sum(weight_i)
+                decimal weightedSum = materialized
+                    .Zip(weights, (r, w) => (r.Metrics.TryGetValue(metricKey, out var v) ? v : 0m) * w)
+                    .Sum();
+                totalMetrics[metricKey] = Math.Round(weightedSum / totalWeight, 2);
+            }
+            else
+            {
+                totalMetrics[metricKey] = materialized.Sum(r => r.Metrics.TryGetValue(metricKey, out var v) ? v : 0m);
+            }
         }
 
         return totalMetrics;
