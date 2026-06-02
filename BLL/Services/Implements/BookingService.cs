@@ -37,6 +37,7 @@ public class BookingService : BaseService<Booking>, IBookingService
     private const string CancellationPolicyModerate = "moderate";
     private const string CancellationPolicyStrict = "strict";
     private const decimal CancellationProcessingFeeRate = 0.02m;
+    private const decimal NoShowFullPaymentTenantRefundRate = 0.60m;
     private const string NoShowWarningEventType = "no_show_warning_sent";
     private const string NoShowAutoConfirmedEventType = "no_show_auto_confirmed";
     private const string GuestArrivalConfirmedEventType = "guest_arrival_confirmed";
@@ -1632,6 +1633,129 @@ public class BookingService : BaseService<Booking>, IBookingService
         };
     }
 
+    // Issues a tenant refund for a fixed net amount on a booking that is already cancelled (no-show path).
+    // Handles Stripe, MoMo, and PayOS. Records refund payment rows but does NOT update booking.Status.
+    private async Task IssueNoShowTenantRefundAsync(Booking booking, Apartment apartment, decimal netRefundAmount, string? notes, DateTime now)
+    {
+        if (netRefundAmount <= 0m)
+            return;
+
+        var successPayments = (await _paymentRepository.FindAsync(payment =>
+                payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+                && payment.RelatedEntityId == booking.BookingId
+                && payment.Status == PaymentStatus.success.ToString()
+                && payment.PaymentType != PaymentTypes.refund.ToString()))
+            .ToList();
+
+        if (successPayments.Count == 0)
+            return;
+
+        var existingRefund = (await _paymentRepository.FindAsync(payment =>
+                payment.RelatedEntityType == PaymentRelatedEntityType.booking.ToString()
+                && payment.RelatedEntityId == booking.BookingId
+                && payment.PaymentType == PaymentTypes.refund.ToString()
+                && payment.Status == PaymentStatus.success.ToString()))
+            .Any();
+
+        if (existingRefund)
+            return;
+
+        var hasPayOs = successPayments.Any(p => string.Equals(p.Method, "payos", StringComparison.OrdinalIgnoreCase));
+        if (hasPayOs)
+        {
+            var payOsRefundRequest = await BuildAutomaticPayOsRefundRequestAsync(booking, new RequestBookingRefundDto
+            {
+                Reason = "no_show",
+                Notes = notes ?? "No-show: full-payment tenant refund (60%)"
+            });
+            payOsRefundRequest.Notes = notes ?? payOsRefundRequest.Notes;
+            await RefundBookingViaPayOsAsync(booking.BookingId, apartment.LandlordId, payOsRefundRequest);
+            return;
+        }
+
+        var refundAllocations = AllocateRefundAmounts(successPayments.Select(p => p.Amount).ToList(), netRefundAmount);
+
+        for (var i = 0; i < successPayments.Count; i++)
+        {
+            var payment = successPayments[i];
+            var refundAmount = refundAllocations[i];
+            if (refundAmount <= 0m)
+                continue;
+
+            if (string.Equals(payment.Method, "stripe", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(payment.TransactionId))
+                    throw new InvalidOperationException($"Stripe payment {payment.PaymentId} is missing a transaction ID.");
+
+                var refundId = await _stripeService.RefundCheckoutSessionAsync(
+                    payment.TransactionId,
+                    Convert.ToInt64(Math.Round(refundAmount, 0, MidpointRounding.AwayFromZero)));
+
+                await _paymentRepository.AddAsync(new Payment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    Amount = refundAmount,
+                    PaymentType = PaymentTypes.refund.ToString(),
+                    PaymentPurpose = PaymentPurposes.refund_booking.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    LandlordId = apartment.LandlordId,
+                    LandlordAmount = 0m,
+                    PlatformFee = 0m,
+                    SettlementStatus = "pending",
+                    Method = payment.Method,
+                    Status = PaymentStatus.success.ToString(),
+                    TransactionId = refundId,
+                    PaidAt = now
+                });
+            }
+            else if (string.Equals(payment.Method, "momo_wallet", StringComparison.OrdinalIgnoreCase))
+            {
+                var originalTransId = await ResolveMomoPaymentTransIdAsync(payment);
+                var refundResult = await _momoService.RefundPaymentAsync(new MomoRefundPaymentRequest
+                {
+                    OrderId = $"RF{booking.BookingId:N}{i + 1}",
+                    RequestId = $"RF{Guid.NewGuid():N}"[..22],
+                    Amount = Convert.ToInt64(Math.Round(refundAmount, 0, MidpointRounding.AwayFromZero)),
+                    TransId = originalTransId,
+                    Lang = "vi",
+                    Description = notes ?? $"No-show refund for booking {booking.BookingId}"
+                });
+
+                if (refundResult.ResultCode != 0)
+                    throw new InvalidOperationException($"MoMo refund failed: {refundResult.Message}");
+
+                await _paymentRepository.AddAsync(new Payment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    Amount = refundAmount,
+                    PaymentType = PaymentTypes.refund.ToString(),
+                    PaymentPurpose = PaymentPurposes.refund_booking.ToString(),
+                    RelatedEntityId = booking.BookingId,
+                    RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                    LandlordId = apartment.LandlordId,
+                    LandlordAmount = 0m,
+                    PlatformFee = 0m,
+                    SettlementStatus = "pending",
+                    Method = payment.Method,
+                    Status = PaymentStatus.success.ToString(),
+                    TransactionId = refundResult.TransId.ToString(),
+                    PaidAt = now
+                });
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Refunds for payment method '{payment.Method}' are not supported for no-show refunds.");
+            }
+
+            payment.Status = PaymentStatus.refunded.ToString();
+            _paymentRepository.Update(payment);
+        }
+
+        await _paymentRepository.SaveChangesAsync();
+    }
+
     private static List<decimal> AllocateRefundAmounts(IReadOnlyList<decimal> paymentAmounts, decimal totalRefundAmount)
     {
         if (paymentAmounts.Count == 0)
@@ -2392,11 +2516,14 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var bookingIsActiveForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
             || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
-        var bookingIsRecoveringFromNoShow = string.Equals(booking.Status, BookingStatus.cancelled.ToString(), StringComparison.OrdinalIgnoreCase)
-            && (checkTime.NoShowMarkedAt.HasValue || !string.IsNullOrWhiteSpace(checkTime.NoShowStatus));
+        // No-show is irreversible — check-in cannot be recorded after it is marked.
+        if (checkTime.NoShowMarkedAt.HasValue || !string.IsNullOrWhiteSpace(checkTime.NoShowStatus))
+        {
+            throw new InvalidOperationException("Cannot record check-in after the booking has been marked as no-show.");
+        }
 
-        // Validate booking status (must be confirmed/paid, or a legacy no-show recovery)
-        if (!checkTime.ActualCheckIn.HasValue && !(bookingIsActiveForCheckIn || bookingIsRecoveringFromNoShow))
+        // Validate booking status (must be confirmed/paid)
+        if (!checkTime.ActualCheckIn.HasValue && !bookingIsActiveForCheckIn)
         {
             throw new InvalidOperationException("Booking must be in confirmed or paid status to record check-in.");
         }
@@ -2404,16 +2531,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (booking.RemainingAmount > 0m)
         {
             throw new InvalidOperationException("Remaining balance must be settled before check-in can be recorded.");
-        }
-
-        if (bookingIsRecoveringFromNoShow)
-        {
-            booking.Status = GetBookingPaymentMode(booking) == BookingPaymentMode.full
-                ? BookingStatus.paid.ToString()
-                : BookingStatus.confirmed.ToString();
-            _bookingRepository.Update(booking);
-            await _bookingRepository.SaveChangesAsync();
-            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
         }
 
         // Validate time range: ±1 day from scheduled check-in date
@@ -3344,12 +3461,40 @@ public class BookingService : BaseService<Booking>, IBookingService
             checkTime.FeeSettlementNotes = $"[NO_SHOW] {dto.Reason.Trim()}";
         }
 
+        checkTime.LandlordFundsReleasedAt = null; // ensure release guard is clear before we release
         _bookingCheckTimeRepository.Update(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
         booking.Status = BookingStatus.cancelled.ToString();
         _bookingRepository.Update(booking);
         await _bookingRepository.SaveChangesAsync();
         await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+        // Release landlord funds immediately — no-show is irreversible and no checkout will ever occur.
+        // Full payment: refund 60% of TotalPrice to tenant, landlord keeps the remaining 40%.
+        // Partial payment: tenant only paid the deposit; landlord keeps it all, no refund issued.
+        var isFullPayment = GetBookingPaymentMode(booking) == BookingPaymentMode.full;
+        decimal tenantRefundAmount = 0m;
+        decimal creditAmount;
+        if (isFullPayment)
+        {
+            tenantRefundAmount = Math.Round(booking.TotalPrice * NoShowFullPaymentTenantRefundRate, 2, MidpointRounding.AwayFromZero);
+            creditAmount = Math.Round(booking.TotalPrice - tenantRefundAmount, 2, MidpointRounding.AwayFromZero);
+            await IssueNoShowTenantRefundAsync(booking, apartment, tenantRefundAmount, dto.Notes, now);
+        }
+        else
+        {
+            creditAmount = Math.Round(booking.AmountPaid * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
+        }
+
+        if (creditAmount > 0m)
+        {
+            await _landlordWalletService.ReleasePendingToAvailableAsync(apartment.LandlordId, creditAmount);
+            checkTime.LandlordPendingCreditAmount = creditAmount;
+            checkTime.LandlordFundsReleasedAt = now;
+            checkTime.UpdatedAt = now;
+            _bookingCheckTimeRepository.Update(checkTime);
+            await _bookingCheckTimeRepository.SaveChangesAsync();
+        }
 
         // Emit audit event for no-show
         await CreateCheckTimeStateEventAsync(
@@ -3364,7 +3509,9 @@ public class BookingService : BaseService<Booking>, IBookingService
                 CancellationPolicy = refundOutcome.PolicyCode,
                 RefundPercent = refundOutcome.RefundPercent,
                 ProcessingFeePercent = refundOutcome.ProcessingFeePercent,
-                RuleApplied = refundOutcome.RuleApplied
+                RuleApplied = refundOutcome.RuleApplied,
+                TenantRefundAmount = tenantRefundAmount,
+                LandlordCreditReleased = creditAmount
             },
             AuditSourceManual,
             string.IsNullOrWhiteSpace(dto.Reason)
@@ -3963,6 +4110,13 @@ public class BookingService : BaseService<Booking>, IBookingService
 
     private bool IsIrreversiblySettled(BookingCheckTime checkTime, DateTime now)
     {
+        // No-show releases funds immediately at mark time; no checkout will ever occur.
+        if (string.Equals(checkTime.ClaimStatus, "no_show_confirmed", StringComparison.OrdinalIgnoreCase)
+            && checkTime.LandlordFundsReleasedAt.HasValue)
+        {
+            return true;
+        }
+
         if (!checkTime.ActualCheckOut.HasValue)
         {
             return false;
