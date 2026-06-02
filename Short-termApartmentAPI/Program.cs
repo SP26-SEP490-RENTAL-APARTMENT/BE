@@ -34,6 +34,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 builder.Services.Configure<BookingAdmissionPolicySettings>(builder.Configuration.GetSection(BookingAdmissionPolicySettings.SectionName));
+builder.Services.AddAppSettingsPath(builder.Environment.ContentRootPath);
 builder.Services.AddHostedService<AdminAnalyticsStreamingService>();
 
 
