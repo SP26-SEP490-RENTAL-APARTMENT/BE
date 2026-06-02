@@ -548,6 +548,9 @@ namespace DAL.Migrations
                         .HasColumnType("datetime")
                         .HasColumnName("no_show_marked_at");
 
+                    b.Property<int?>("NoShowGraceHours")
+                        .HasColumnName("no_show_grace_hours");
+
                     b.Property<string>("MissingCheckOutStatus")
                         .HasMaxLength(40)
                         .HasColumnType("longtext")

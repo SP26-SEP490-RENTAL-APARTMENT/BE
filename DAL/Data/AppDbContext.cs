@@ -780,6 +780,8 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.NoShowEligibleAt)
                 .HasColumnType("datetime")
                 .HasColumnName("no_show_eligible_at");
+            entity.Property(e => e.NoShowGraceHours)
+                .HasColumnName("no_show_grace_hours");
             entity.Property(e => e.MissingCheckOutStatus)
                 .HasMaxLength(40)
                 .HasColumnName("missing_checkout_status");

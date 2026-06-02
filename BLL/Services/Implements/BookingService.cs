@@ -881,6 +881,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ScheduledCheckOut = checkOutDateTime,
             FeeSettlementStatus = FeeSettlementStatusNone,
             TempResidenceReported = false,
+            NoShowGraceHours = ResolveNoShowGraceHours(apartment),
             CreatedAt = Common.Utils.VietnamTime.Now,
             UpdatedAt = Common.Utils.VietnamTime.Now
         };
@@ -1004,6 +1005,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         }
 
         var now = Common.Utils.VietnamTime.Now;
+        var checkTimeApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         checkTime = new BookingCheckTime
         {
             CheckTimeId = Guid.NewGuid(),
@@ -1012,6 +1014,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             ScheduledCheckOut = booking.CheckOutDate.ToDateTime(new TimeOnly(12, 0)),
             TempResidenceReported = false,
             TenantResponseStatus = "pending",
+            NoShowGraceHours = ResolveNoShowGraceHours(checkTimeApartment),
             CreatedAt = now,
             UpdatedAt = now
         };
@@ -3437,8 +3440,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         await EnsureActorIsOwnerOrStaffAsync(actorId, apartment.LandlordId);
 
-        var globalNoShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
-        var resolvedNoShowGraceHours = apartment.NoShowGraceHours is > 0 ? apartment.NoShowGraceHours.Value : (globalNoShowGraceHours > 0 ? globalNoShowGraceHours : 4);
+        var resolvedNoShowGraceHours = checkTime.NoShowGraceHours ?? ResolveNoShowGraceHours(apartment);
         var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(resolvedNoShowGraceHours);
         var now = Common.Utils.VietnamTime.Now;
         if (now < noShowEligibleAt)
@@ -3756,10 +3758,7 @@ public class BookingService : BaseService<Booking>, IBookingService
                     continue;
                 }
 
-                var noShowApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
-                var apartmentNoShowGraceHours = noShowApartment?.NoShowGraceHours is > 0
-                    ? noShowApartment.NoShowGraceHours.Value
-                    : defaultNoShowGraceHours;
+                var apartmentNoShowGraceHours = checkTime.NoShowGraceHours ?? defaultNoShowGraceHours;
                 var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(apartmentNoShowGraceHours);
                 var bookingOpenForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
                     || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -3779,6 +3778,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
                     if (!alreadyNotified && _checkTimeStateEventRepository != null)
                     {
+                        var noShowApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
                         if (noShowApartment != null)
                         {
                             await CreateBookingNotificationAsync(
@@ -6255,6 +6255,14 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         return TryExtractGuid(ticket.Subject)
             ?? TryExtractGuid(ticket.Description);
+    }
+
+    private int ResolveNoShowGraceHours(Apartment? apartment)
+    {
+        if (apartment?.NoShowGraceHours is > 0)
+            return apartment.NoShowGraceHours.Value;
+        var global = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
+        return global > 0 ? global : 4;
     }
 }
 

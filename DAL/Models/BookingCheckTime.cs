@@ -63,6 +63,7 @@ public partial class BookingCheckTime
     public Guid? NoShowMarkedBy { get; set; }
     public DateTime? NoShowMarkedAt { get; set; }
     public DateTime? NoShowEligibleAt { get; set; }
+    public int? NoShowGraceHours { get; set; }
     public string? MissingCheckOutStatus { get; set; }
     public DateTime? AutoClosedAt { get; set; }
 
