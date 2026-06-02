@@ -184,6 +184,7 @@ public class BookingCheckTimeResponseDto
     public string? NoShowStatus { get; set; }
     public Guid? NoShowMarkedBy { get; set; }
     public DateTime? NoShowMarkedAt { get; set; }
+    public DateTime? NoShowEligibleAt { get; set; }
     public string? MissingCheckOutStatus { get; set; }
     public DateTime? AutoClosedAt { get; set; }
 

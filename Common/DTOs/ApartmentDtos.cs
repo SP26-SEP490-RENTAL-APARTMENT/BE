@@ -55,6 +55,9 @@ public class CreateApartmentRequestDto
     [Required]
     [MinLength(1, ErrorMessage = "At least one photo is required to submit an apartment.")]
     public List<IFormFile> photos { get; set; } = new List<IFormFile>();
+
+    [Range(1, 168, ErrorMessage = "NoShowGraceHours must be between 1 and 168.")]
+    public int? noShowGraceHours { get; set; }
 }
 
 public class UpdateApartmentRequestDto
@@ -93,6 +96,9 @@ public class UpdateApartmentRequestDto
     
     [Range(0, double.MaxValue, ErrorMessage = "BasePricePerNight must be a positive value.")]
     public decimal? BasePricePerNight { get; set; }
+
+    [Range(1, 168, ErrorMessage = "NoShowGraceHours must be between 1 and 168.")]
+    public int? NoShowGraceHours { get; set; }
 }
 
 public class CreateApartmentResponseDto
@@ -129,6 +135,8 @@ public class CreateApartmentResponseDto
 
     public string? BookingStatus { get; set; }
 
+    public int? NoShowGraceHours { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public List<string> Photos { get; set; } = new List<string>();
@@ -153,6 +161,7 @@ public class ApartmentResponseDto
     public decimal BasePricePerNight { get; set; }
     public string? Status { get; set; }
     public string? BookingStatus { get; set; }
+    public int? NoShowGraceHours { get; set; }
     public DateTime? CreatedAt { get; set; }
     public bool IsFavorite { get; set; }
     public Guid? CollectionId { get; set; }

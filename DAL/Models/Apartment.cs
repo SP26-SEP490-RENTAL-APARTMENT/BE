@@ -42,6 +42,8 @@ public partial class Apartment
 
     public string? CancellationPolicyCode { get; set; }
 
+    public int? NoShowGraceHours { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<ApartmentMedium> ApartmentMedia { get; set; } = new List<ApartmentMedium>();

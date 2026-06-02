@@ -841,6 +841,8 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (depositAmount > quote.TotalPrice)
             throw new ArgumentException("Deposit cannot exceed total booking price.");
 
+        var apartment = await _apartmentRepository.GetByIdAsync(requestDto.ApartmentId);
+
         var booking = new Booking
         {
             BookingId = Guid.NewGuid(),
@@ -862,7 +864,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             AmountPaid = 0m,
             RemainingAmount = quote.TotalPrice,
             PaymentMode = paymentMode.ToString(),
-            BalanceDueDate = checkInDate.AddDays(-1),
+            BalanceDueDate = checkInDate,
             Status = "pending",
             CreatedAt = Common.Utils.VietnamTime.Now
         };
@@ -883,8 +885,6 @@ public class BookingService : BaseService<Booking>, IBookingService
         };
         await _bookingCheckTimeRepository.AddAsync(checkTime);
         await _bookingCheckTimeRepository.SaveChangesAsync();
-
-        var apartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
         if (apartment != null)
         {
             await CreateBookingNotificationAsync(
@@ -1050,14 +1050,14 @@ public class BookingService : BaseService<Booking>, IBookingService
                     booking.Status = "paid";
                     _bookingRepository.Update(booking);
                     await _bookingRepository.SaveChangesAsync();
-                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId, booking.BookingId);
                 }
                 else if (shouldSetConfirmed)
                 {
                     booking.Status = "confirmed";
                     _bookingRepository.Update(booking);
                     await _bookingRepository.SaveChangesAsync();
-                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId, booking.BookingId);
                 }
 
                 // Recalculate paid amounts from payment ledger for consistency
@@ -1131,7 +1131,7 @@ public class BookingService : BaseService<Booking>, IBookingService
 
             _bookingRepository.Update(booking);
             await _bookingRepository.SaveChangesAsync();
-            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+            await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId, booking.BookingId);
 
             if (apartment != null)
             {
@@ -2753,6 +2753,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             NoShowStatus = checkTime.NoShowStatus,
             NoShowMarkedBy = checkTime.NoShowMarkedBy,
             NoShowMarkedAt = checkTime.NoShowMarkedAt,
+            NoShowEligibleAt = checkTime.NoShowEligibleAt,
             MissingCheckOutStatus = checkTime.MissingCheckOutStatus,
             AutoClosedAt = checkTime.AutoClosedAt,
             LastModifiedAt = checkTime.UpdatedAt ?? checkTime.RecordedAt,
@@ -3319,8 +3320,9 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         await EnsureActorIsOwnerOrStaffAsync(actorId, apartment.LandlordId);
 
-        var noShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
-        var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(noShowGraceHours <= 0 ? 4 : noShowGraceHours);
+        var globalNoShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
+        var resolvedNoShowGraceHours = apartment.NoShowGraceHours is > 0 ? apartment.NoShowGraceHours.Value : (globalNoShowGraceHours > 0 ? globalNoShowGraceHours : 4);
+        var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(resolvedNoShowGraceHours);
         var now = Common.Utils.VietnamTime.Now;
         if (now < noShowEligibleAt)
         {
@@ -3492,10 +3494,10 @@ public class BookingService : BaseService<Booking>, IBookingService
             claimWindowHours = 24;
         }
 
-        var noShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
-        if (noShowGraceHours <= 0)
+        var defaultNoShowGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:NoShowGraceHours", 4);
+        if (defaultNoShowGraceHours <= 0)
         {
-            noShowGraceHours = 4;
+            defaultNoShowGraceHours = 4;
         }
 
         var missingCheckOutGraceHours = _configuration.GetValue<int>("BookingCheckTimeSettings:MissingCheckOutGraceHours", 6);
@@ -3607,117 +3609,53 @@ public class BookingService : BaseService<Booking>, IBookingService
                     continue;
                 }
 
-                var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(noShowGraceHours);
+                var noShowApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
+                var apartmentNoShowGraceHours = noShowApartment?.NoShowGraceHours is > 0
+                    ? noShowApartment.NoShowGraceHours.Value
+                    : defaultNoShowGraceHours;
+                var noShowEligibleAt = checkTime.ScheduledCheckIn.AddHours(apartmentNoShowGraceHours);
                 var bookingOpenForCheckIn = string.Equals(booking.Status, BookingStatus.confirmed.ToString(), StringComparison.OrdinalIgnoreCase)
                     || string.Equals(booking.Status, BookingStatus.paid.ToString(), StringComparison.OrdinalIgnoreCase);
                 if (bookingOpenForCheckIn && now >= noShowEligibleAt)
                 {
-                    var noShowWarningEvents = _checkTimeStateEventRepository == null
-                        ? Array.Empty<BookingCheckTimeStateEvent>()
-                        : await _checkTimeStateEventRepository.FindAsync(e =>
+                    if (!checkTime.NoShowEligibleAt.HasValue)
+                    {
+                        checkTime.NoShowEligibleAt = noShowEligibleAt;
+                        changed = true;
+                    }
+
+                    var alreadyNotified = _checkTimeStateEventRepository != null
+                        && (await _checkTimeStateEventRepository.FindAsync(e =>
                             e.BookingId == booking.BookingId
                             && e.CheckTimeId == checkTime.CheckTimeId
-                            && e.EventType == NoShowWarningEventType);
+                            && e.EventType == NoShowWarningEventType)).Any();
 
-                    var latestNoShowWarning = noShowWarningEvents
-                        .OrderByDescending(e => e.CreatedAt)
-                        .FirstOrDefault();
-
-                    if (latestNoShowWarning == null)
+                    if (!alreadyNotified && _checkTimeStateEventRepository != null)
                     {
-                        if (_checkTimeStateEventRepository != null)
+                        if (noShowApartment != null)
                         {
-                            var warningApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
-                            if (warningApartment != null)
-                            {
-                                await CreateBookingNotificationAsync(
-                                    warningApartment.LandlordId,
-                                    NotificationType.system_announcement.ToString(),
-                                    "No-show Warning",
-                                    $"Booking {booking.BookingId} reached no-show eligibility at {noShowEligibleAt:yyyy-MM-dd HH:mm}. It will be auto-marked no-show after the next automation cycle if no check-in is recorded.",
-                                    booking.BookingId);
-                            }
-
-                            await CreateCheckTimeStateEventAsync(
-                                booking.BookingId,
-                                checkTime.CheckTimeId,
-                                null,
-                                NoShowWarningEventType,
-                                new
-                                {
-                                    NoShowEligibleAt = noShowEligibleAt,
-                                    WarningWindowSeconds = automationPollIntervalSeconds,
-                                    WarningCreatedAt = now
-                                },
-                                AuditSourceAutomation,
-                                "no_show_grace_window_elapsed",
-                                runId.ToString("D"));
+                            await CreateBookingNotificationAsync(
+                                noShowApartment.LandlordId,
+                                NotificationType.system_announcement.ToString(),
+                                "No-show Eligible",
+                                $"Booking {booking.BookingId} has passed the check-in grace period ({noShowEligibleAt:yyyy-MM-dd HH:mm}). You can now manually mark it as no-show.",
+                                booking.BookingId);
                         }
 
-                        continue;
+                        await CreateCheckTimeStateEventAsync(
+                            booking.BookingId,
+                            checkTime.CheckTimeId,
+                            null,
+                            NoShowWarningEventType,
+                            new
+                            {
+                                NoShowEligibleAt = noShowEligibleAt,
+                                WarningCreatedAt = now
+                            },
+                            AuditSourceAutomation,
+                            "no_show_grace_window_elapsed",
+                            runId.ToString("D"));
                     }
-
-                    if (now - latestNoShowWarning.CreatedAt < noShowWarningWindow)
-                    {
-                        continue;
-                    }
-
-                    var noShowApartment = await _apartmentRepository.GetByIdAsync(booking.ApartmentId);
-                    var autoNoShowOutcome = noShowApartment == null
-                        ? null
-                        : ResolveCancellationRefundOutcome(noShowApartment, checkTime, "no_show_auto_confirmed", now);
-                    checkTime.NoShowStatus = "auto_confirmed";
-                    checkTime.NoShowMarkedBy = Guid.Empty;
-                    checkTime.NoShowMarkedAt = now;
-                    checkTime.IsLateCheckIn = null;
-                    checkTime.ClaimStatus = "no_show_confirmed";
-                    checkTime.ClaimOpenedAt ??= now;
-                    checkTime.ClaimExpiresAt ??= now;
-                    checkTime.ClaimLockedAt ??= now;
-
-                    changed = true;
-                    booking.Status = BookingStatus.cancelled.ToString();
-                    _bookingRepository.Update(booking);
-                    await _bookingRepository.SaveChangesAsync();
-                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
-
-                    await CreateCheckTimeStateEventAsync(
-                        booking.BookingId,
-                        checkTime.CheckTimeId,
-                        null,
-                        NoShowAutoConfirmedEventType,
-                        new
-                        {
-                            NoShowMarkedAt = now,
-                            WarningEventType = NoShowWarningEventType,
-                            WarningEventCreatedAt = latestNoShowWarning.CreatedAt,
-                            CancellationPolicy = autoNoShowOutcome?.PolicyCode,
-                            RefundPercent = autoNoShowOutcome?.RefundPercent,
-                            ProcessingFeePercent = autoNoShowOutcome?.ProcessingFeePercent,
-                            RuleApplied = autoNoShowOutcome?.RuleApplied
-                        },
-                        AuditSourceAutomation,
-                        autoNoShowOutcome == null
-                            ? "no_show_warning_window_expired"
-                            : $"no_show_warning_window_expired:{autoNoShowOutcome.RuleApplied}",
-                        runId.ToString("D"));
-
-                    if (noShowApartment != null)
-                    {
-                        await CreateBookingNotificationAsync(
-                            noShowApartment.LandlordId,
-                            NotificationType.system_announcement.ToString(),
-                            "No-show Auto-Confirmed",
-                            $"Booking {booking.BookingId} was automatically marked as no-show after the warning window expired and the booking was cancelled.",
-                            booking.BookingId);
-                    }
-
-                    await CreateBookingNotificationAsync(
-                        booking.TenantId,
-                        NotificationType.system_announcement.ToString(),
-                        "No-show Marked",
-                        "Your booking was automatically marked as no-show and cancelled after the grace window expired.",
-                        booking.BookingId);
                 }
             }
 
@@ -4580,43 +4518,50 @@ public class BookingService : BaseService<Booking>, IBookingService
             .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
             .FirstOrDefault();
 
+        bool isFixedPrice = false;
+
         if (manualOverride != null)
         {
             basePrice = manualOverride.FixedPricePerNight!.Value;
             source = string.IsNullOrWhiteSpace(manualOverride.PriceType)
                 ? "ManualOverride"
                 : manualOverride.PriceType.Replace('_', ' ');
+            isFixedPrice = true;
         }
-
-        var discountCalendar = matching
-            .Where(c => c.IsDiscount == true && c.DiscountPercentage.HasValue)
-            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
-            .FirstOrDefault();
-
-        if (discountCalendar != null)
+        else
         {
-            basePrice = defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m);
-            source = string.IsNullOrWhiteSpace(discountCalendar.PriceType)
-                ? "CalendarDiscount"
-                : discountCalendar.PriceType.Replace('_', ' ');
-        }
+            var discountCalendar = matching
+                .Where(c => c.IsDiscount == true && c.DiscountPercentage.HasValue)
+                .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+                .FirstOrDefault();
 
-        var fallbackCalendar = matching
-            .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
-            .FirstOrDefault();
+            if (discountCalendar != null)
+            {
+                basePrice = defaultPrice * (1 - discountCalendar.DiscountPercentage!.Value / 100m);
+                source = string.IsNullOrWhiteSpace(discountCalendar.PriceType)
+                    ? "CalendarDiscount"
+                    : discountCalendar.PriceType.Replace('_', ' ');
+            }
+            else
+            {
+                var fallbackCalendar = matching
+                    .OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt ?? DateTime.MinValue)
+                    .FirstOrDefault();
 
-        if (fallbackCalendar?.FixedPricePerNight.HasValue == true)
-        {
-            basePrice = fallbackCalendar.FixedPricePerNight.Value;
-            source = string.IsNullOrWhiteSpace(fallbackCalendar.PriceType)
-                ? "CalendarPeriod"
-                : fallbackCalendar.PriceType.Replace('_', ' ');
+                if (fallbackCalendar?.FixedPricePerNight.HasValue == true)
+                {
+                    basePrice = fallbackCalendar.FixedPricePerNight.Value;
+                    source = string.IsNullOrWhiteSpace(fallbackCalendar.PriceType)
+                        ? "CalendarPeriod"
+                        : fallbackCalendar.PriceType.Replace('_', ' ');
+                }
+            }
         }
 
         var occupancyRate = _nearbyOccupancyService == null
             ? 0.55m
             : await _nearbyOccupancyService.GetOccupancyRateAsync(apartmentId, date, date);
-        var occupancyMultiplier = OccupancyPricingFormula.CalculateMultiplier(occupancyRate);
+        var occupancyMultiplier = isFixedPrice ? 1m : OccupancyPricingFormula.CalculateMultiplier(occupancyRate);
         var finalPrice = Math.Round(basePrice * occupancyMultiplier, 2, MidpointRounding.AwayFromZero);
 
         return (finalPrice, source, occupancyRate, occupancyMultiplier);
@@ -4887,7 +4832,7 @@ public class BookingService : BaseService<Booking>, IBookingService
             || string.Equals(apartmentStatus, "archived", StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task ExpireUnpaidBookingsIfOverdueAsync(Guid apartmentId)
+    private async Task ExpireUnpaidBookingsIfOverdueAsync(Guid apartmentId, Guid? excludeBookingId = null)
     {
         var nowUtc = Common.Utils.VietnamTime.Now;
         var today = DateOnly.FromDateTime(nowUtc.Date);
@@ -4907,6 +4852,9 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         foreach (var booking in candidates)
         {
+            if (excludeBookingId.HasValue && booking.BookingId == excludeBookingId.Value)
+                continue;
+
             if (string.Equals(booking.Status, "pending", StringComparison.OrdinalIgnoreCase) && booking.DepositPaid != true)
             {
                 if (!booking.CreatedAt.HasValue || booking.CreatedAt.Value <= pendingCutoff)
@@ -5547,9 +5495,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         };
     }
 
-    private async Task RefreshApartmentBookingStatusSnapshotAsync(Guid apartmentId)
+    private async Task RefreshApartmentBookingStatusSnapshotAsync(Guid apartmentId, Guid? excludeBookingId = null)
     {
-        await ExpireUnpaidBookingsIfOverdueAsync(apartmentId);
+        await ExpireUnpaidBookingsIfOverdueAsync(apartmentId, excludeBookingId);
 
         var apartment = await _apartmentRepository.GetByIdAsync(apartmentId);
         if (apartment == null)
