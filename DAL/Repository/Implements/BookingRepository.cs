@@ -196,6 +196,7 @@ namespace DAL.Repository.Implements
                     MaxBookingValue = g.Max(x => x.Booking.TotalPrice),
                     PaidBookingCount = g.Count(x => x.Booking.Status != null && (x.Booking.Status.ToLower() == "paid" || x.Booking.Status.ToLower() == "completed")),
                     ConfirmedBookingCount = g.Count(x => x.Booking.Status != null && x.Booking.Status.ToLower() == "confirmed"),
+                    CompletedBookingCount = g.Count(x => x.Booking.Status != null && x.Booking.Status.ToLower() == "completed"),
                     CancelledBookingCount = g.Count(x => x.Booking.Status != null && x.Booking.Status.ToLower() == "cancelled"),
                     UniqueTenantCount = g.Select(x => x.Booking.TenantId).Distinct().Count(),
                     UniqueApartmentCount = g.Select(x => x.Booking.ApartmentId).Distinct().Count(),
@@ -230,6 +231,7 @@ namespace DAL.Repository.Implements
                 MaxBookingValue = item.MaxBookingValue,
                 PaidBookingCount = item.PaidBookingCount,
                 ConfirmedBookingCount = item.ConfirmedBookingCount,
+                CompletedBookingCount = item.CompletedBookingCount,
                 CancelledBookingCount = item.CancelledBookingCount,
                 UniqueTenantCount = item.UniqueTenantCount,
                 UniqueApartmentCount = item.UniqueApartmentCount,
@@ -390,6 +392,7 @@ namespace DAL.Repository.Implements
                 "avg_price_delta" => row.AvgPriceDelta,
                 "occupancy_percent" => row.OccupancyPercent,
                 "confirmed_booking_count" => row.ConfirmedBookingCount,
+                "completed_booking_count" => row.CompletedBookingCount,
                 "cancelled_booking_count" => row.CancelledBookingCount,
                 _ => 0m
             };
@@ -994,6 +997,7 @@ WHERE aa.apartment_id = {apartmentId}
             public decimal MaxBookingValue { get; init; }
             public int PaidBookingCount { get; init; }
             public int ConfirmedBookingCount { get; init; }
+            public int CompletedBookingCount { get; init; }
             public int CancelledBookingCount { get; init; }
             public int UniqueTenantCount { get; init; }
             public int UniqueApartmentCount { get; init; }

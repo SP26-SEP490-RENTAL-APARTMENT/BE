@@ -53,6 +53,7 @@ public class ReportExecutionService : IReportExecutionService
         "total_available_nights",
         "peak_occupancy_days",
         "low_occupancy_days",
+        "revenue_per_occupied_night",
         "review_avg_rating",
         "review_count",
         "package_revenue",
@@ -65,6 +66,7 @@ public class ReportExecutionService : IReportExecutionService
         "avg_base_price",
         "avg_price_delta",
         "confirmed_booking_count",
+        "completed_booking_count",
         "cancelled_booking_count",
         "net_revenue",
         "deposit_collected",
@@ -853,7 +855,7 @@ public class ReportExecutionService : IReportExecutionService
                 "paid_booking_count" or "unique_tenant_count" or "unique_apartment_count" or "unique_paid_tenant_count" or
                 "avg_length_of_stay" or "package_revenue" or "package_count" or "adr" or "avg_sold_price" or
                 "occupancy_percent" or
-                "review_avg_rating" or "review_count" or "avg_base_price" or "avg_price_delta" or "confirmed_booking_count" or "cancelled_booking_count"))
+                "review_avg_rating" or "review_count" or "avg_base_price" or "avg_price_delta" or "confirmed_booking_count" or "completed_booking_count" or "cancelled_booking_count"))
             {
                 return false;
             }
@@ -1598,11 +1600,12 @@ public class ReportExecutionService : IReportExecutionService
         var normalizedMetric = NormalizeKey(metricField);
         var normalizedAggregation = NormalizeKey(aggregation);
 
-        // helper values
+        // helper values — exclude cancelled bookings from financial and occupancy metrics
         var apartmentIds = bookings.Select(b => b.ApartmentId).Distinct().ToList();
         var firstApartmentId = apartmentIds.Count > 0 ? apartmentIds[0] : Guid.Empty;
-        var totalNights = bookings.Sum(b => b.Nights);
-        var totalRevenue = bookings.Sum(b => b.TotalPrice);
+        var nonCancelledBookings = bookings.Where(b => !string.Equals(b.Status, "cancelled", StringComparison.OrdinalIgnoreCase)).ToList();
+        var totalNights = nonCancelledBookings.Sum(b => b.Nights);
+        var totalRevenue = nonCancelledBookings.Sum(b => b.TotalPrice);
 
         DateTime periodFromDt = periodFrom.ToDateTime(TimeOnly.MinValue);
         DateTime periodToDt = periodTo.ToDateTime(TimeOnly.MinValue);
@@ -1612,13 +1615,13 @@ public class ReportExecutionService : IReportExecutionService
             case "booking_count":
                 return bookings.Count;
             case "total_revenue":
-                return Aggregate(bookings.Select(b => b.TotalPrice), normalizedAggregation);
+                return Aggregate(nonCancelledBookings.Select(b => b.TotalPrice), normalizedAggregation);
             case "avg_booking_value":
-                return Aggregate(bookings.Select(b => b.TotalPrice), "avg");
+                return Aggregate(nonCancelledBookings.Select(b => b.TotalPrice), "avg");
             case "min_booking_value":
-                return Aggregate(bookings.Select(b => b.TotalPrice), "min");
+                return Aggregate(nonCancelledBookings.Select(b => b.TotalPrice), "min");
             case "max_booking_value":
-                return Aggregate(bookings.Select(b => b.TotalPrice), "max");
+                return Aggregate(nonCancelledBookings.Select(b => b.TotalPrice), "max");
             case "paid_booking_count":
                 return bookings.Count(b => string.Equals(b.Status, "paid", StringComparison.OrdinalIgnoreCase)
                                                || string.Equals(b.Status, "completed", StringComparison.OrdinalIgnoreCase));
@@ -1907,6 +1910,8 @@ public class ReportExecutionService : IReportExecutionService
                 }
             case "confirmed_booking_count":
                 return bookings.Count(b => string.Equals(b.Status, "confirmed", StringComparison.OrdinalIgnoreCase));
+            case "completed_booking_count":
+                return bookings.Count(b => string.Equals(b.Status, "completed", StringComparison.OrdinalIgnoreCase));
             case "cancelled_booking_count":
                 return bookings.Count(b => string.Equals(b.Status, "cancelled", StringComparison.OrdinalIgnoreCase));
             case "net_revenue":
@@ -1931,6 +1936,8 @@ public class ReportExecutionService : IReportExecutionService
                 return totalNights;
             case "total_available_nights":
                 return CalculateTotalAvailableNights(bookings, auxiliaryContext, periodFrom, periodTo);
+            case "revenue_per_occupied_night":
+                return totalNights == 0 ? 0m : Math.Round(totalRevenue / totalNights, 2, MidpointRounding.AwayFromZero);
             case "peak_occupancy_days":
                 {
                     var dailyBookedNights = new Dictionary<DateOnly, int>();

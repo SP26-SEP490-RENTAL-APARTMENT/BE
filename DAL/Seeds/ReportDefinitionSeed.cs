@@ -33,6 +33,15 @@ public static class ReportDefinitionSeed
                 "[{\"field\":\"total_revenue\",\"aggregation\":\"sum\",\"alias\":\"total_revenue\"},{\"field\":\"avg_booking_value\",\"aggregation\":\"avg\",\"alias\":\"avg_booking_value\"},{\"field\":\"avg_sold_price\",\"aggregation\":\"avg\",\"alias\":\"avg_sold_price\"},{\"field\":\"avg_price_delta\",\"aggregation\":\"avg\",\"alias\":\"avg_price_delta\"}]",
                 "{\"preset\":\"current_month\"}"),
             new(
+                Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaab1"),
+                "Occupancy Report",
+                "Occupancy rate, booked/available nights, ALOS, peak/low days, and revenue per occupied night",
+                "standard",
+                "booking",
+                "[{\"field\":\"date\",\"alias\":\"date\"},{\"field\":\"apartment_name\",\"alias\":\"apartment_name\"}]",
+                "[{\"field\":\"occupancy_percent\",\"aggregation\":\"avg\",\"alias\":\"occupancy_percent\"},{\"field\":\"total_booked_nights\",\"aggregation\":\"sum\",\"alias\":\"total_booked_nights\"},{\"field\":\"total_available_nights\",\"aggregation\":\"sum\",\"alias\":\"total_available_nights\"},{\"field\":\"avg_length_of_stay\",\"aggregation\":\"avg\",\"alias\":\"avg_length_of_stay\"},{\"field\":\"revenue_per_occupied_night\",\"aggregation\":\"avg\",\"alias\":\"revenue_per_occupied_night\"}]",
+                "{\"preset\":\"last_30_days\"}"),
+            new(
                 Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3"),
                 "Guest Feedback / Reviews Report",
                 "Review metrics including ratings, response rates, and sentiment analysis",
