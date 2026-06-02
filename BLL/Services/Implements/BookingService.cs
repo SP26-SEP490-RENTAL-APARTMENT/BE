@@ -4712,10 +4712,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             }
         }
 
-        var occupancyRate = _nearbyOccupancyService == null
-            ? 0.55m
-            : await _nearbyOccupancyService.GetOccupancyRateAsync(apartmentId, date, date);
-        var occupancyMultiplier = isFixedPrice ? 1m : OccupancyPricingFormula.CalculateMultiplier(occupancyRate);
+        var applyOccupancy = !isFixedPrice && source != "BaseRate";
+        var occupancyRate = applyOccupancy && _nearbyOccupancyService != null
+            ? await _nearbyOccupancyService.GetOccupancyRateAsync(apartmentId, date, date)
+            : 0.55m;
+        var occupancyMultiplier = applyOccupancy ? OccupancyPricingFormula.CalculateMultiplier(occupancyRate) : 1m;
         var finalPrice = Math.Round(basePrice * occupancyMultiplier, 2, MidpointRounding.AwayFromZero);
 
         return (finalPrice, source, occupancyRate, occupancyMultiplier);
@@ -6160,21 +6161,6 @@ public class BookingService : BaseService<Booking>, IBookingService
                 .ToList();
 
             var latestTicket = ticketsForBooking.FirstOrDefault();
-
-            if (latestTicket != null)
-            {
-                var loadedTicket = await _supportTicketRepository.GetByIdAsync(latestTicket.TicketId);
-
-                if (loadedTicket?.SupportTicketAttachments == null)
-                {
-                    continue;
-                }
-
-                supportTicketImageUrls.AddRange(
-                    loadedTicket.SupportTicketAttachments
-                        .Where(a => !string.IsNullOrWhiteSpace(a.FileUrl))
-                        .Select(a => a.FileUrl));
-            }
 
             List<string> checkTimeImageUrls = new();
             if (checkTime != null)

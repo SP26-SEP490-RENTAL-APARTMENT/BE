@@ -140,6 +140,13 @@ public class CreateApartmentResponseDto
     public DateTime? CreatedAt { get; set; }
 
     public List<string> Photos { get; set; } = new List<string>();
+    public List<ApartmentMediaDto> Media { get; set; } = new List<ApartmentMediaDto>();
+}
+
+public class ApartmentMediaDto
+{
+    public Guid MediaId { get; set; }
+    public string Url { get; set; } = null!;
 }
 
 public class ApartmentResponseDto
@@ -168,6 +175,7 @@ public class ApartmentResponseDto
     public string? InspectionStatus { get; set; }
     public List<ApartmentPriceChangeDto> PriceChanges { get; set; } = new List<ApartmentPriceChangeDto>();
     public List<string> Photos { get; set; } = new List<string>();
+    public List<ApartmentMediaDto> Media { get; set; } = new List<ApartmentMediaDto>();
     public RoomResponseDto? Room { get; set; }
     public List<AmenityResponseDto> Amenities { get; set; } = new List<AmenityResponseDto>();
     public ApartmentNearbyAttractionsDto NearbyAttractions { get; set; } = new ApartmentNearbyAttractionsDto();

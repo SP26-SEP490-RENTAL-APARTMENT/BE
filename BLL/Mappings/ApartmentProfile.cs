@@ -25,7 +25,8 @@ public class ApartmentProfile : Profile
             .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
 
         CreateMap<Apartment, CreateApartmentResponseDto>()
-            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
+            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()))
+            .ForMember(dest => dest.Media, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => new ApartmentMediaDto { MediaId = m.MediaId, Url = m.Url }).ToList()));
         CreateMap<CreateApartmentResponseDto, Apartment>(MemberList.Source);
 
         CreateMap<Apartment, ApartmentResponseDto>()
@@ -33,7 +34,8 @@ public class ApartmentProfile : Profile
                 src.Landlord != null && src.Landlord.LandlordNavigation != null
                     ? src.Landlord.LandlordNavigation.FullName
                     : null))
-            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()));
+            .ForMember(dest => dest.Photos, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => m.Url).ToList()))
+            .ForMember(dest => dest.Media, opt => opt.MapFrom(src => src.ApartmentMedia.Select(m => new ApartmentMediaDto { MediaId = m.MediaId, Url = m.Url }).ToList()));
 
         CreateMap<Room, RoomResponseDto>();
         CreateMap<CreateRoomRequestDto, Room>()

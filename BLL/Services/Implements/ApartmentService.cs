@@ -385,11 +385,6 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             throw new ArgumentException("Apartment not found.");
 
         var existingMedia = apartment.ApartmentMedia.ToList();
-        foreach (var m in existingMedia)
-        {
-            await _imageService.DeleteImageAsync(m.Url);
-            await _apartmentMediumService.DeleteAsync(m.MediaId);
-        }
 
         foreach (var photo in photos)
         {
@@ -472,6 +467,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                     Type = MediaTypeHelper.Resolve(photo.FileName),
                 };
                 await _apartmentMediumService.CreateAsync(medium);
+                created.ApartmentMedia.Add(medium);
             }
         }
 

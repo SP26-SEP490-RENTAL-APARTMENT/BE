@@ -469,6 +469,9 @@ namespace BLL.Services.Implements
                     // Upload image to Cloudinary
                     var fileUrl = await _imageService.UploadImageAsync(file);
 
+                    if (string.IsNullOrEmpty(fileUrl))
+                        throw new InvalidOperationException($"Upload returned no URL for file '{file.FileName}'.");
+
                     // Create attachment record
                     var attachment = new SupportTicketAttachment
                     {
@@ -488,7 +491,6 @@ namespace BLL.Services.Implements
                 }
                 catch (Exception ex)
                 {
-                    // Log the error but continue with other files
                     throw new InvalidOperationException($"Failed to upload file '{file.FileName}': {ex.Message}");
                 }
             }
