@@ -288,10 +288,9 @@ namespace BLL.Services.Implements
                                     throw new ArgumentException("Passport number is already in use by another account.");
                                 }
 
-                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
+                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber) && r.Document.UserId != userId);
                                 if (existingOcrs.Any(r => string.Equals(NormalizePassportNumber(r.IdNumber), normalizedPassport, StringComparison.Ordinal)))
                                 {
-                                    // If OCR record exists, reject to avoid duplicate identity across accounts.
                                     throw new ArgumentException("Passport number is already in use by another account.");
                                 }
                             }
@@ -307,7 +306,7 @@ namespace BLL.Services.Implements
                                     throw new ArgumentException("National ID number is already in use by another account.");
                                 }
 
-                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber));
+                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber) && r.Document.UserId != userId);
                                 if (existingOcrs.Any(r => string.Equals(NormalizeIdNumber(r.IdNumber), normalizedId, StringComparison.Ordinal)))
                                 {
                                     throw new ArgumentException("National ID number is already in use by another account.");
