@@ -571,14 +571,18 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.system_announcement.ToString(),
             "Occupied incident penalty applied",
             $"A penalty of {penaltyAmount:0.00} was applied for booking {booking.BookingId} due to occupied-room incident.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Phạt sự cố phòng đã có người",
+            messageVi: $"Khoản phạt {penaltyAmount:0.00} đã được áp dụng cho đặt phòng {booking.BookingId} do sự cố phòng đã có người.");
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
             NotificationType.system_announcement.ToString(),
             "Occupied incident penalty confirmed",
             $"Support staff confirmed your occupied-room incident and applied landlord penalty of {penaltyAmount:0.00}.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Xác nhận sự cố phòng đã có người",
+            messageVi: $"Nhân viên hỗ trợ đã xác nhận sự cố phòng đã có người và áp dụng khoản phạt {penaltyAmount:0.00} cho chủ nhà.");
 
         // Audit event for occupied incident penalty confirmation (staff action)
         try
@@ -662,7 +666,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         string type,
         string title,
         string message,
-        Guid bookingId)
+        Guid bookingId,
+        string? titleVi = null,
+        string? messageVi = null)
     {
         var notification = new DAL.Models.Notification
         {
@@ -670,7 +676,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             UserId = userId,
             Type = type,
             Title = title,
+            TitleVi = titleVi,
             Message = message,
+            MessageVi = messageVi,
             ReferenceId = bookingId,
             ReferenceType = "booking",
             IsRead = false,
@@ -894,14 +902,18 @@ public class BookingService : BaseService<Booking>, IBookingService
                 NotificationType.booking_created.ToString(),
                 "New booking request",
                 $"A new booking has been created for your apartment '{apartment.Title}'.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Yêu cầu đặt phòng mới",
+                messageVi: $"Có một đặt phòng mới cho căn hộ '{apartment.Title}' của bạn.");
 
             await CreateBookingNotificationAsync(
                 booking.TenantId,
                 NotificationType.booking_created.ToString(),
                 "Booking created",
                 $"Your booking for apartment '{apartment.Title}' has been created.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Đặt phòng đã được tạo",
+                messageVi: $"Đặt phòng của bạn tại căn hộ '{apartment.Title}' đã được tạo.");
         }
 
         return booking;
@@ -1140,20 +1152,25 @@ public class BookingService : BaseService<Booking>, IBookingService
             if (apartment != null)
             {
                 var paymentDescriptor = paymentMode == BookingPaymentMode.full ? "full payment" : "partial payment";
+                var paymentDescriptorVi = paymentMode == BookingPaymentMode.full ? "thanh toán toàn bộ" : "thanh toán một phần";
 
                 await CreateBookingNotificationAsync(
                     apartment.LandlordId,
                     NotificationType.booking_confirmed.ToString(),
                     "New booking confirmed",
                     $"A booking for apartment '{apartment.Title}' has been confirmed with {paymentDescriptor}. Payment will be credited to your wallet after guest checkout.",
-                    booking.BookingId);
+                    booking.BookingId,
+                    titleVi: "Đặt phòng mới được xác nhận",
+                    messageVi: $"Đặt phòng tại căn hộ '{apartment.Title}' đã được xác nhận với {paymentDescriptorVi}. Thanh toán sẽ được ghi có vào ví của bạn sau khi khách trả phòng.");
 
                 await CreateBookingNotificationAsync(
                     booking.TenantId,
                     NotificationType.booking_confirmed.ToString(),
                     "Booking confirmed",
                     $"Your booking for apartment '{apartment.Title}' has been confirmed after {paymentDescriptor}.",
-                    booking.BookingId);
+                    booking.BookingId,
+                    titleVi: "Đặt phòng được xác nhận",
+                    messageVi: $"Đặt phòng của bạn tại căn hộ '{apartment.Title}' đã được xác nhận sau {paymentDescriptorVi}.");
             }
 
             return booking;
@@ -1214,14 +1231,18 @@ public class BookingService : BaseService<Booking>, IBookingService
                 NotificationType.payment_success.ToString(),
                 "Booking payment completed",
                 $"Your payment for booking at '{apartment.Title}' is complete.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Thanh toán đặt phòng hoàn tất",
+                messageVi: $"Thanh toán của bạn cho đặt phòng tại '{apartment.Title}' đã hoàn tất.");
 
             await CreateBookingNotificationAsync(
                 apartment.LandlordId,
                 NotificationType.payment_success.ToString(),
                 "Booking payment received",
                 $"Payment for booking at '{apartment.Title}' has been completed. Funds will be credited to your wallet after guest checkout.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Đã nhận thanh toán đặt phòng",
+                messageVi: $"Thanh toán cho đặt phòng tại '{apartment.Title}' đã hoàn tất. Tiền sẽ được ghi có vào ví sau khi khách trả phòng.");
         }
 
         return booking;
@@ -1370,14 +1391,18 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.booking_cancelled.ToString(),
             "Booking refunded",
             $"Your booking refund has been processed via PayOS. Net amount refunded: {netRefundAmount:0.00}. Processing fee: {processingFeeAmount:0.00}.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đặt phòng đã được hoàn tiền",
+            messageVi: $"Hoàn tiền cho đặt phòng của bạn đã được xử lý qua PayOS. Số tiền hoàn: {netRefundAmount:0.00}. Phí xử lý: {processingFeeAmount:0.00}.");
 
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.booking_cancelled.ToString(),
             "Booking refunded",
             $"Booking {booking.BookingId} was refunded to the tenant via PayOS.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đặt phòng đã được hoàn tiền",
+            messageVi: $"Đặt phòng {booking.BookingId} đã được hoàn tiền cho khách qua PayOS.");
 
         return new BookingRefundResponseDto
         {
@@ -1612,14 +1637,18 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.booking_cancelled.ToString(),
             "Booking refunded",
             $"Your booking refund has been processed. Net amount refunded: {netRefundAmount:0.00}. Processing fee: {processingFeeAmount:0.00}.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đặt phòng đã được hoàn tiền",
+            messageVi: $"Hoàn tiền cho đặt phòng của bạn đã được xử lý. Số tiền hoàn: {netRefundAmount:0.00}. Phí xử lý: {processingFeeAmount:0.00}.");
 
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.booking_cancelled.ToString(),
             "Booking refunded",
             $"Booking {booking.BookingId} was refunded to the tenant.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đặt phòng đã được hoàn tiền",
+            messageVi: $"Đặt phòng {booking.BookingId} đã được hoàn tiền cho khách thuê.");
 
         return new BookingRefundResponseDto
         {
@@ -2610,13 +2639,20 @@ public class BookingService : BaseService<Booking>, IBookingService
             : isEarlyCheckIn
                 ? $"Guest arrived early at {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Early check-in fee: ${earlyCheckInFee}"
                 : $"Guest checked in at {dto.ActualCheckIn:yyyy-MM-dd HH:mm} (on schedule).";
+        var checkInMessageVi = isLateCheckIn
+            ? $"Khách nhận phòng muộn lúc {dto.ActualCheckIn:yyyy-MM-dd HH:mm}."
+            : isEarlyCheckIn
+                ? $"Khách nhận phòng sớm lúc {dto.ActualCheckIn:yyyy-MM-dd HH:mm}. Phí nhận phòng sớm: {earlyCheckInFee}"
+                : $"Khách đã nhận phòng lúc {dto.ActualCheckIn:yyyy-MM-dd HH:mm} (đúng lịch).";
 
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.check_in_recorded.ToString(),
             "Check-in Recorded",
             checkInMessage,
-            bookingId);
+            bookingId,
+            titleVi: "Đã ghi nhận nhận phòng",
+            messageVi: checkInMessageVi);
 
         return await GetCheckTimeDetailsAsync(bookingId, apartment.LandlordId);
     }
@@ -2739,13 +2775,18 @@ public class BookingService : BaseService<Booking>, IBookingService
         var checkOutMessage = isLateCheckOut
             ? $"Guest checked out late at {dto.ActualCheckOut:yyyy-MM-dd HH:mm}. Late check-out fee: ${lateCheckOutFee}"
             : $"Guest checked out at {dto.ActualCheckOut:yyyy-MM-dd HH:mm} (on schedule).";
+        var checkOutMessageVi = isLateCheckOut
+            ? $"Khách trả phòng muộn lúc {dto.ActualCheckOut:yyyy-MM-dd HH:mm}. Phí trả phòng muộn: {lateCheckOutFee}"
+            : $"Khách đã trả phòng lúc {dto.ActualCheckOut:yyyy-MM-dd HH:mm} (đúng lịch).";
 
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.check_out_recorded.ToString(),
             "Check-out Recorded",
             $"{checkOutMessage} Payment of {totalCreditAmount:0.00} has been credited to your wallet.",
-            bookingId);
+            bookingId,
+            titleVi: "Đã ghi nhận trả phòng",
+            messageVi: $"{checkOutMessageVi} Thanh toán {totalCreditAmount:0.00} đã được ghi có vào ví của bạn.");
 
         // Notify tenant
         await CreateBookingNotificationAsync(
@@ -2753,7 +2794,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.check_out_recorded.ToString(),
             "Claim Opened",
             $"A claim snapshot has been opened for your checkout and will lock at {checkTime.ClaimExpiresAt:yyyy-MM-dd HH:mm}. {(isLateCheckOut ? $"Late checkout fee: ${lateCheckOutFee}" : "Thank you for checking out on time!")}",
-            bookingId);
+            bookingId,
+            titleVi: "Mở xác nhận trả phòng",
+            messageVi: $"Ảnh chụp xác nhận đã được mở và sẽ khóa lúc {checkTime.ClaimExpiresAt:yyyy-MM-dd HH:mm}. {(isLateCheckOut ? $"Phí trả phòng muộn: {lateCheckOutFee}" : "Cảm ơn bạn đã trả phòng đúng giờ!")}");
 
         return await GetCheckTimeDetailsAsync(bookingId, apartment.LandlordId);
     }
@@ -2804,7 +2847,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.check_in_recorded.ToString(),
             "Guest Confirmed Arrival",
             $"Tenant declared arrival at {dto.ArrivedAt:yyyy-MM-dd HH:mm}.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Khách xác nhận đến nơi",
+            messageVi: $"Khách thuê khai báo đã đến lúc {dto.ArrivedAt:yyyy-MM-dd HH:mm}.");
 
         return await GetCheckTimeDetailsAsync(bookingId, tenantId);
     }
@@ -2954,14 +2999,18 @@ public class BookingService : BaseService<Booking>, IBookingService
                 NotificationType.check_time_confirmed.ToString(),
                 "Check-time Confirmed",
                 "Tenant has confirmed the recorded check-in/check-out details.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Thời gian nhận/trả phòng được xác nhận",
+                messageVi: "Khách thuê đã xác nhận thông tin nhận/trả phòng đã ghi nhận.");
 
             await CreateBookingNotificationAsync(
                 tenantId,
                 NotificationType.check_time_confirmed.ToString(),
                 "Check-time Confirmed",
                 "Your confirmation has been recorded successfully.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Thời gian nhận/trả phòng được xác nhận",
+                messageVi: "Xác nhận của bạn đã được ghi nhận thành công.");
 
             return await GetCheckTimeDetailsAsync(bookingId, tenantId);
         }
@@ -2994,14 +3043,18 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.check_time_disputed.ToString(),
             "Claim Refuted",
             $"Tenant refuted the claim. Reason: {checkTime.TenantDisputeReason}",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Xác nhận bị phản đối",
+            messageVi: $"Khách thuê đã phản đối xác nhận. Lý do: {checkTime.TenantDisputeReason}");
 
         await CreateBookingNotificationAsync(
             tenantId,
             NotificationType.check_time_disputed.ToString(),
             "Claim Submitted",
             "Your refutation has been submitted and is waiting for staff/admin resolution.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Phản đối đã được gửi",
+            messageVi: "Phản đối của bạn đã được gửi và đang chờ nhân viên/quản trị viên giải quyết.");
 
         return await GetCheckTimeDetailsAsync(bookingId, tenantId);
     }
@@ -3085,20 +3138,27 @@ public class BookingService : BaseService<Booking>, IBookingService
         var resolutionMessage = dto.ApproveTenantDispute
             ? "A claim was resolved in favor of tenant."
             : "A claim was resolved in favor of landlord.";
+        var resolutionMessageVi = dto.ApproveTenantDispute
+            ? "Tranh chấp đã được giải quyết có lợi cho khách thuê."
+            : "Tranh chấp đã được giải quyết có lợi cho chủ nhà.";
 
         await CreateBookingNotificationAsync(
             booking.TenantId,
             NotificationType.check_time_dispute_resolved.ToString(),
             "Check-time Dispute Resolved",
             resolutionMessage,
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Tranh chấp thời gian nhận/trả phòng đã giải quyết",
+            messageVi: resolutionMessageVi);
 
         await CreateBookingNotificationAsync(
             apartment.LandlordId,
             NotificationType.check_time_dispute_resolved.ToString(),
             "Check-time Dispute Resolved",
             resolutionMessage,
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Tranh chấp thời gian nhận/trả phòng đã giải quyết",
+            messageVi: resolutionMessageVi);
 
         await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, resolvedBy, "claim_resolved", new { ResolvedInFavorOfTenant = dto.ApproveTenantDispute, Notes = dto.Notes });
 
@@ -3148,16 +3208,22 @@ public class BookingService : BaseService<Booking>, IBookingService
         if (apartment != null)
         {
             var title = settlementAction == FeeSettlementStatusPaid ? "Check-time Fee Settled" : "Check-time Fee Waived";
+            var titleVi = settlementAction == FeeSettlementStatusPaid ? "Phí nhận/trả phòng đã thanh toán" : "Phí nhận/trả phòng được miễn";
             var message = settlementAction == FeeSettlementStatusPaid
                 ? $"A check-time fee of {totalFee:0.00} was marked as paid for booking {booking.BookingId}."
                 : $"A check-time fee of {totalFee:0.00} was waived for booking {booking.BookingId}.";
+            var messageVi = settlementAction == FeeSettlementStatusPaid
+                ? $"Phí nhận/trả phòng {totalFee:0.00} đã được đánh dấu là đã thanh toán cho đặt phòng {booking.BookingId}."
+                : $"Phí nhận/trả phòng {totalFee:0.00} đã được miễn cho đặt phòng {booking.BookingId}.";
 
             await CreateBookingNotificationAsync(
                 booking.TenantId,
                 NotificationType.system_announcement.ToString(),
                 title,
                 message,
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: titleVi,
+                messageVi: messageVi);
 
             await CreateCheckTimeStateEventAsync(booking.BookingId, checkTime.CheckTimeId, settledBy, "fee_settled", new { SettlementAction = settlementAction, Notes = dto.Notes });
 
@@ -3166,7 +3232,9 @@ public class BookingService : BaseService<Booking>, IBookingService
                 NotificationType.system_announcement.ToString(),
                 title,
                 message,
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: titleVi,
+                messageVi: messageVi);
         }
 
         return await GetCheckTimeDetailsAsync(bookingId, settledBy);
@@ -3233,7 +3301,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.system_announcement.ToString(),
             "Payment Confirmation Submitted",
             $"Your payment confirmation for booking {booking.BookingId} has been submitted.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đã gửi xác nhận thanh toán",
+            messageVi: $"Xác nhận thanh toán của bạn cho đặt phòng {booking.BookingId} đã được gửi.");
 
         return await GetCheckTimeDetailsAsync(bookingId, landlordId);
     }
@@ -3525,7 +3595,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.system_announcement.ToString(),
             "No-show Marked",
             "Your booking has been marked as no-show. Contact support if this is incorrect.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đánh dấu không đến",
+            messageVi: "Đặt phòng của bạn đã bị đánh dấu là không đến. Liên hệ hỗ trợ nếu đây là nhầm lẫn.");
 
         return await GetCheckTimeDetailsAsync(bookingId, actorId);
     }
@@ -3600,7 +3672,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.system_announcement.ToString(),
             "Missing Check-out Closed",
             "Your booking was closed due to missing check-out record.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đóng do thiếu ghi nhận trả phòng",
+            messageVi: "Đặt phòng của bạn đã bị đóng do thiếu ghi nhận trả phòng.");
 
         return await GetCheckTimeDetailsAsync(bookingId, actorId);
     }
@@ -3786,7 +3860,9 @@ public class BookingService : BaseService<Booking>, IBookingService
                                 NotificationType.system_announcement.ToString(),
                                 "No-show Eligible",
                                 $"Booking {booking.BookingId} has passed the check-in grace period ({noShowEligibleAt:yyyy-MM-dd HH:mm}). You can now manually mark it as no-show.",
-                                booking.BookingId);
+                                booking.BookingId,
+                                titleVi: "Đủ điều kiện đánh dấu không đến",
+                                messageVi: $"Đặt phòng {booking.BookingId} đã qua thời gian ân hạn nhận phòng ({noShowEligibleAt:yyyy-MM-dd HH:mm}). Bạn có thể đánh dấu là không đến.");
                         }
 
                         await CreateCheckTimeStateEventAsync(
@@ -5059,14 +5135,18 @@ public class BookingService : BaseService<Booking>, IBookingService
                 NotificationType.booking_cancelled.ToString(),
                 "Booking cancelled",
                 $"Your unpaid booking for apartment '{apartment.Title}' has been cancelled due to payment timeout.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Đặt phòng đã bị hủy",
+                messageVi: $"Đặt phòng chưa thanh toán của bạn tại căn hộ '{apartment.Title}' đã bị hủy do hết thời gian thanh toán.");
 
             await CreateBookingNotificationAsync(
                 apartment.LandlordId,
                 NotificationType.booking_cancelled.ToString(),
                 "Booking cancelled",
                 $"An unpaid booking for apartment '{apartment.Title}' was cancelled due to payment timeout.",
-                booking.BookingId);
+                booking.BookingId,
+                titleVi: "Đặt phòng đã bị hủy",
+                messageVi: $"Một đặt phòng chưa thanh toán tại căn hộ '{apartment.Title}' đã bị hủy do hết thời gian thanh toán.");
         }
     }
 
@@ -5447,7 +5527,9 @@ public class BookingService : BaseService<Booking>, IBookingService
             NotificationType.system_announcement.ToString(),
             "Alternative apartment offer available",
             "An alternative apartment option was prepared for your booking issue. Please review and respond before it expires.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Có đề xuất căn hộ thay thế",
+            messageVi: "Một phương án căn hộ thay thế đã được chuẩn bị cho vấn đề đặt phòng của bạn. Vui lòng xem xét và phản hồi trước khi hết hạn.");
 
         await CreateBookingNotificationAsync(
             sourceApartment.LandlordId,
@@ -5456,7 +5538,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             staffUserId.HasValue
                 ? "Support staff created an alternative apartment offer for a tenant due to occupancy incident."
                 : "An alternative apartment offer was automatically created for a tenant after an occupancy incident report.",
-            booking.BookingId);
+            booking.BookingId,
+            titleVi: "Đề xuất do sự cố phòng đã có người",
+            messageVi: staffUserId.HasValue
+                ? "Nhân viên hỗ trợ đã tạo đề xuất căn hộ thay thế cho khách thuê do sự cố phòng đã có người."
+                : "Một đề xuất căn hộ thay thế đã được tạo tự động cho khách thuê sau báo cáo sự cố phòng đã có người.");
 
         // Audit event for alternative offer creation (staff action)
         try
@@ -5553,7 +5639,11 @@ public class BookingService : BaseService<Booking>, IBookingService
             accepted
                 ? "Your response was recorded. Staff will complete manual settlement and booking adjustment."
                 : "Your rejection was recorded. Staff will follow up with additional options.",
-            offer.OriginalBookingId);
+            offer.OriginalBookingId,
+            titleVi: accepted ? "Đã chấp nhận đề xuất thay thế" : "Đã từ chối đề xuất thay thế",
+            messageVi: accepted
+                ? "Phản hồi của bạn đã được ghi nhận. Nhân viên sẽ hoàn tất thanh toán và điều chỉnh đặt phòng."
+                : "Từ chối của bạn đã được ghi nhận. Nhân viên sẽ liên hệ với các phương án khác.");
 
         var updatedOffer = await _bookingOfferRepository.GetOfferWithDetailsAsync(offerId)
             ?? throw new InvalidOperationException("Offer updated but failed to reload details.");

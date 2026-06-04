@@ -1249,6 +1249,10 @@ namespace DAL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("message");
 
+                    b.Property<string>("MessageVi")
+                        .HasColumnType("text")
+                        .HasColumnName("message_vi");
+
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp")
                         .HasColumnName("read_at");
@@ -1267,6 +1271,11 @@ namespace DAL.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)")
                         .HasColumnName("title");
+
+                    b.Property<string>("TitleVi")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("title_vi");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -1319,6 +1328,10 @@ namespace DAL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<string>("DescriptionVi")
+                        .HasColumnType("text")
+                        .HasColumnName("description_vi");
+
                     b.Property<bool?>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("tinyint(1)")
@@ -1334,6 +1347,11 @@ namespace DAL.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)")
                         .HasColumnName("name");
+
+                    b.Property<string>("NameVi")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("name_vi");
 
                     b.Property<decimal>("Price")
                         .HasPrecision(12, 2)
@@ -1369,11 +1387,20 @@ namespace DAL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("item_description");
 
+                    b.Property<string>("ItemDescriptionVi")
+                        .HasColumnType("text")
+                        .HasColumnName("item_description_vi");
+
                     b.Property<string>("ItemName")
                         .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("varchar(150)")
                         .HasColumnName("item_name");
+
+                    b.Property<string>("ItemNameVi")
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)")
+                        .HasColumnName("item_name_vi");
 
                     b.Property<decimal?>("Quantity")
                         .ValueGeneratedOnAdd()
@@ -1866,9 +1893,17 @@ namespace DAL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<string>("DescriptionVi")
+                        .HasColumnType("text")
+                        .HasColumnName("description_vi");
+
                     b.Property<string>("Features")
                         .HasColumnType("text")
                         .HasColumnName("features");
+
+                    b.Property<string>("FeaturesVi")
+                        .HasColumnType("text")
+                        .HasColumnName("features_vi");
 
                     b.Property<bool?>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -1887,6 +1922,11 @@ namespace DAL.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)")
                         .HasColumnName("name");
+
+                    b.Property<string>("NameVi")
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)")
+                        .HasColumnName("name_vi");
 
                     b.Property<decimal?>("PriceAnnual")
                         .HasPrecision(12, 2)

@@ -37,7 +37,9 @@ namespace BLL.Services.Implements
             string title,
             string message,
             Guid ticketId,
-            bool saveChanges = true)
+            bool saveChanges = true,
+            string? titleVi = null,
+            string? messageVi = null)
         {
             await _notificationRepository.AddAsync(new Notification
             {
@@ -45,7 +47,9 @@ namespace BLL.Services.Implements
                 UserId = userId,
                 Type = type,
                 Title = title,
+                TitleVi = titleVi,
                 Message = message,
+                MessageVi = messageVi,
                 ReferenceId = ticketId,
                 ReferenceType = "support_ticket",
                 IsRead = false,
@@ -121,7 +125,9 @@ namespace BLL.Services.Implements
                         "New support ticket reported",
                         $"Ticket '{ticket.Subject}' requires attention.",
                         ticket.TicketId,
-                        saveChanges: false);
+                        saveChanges: false,
+                        titleVi: "Phiếu hỗ trợ mới được báo cáo",
+                        messageVi: $"Phiếu '{ticket.Subject}' cần được xử lý.");
                 }
                 await _notificationRepository.SaveChangesAsync();
             }
@@ -131,7 +137,9 @@ namespace BLL.Services.Implements
                 NotificationType.support_ticket_created.ToString(),
                 "Support ticket received",
                 $"Your ticket '{ticket.Subject}' has been received. Our staff will review it shortly.",
-                ticket.TicketId);
+                ticket.TicketId,
+                titleVi: "Đã nhận phiếu hỗ trợ",
+                messageVi: $"Phiếu '{ticket.Subject}' của bạn đã được nhận. Nhân viên sẽ xem xét sớm.");
 
             return ticket;
         }
@@ -169,16 +177,22 @@ namespace BLL.Services.Implements
 
             var type = isResolved ? "support_ticket_resolved" : "support_ticket_update";
             var title = isResolved ? "Your support ticket was resolved" : "Your support ticket was updated";
+            var titleVi = isResolved ? "Phiếu hỗ trợ của bạn đã được giải quyết" : "Phiếu hỗ trợ của bạn đã được cập nhật";
             var message = isResolved
                 ? $"Ticket '{ticket.Subject}' has been resolved. Please verify the fix."
                 : $"Ticket '{ticket.Subject}' has a status update: {ticket.Status}.";
+            var messageVi = isResolved
+                ? $"Phiếu '{ticket.Subject}' đã được giải quyết. Vui lòng xác nhận kết quả."
+                : $"Phiếu '{ticket.Subject}' có cập nhật trạng thái: {ticket.Status}.";
 
             await CreateSupportNotificationAsync(
                 ticket.UserId,
                 type,
                 title,
                 message,
-                ticket.TicketId);
+                ticket.TicketId,
+                titleVi: titleVi,
+                messageVi: messageVi);
 
             var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
             foreach (var assignment in assignments)
@@ -186,10 +200,16 @@ namespace BLL.Services.Implements
                 var staffTitle = isResolved
                     ? "Assigned ticket resolved"
                     : "Assigned ticket updated";
+                var staffTitleVi = isResolved
+                    ? "Phiếu được phân công đã giải quyết"
+                    : "Phiếu được phân công đã cập nhật";
 
                 var staffMessage = isResolved
                     ? $"Ticket '{ticket.Subject}' has been resolved."
                     : $"Ticket '{ticket.Subject}' status updated to {ticket.Status}.";
+                var staffMessageVi = isResolved
+                    ? $"Phiếu '{ticket.Subject}' đã được giải quyết."
+                    : $"Trạng thái phiếu '{ticket.Subject}' đã cập nhật thành {ticket.Status}.";
 
                 await CreateSupportNotificationAsync(
                     assignment.StaffId,
@@ -197,7 +217,9 @@ namespace BLL.Services.Implements
                     staffTitle,
                     staffMessage,
                     ticket.TicketId,
-                    saveChanges: false);
+                    saveChanges: false,
+                    titleVi: staffTitleVi,
+                    messageVi: staffMessageVi);
             }
 
             if (assignments.Any())
@@ -303,7 +325,9 @@ namespace BLL.Services.Implements
                 type,
                 title,
                 message,
-                ticket.TicketId);
+                ticket.TicketId,
+                titleVi: "Phiếu hỗ trợ của bạn đã được giải quyết",
+                messageVi: $"Phiếu '{ticket.Subject}' đã được nhân viên giải quyết. Vui lòng xem ghi chú giải quyết.");
 
             // B. Notify all staff assigned to the ticket
             var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
@@ -318,7 +342,9 @@ namespace BLL.Services.Implements
                     staffTitle,
                     staffMessage,
                     ticket.TicketId,
-                    saveChanges: false);
+                    saveChanges: false,
+                    titleVi: "Phiếu được phân công đã giải quyết",
+                    messageVi: $"Phiếu '{ticket.Subject}' đã được giải quyết bởi {staffActorUserId}.");
             }
 
             // 4. Save all pending notifications
@@ -398,10 +424,16 @@ namespace BLL.Services.Implements
             var title = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
                 ? "Support Ticket Closed"
                 : "Support Ticket Re-escalated";
+            var titleVi = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                ? "Phiếu hỗ trợ đã đóng"
+                : "Phiếu hỗ trợ được leo thang";
 
             var message = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
                 ? "The ticket has been closed by the creator. Please check the notes."
                 : $"The ticket status was changed to {newStatus}.";
+            var messageVi = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                ? "Phiếu đã được người tạo đóng lại. Vui lòng kiểm tra ghi chú."
+                : $"Trạng thái phiếu đã thay đổi thành {newStatus}.";
 
             // Notify the creator themselves
             await CreateSupportNotificationAsync(
@@ -409,7 +441,9 @@ namespace BLL.Services.Implements
                 type,
                 title,
                 message,
-                ticket.TicketId);
+                ticket.TicketId,
+                titleVi: titleVi,
+                messageVi: messageVi);
 
             // Notify all staff assigned (to make them aware of the major status change)
             var assignments = await _assignmentRepository.FindAsync(a => a.TicketId == ticketId);
@@ -418,6 +452,9 @@ namespace BLL.Services.Implements
                 var staffMessage = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
                     ? $"The ticket '{ticket.Subject}' has been manually closed by the creator ({requesterUserId})."
                     : $"The ticket '{ticket.Subject}' has been re-escalated by the creator ({requesterUserId}).";
+                var staffMessageVi = string.Equals(newStatus, "closed", StringComparison.OrdinalIgnoreCase)
+                    ? $"Phiếu '{ticket.Subject}' đã được người tạo ({requesterUserId}) đóng thủ công."
+                    : $"Phiếu '{ticket.Subject}' đã được người tạo ({requesterUserId}) leo thang.";
 
                 await CreateSupportNotificationAsync(
                     assignment.StaffId,
@@ -425,7 +462,9 @@ namespace BLL.Services.Implements
                     "Creator Status Change",
                     staffMessage,
                     ticket.TicketId,
-                    saveChanges: false);
+                    saveChanges: false,
+                    titleVi: "Thay đổi trạng thái bởi người tạo",
+                    messageVi: staffMessageVi);
             }
 
             if (assignments.Any())
@@ -510,7 +549,9 @@ namespace BLL.Services.Implements
                         "Evidence uploaded to ticket",
                         $"New evidence ({uploadedAttachments.Count} file(s)) has been uploaded to ticket '{ticket.Subject}'.",
                         ticketId,
-                        saveChanges: false);
+                        saveChanges: false,
+                        titleVi: "Bằng chứng đã tải lên phiếu",
+                        messageVi: $"Bằng chứng mới ({uploadedAttachments.Count} tệp) đã được tải lên phiếu '{ticket.Subject}'.");
                 }
 
                 if (assignments.Any())

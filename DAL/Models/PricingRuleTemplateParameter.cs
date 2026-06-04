@@ -12,6 +12,8 @@ public partial class PricingRuleTemplateParameter
 
     public string DisplayName { get; set; } = null!;
 
+    public string? DisplayNameVi { get; set; }
+
     public decimal DefaultValue { get; set; }
 
     public decimal? MinValue { get; set; }

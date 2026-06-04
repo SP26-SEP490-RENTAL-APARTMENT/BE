@@ -13,7 +13,11 @@ public partial class Notification
 
     public string Title { get; set; } = null!;
 
+    public string? TitleVi { get; set; }
+
     public string Message { get; set; } = null!;
+
+    public string? MessageVi { get; set; }
 
     public Guid? ReferenceId { get; set; }
 

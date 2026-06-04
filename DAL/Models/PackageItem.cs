@@ -9,7 +9,11 @@ public partial class PackageItem
 
     public string ItemName { get; set; } = null!;
 
+    public string? ItemNameVi { get; set; }
+
     public string? ItemDescription { get; set; }
+
+    public string? ItemDescriptionVi { get; set; }
 
     public decimal? Quantity { get; set; }
 

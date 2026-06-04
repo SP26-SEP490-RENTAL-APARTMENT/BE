@@ -664,7 +664,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         string title,
         string message,
         Guid apartmentId,
-        bool saveChanges = true)
+        bool saveChanges = true,
+        string? titleVi = null,
+        string? messageVi = null)
     {
         await _notificationRepository.AddAsync(new Notification
         {
@@ -672,7 +674,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             UserId = userId,
             Type = type,
             Title = title,
+            TitleVi = titleVi,
             Message = message,
+            MessageVi = messageVi,
             ReferenceId = apartmentId,
             ReferenceType = "apartment",
             IsRead = false,
@@ -718,7 +722,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             NotificationType.system_announcement.ToString(),
             "Listing submitted for review",
             $"Your listing '{apartment.Title}' has been submitted for review.",
-            apartment.ApartmentId);
+            apartment.ApartmentId,
+            titleVi: "Tin đăng đã được gửi để xét duyệt",
+            messageVi: $"Tin đăng '{apartment.Title}' của bạn đã được gửi để xét duyệt.");
 
         // Notify staff users that a new listing is pending review
         var staffUsers = (await _userRepository.FindAsync(u => u.Role.ToLower() == "staff")).ToList();
@@ -732,7 +738,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
                     "New listing pending review",
                     $"Listing '{apartment.Title}' has been submitted and is pending review.",
                     apartment.ApartmentId,
-                    saveChanges: false);
+                    saveChanges: false,
+                    titleVi: "Tin đăng mới chờ xét duyệt",
+                    messageVi: $"Tin đăng '{apartment.Title}' đã được gửi và đang chờ xét duyệt.");
             }
 
             await _notificationRepository.SaveChangesAsync();
@@ -762,6 +770,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         string type;
         string title;
         string message;
+        string titleVi;
+        string messageVi;
 
         if (dto.Approved)
         {
@@ -772,6 +782,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             type = NotificationType.listing_approved.ToString();
             title = "Listing approved";
             message = $"Your listing '{apartment.Title}' has been approved and is now posted.";
+            titleVi = "Tin đăng đã được duyệt";
+            messageVi = $"Tin đăng '{apartment.Title}' của bạn đã được duyệt và hiện đang hiển thị.";
         }
         else
         {
@@ -785,6 +797,8 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             type = NotificationType.listing_rejected.ToString();
             title = "Listing rejected";
             message = $"Your listing '{apartment.Title}' was rejected. Reason: {dto.RejectionReason}.";
+            titleVi = "Tin đăng bị từ chối";
+            messageVi = $"Tin đăng '{apartment.Title}' của bạn bị từ chối. Lý do: {dto.RejectionReason}.";
         }
 
         _apartmentRepository.Update(apartment);
@@ -795,7 +809,9 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
             type,
             title,
             message,
-            apartment.ApartmentId);
+            apartment.ApartmentId,
+            titleVi: titleVi,
+            messageVi: messageVi);
 
         return apartment;
     }
@@ -820,15 +836,22 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         // Send notification to landlord
         string title = "Apartment unpublished";
         string message = $"Your apartment '{apartment.Title}' has been unpublished and returned to draft status.";
+        string titleVi = "Căn hộ đã bị gỡ khỏi danh sách";
+        string messageVi = $"Căn hộ '{apartment.Title}' của bạn đã bị gỡ và trở về trạng thái nháp.";
         if (!string.IsNullOrWhiteSpace(reason))
+        {
             message += $" Reason: {reason}";
+            messageVi += $" Lý do: {reason}";
+        }
 
         await CreateListingNotificationAsync(
             apartment.LandlordId,
             NotificationType.system_announcement.ToString(),
             title,
             message,
-            apartment.ApartmentId);
+            apartment.ApartmentId,
+            titleVi: titleVi,
+            messageVi: messageVi);
 
         return apartment;
     }

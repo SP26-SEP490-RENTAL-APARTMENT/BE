@@ -461,12 +461,18 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Name)
                 .HasMaxLength(200)
                 .HasColumnName("name");
+            entity.Property(e => e.NameVi)
+                .HasMaxLength(200)
+                .HasColumnName("name_vi");
             entity.Property(e => e.Code)
                 .HasMaxLength(100)
                 .HasColumnName("code");
             entity.Property(e => e.Description)
                 .HasColumnType("text")
                 .HasColumnName("description");
+            entity.Property(e => e.DescriptionVi)
+                .HasColumnType("text")
+                .HasColumnName("description_vi");
             entity.Property(e => e.IsActive)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("is_active");
@@ -496,6 +502,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.DisplayName)
                 .HasMaxLength(200)
                 .HasColumnName("display_name");
+            entity.Property(e => e.DisplayNameVi)
+                .HasMaxLength(200)
+                .HasColumnName("display_name_vi");
             entity.Property(e => e.DefaultValue)
                 .HasPrecision(12, 4)
                 .HasColumnName("default_value");
@@ -1247,6 +1256,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Message)
                 .HasColumnType("text")
                 .HasColumnName("message");
+            entity.Property(e => e.MessageVi)
+                .HasColumnType("text")
+                .HasColumnName("message_vi");
             entity.Property(e => e.ReadAt)
                 .HasColumnType("timestamp")
                 .HasColumnName("read_at");
@@ -1257,6 +1269,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Title)
                 .HasMaxLength(150)
                 .HasColumnName("title");
+            entity.Property(e => e.TitleVi)
+                .HasMaxLength(150)
+                .HasColumnName("title_vi");
             entity.Property(e => e.Type)
                 .HasColumnType("enum('booking_created','booking_confirmed','booking_cancelled','booking_upcoming','payment_success','payment_failed','identity_verified','identity_rejected','listing_approved','listing_rejected','inspection_scheduled','inspection_completed','support_ticket_created','support_ticket_update','support_ticket_resolved','review_reminder','new_message','system_announcement','other')")
                 .HasColumnName("type");
@@ -1290,6 +1305,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Description)
                 .HasColumnType("text")
                 .HasColumnName("description");
+            entity.Property(e => e.DescriptionVi)
+                .HasColumnType("text")
+                .HasColumnName("description_vi");
             entity.Property(e => e.IsActive)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("is_active");
@@ -1297,6 +1315,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Name)
                 .HasMaxLength(150)
                 .HasColumnName("name");
+            entity.Property(e => e.NameVi)
+                .HasMaxLength(150)
+                .HasColumnName("name_vi");
             entity.Property(e => e.Price)
                 .HasPrecision(12, 2)
                 .HasColumnName("price");
@@ -1320,9 +1341,15 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ItemDescription)
                 .HasColumnType("text")
                 .HasColumnName("item_description");
+            entity.Property(e => e.ItemDescriptionVi)
+                .HasColumnType("text")
+                .HasColumnName("item_description_vi");
             entity.Property(e => e.ItemName)
                 .HasMaxLength(150)
                 .HasColumnName("item_name");
+            entity.Property(e => e.ItemNameVi)
+                .HasMaxLength(150)
+                .HasColumnName("item_name_vi");
             entity.Property(e => e.Quantity)
                 .HasPrecision(10, 2)
                 .HasDefaultValueSql("'1.00'")
@@ -1644,9 +1671,15 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Description)
                 .HasColumnType("text")
                 .HasColumnName("description");
+            entity.Property(e => e.DescriptionVi)
+                .HasColumnType("text")
+                .HasColumnName("description_vi");
             entity.Property(e => e.Features)
                 .HasColumnType("text")
                 .HasColumnName("features");
+            entity.Property(e => e.FeaturesVi)
+                .HasColumnType("text")
+                .HasColumnName("features_vi");
             entity.Property(e => e.IsActive)
                 .HasDefaultValueSql("'1'")
                 .HasColumnName("is_active");
@@ -1656,6 +1689,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Name)
                 .HasMaxLength(100)
                 .HasColumnName("name");
+            entity.Property(e => e.NameVi)
+                .HasMaxLength(100)
+                .HasColumnName("name_vi");
             entity.Property(e => e.PriceAnnual)
                 .HasPrecision(12, 2)
                 .HasColumnName("price_annual");

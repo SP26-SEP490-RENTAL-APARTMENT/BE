@@ -9,7 +9,11 @@ public partial class SubscriptionPlan
 
     public string Name { get; set; } = null!;
 
+    public string? NameVi { get; set; }
+
     public string? Description { get; set; }
+
+    public string? DescriptionVi { get; set; }
 
     public decimal PriceMonthly { get; set; }
 
@@ -18,6 +22,8 @@ public partial class SubscriptionPlan
     public int? MaxApartments { get; set; }
 
     public string? Features { get; set; }
+
+    public string? FeaturesVi { get; set; }
 
     public bool? IsActive { get; set; }
 

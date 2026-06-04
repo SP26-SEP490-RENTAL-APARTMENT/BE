@@ -62,7 +62,9 @@ public sealed class PricingPolicyService : IPricingPolicyService
             {
                 TemplateId = template.TemplateId,
                 Name = template.Name,
+                NameVi = template.NameVi,
                 Description = template.Description,
+                DescriptionVi = template.DescriptionVi,
                 IsActive = template.IsActive,
                 Parameters = parms.Select(p => new PricingRuleTemplateParameterResponseDto
                 {
@@ -70,6 +72,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
                     TemplateId = p.TemplateId,
                     ParameterKey = p.ParameterKey,
                     DisplayName = p.DisplayName,
+                    DisplayNameVi = p.DisplayNameVi,
                     DefaultValue = p.DefaultValue,
                     MinValue = p.MinValue,
                     MaxValue = p.MaxValue,
@@ -126,7 +129,9 @@ public sealed class PricingPolicyService : IPricingPolicyService
                 ApplicationId = application.ApplicationId,
                 TemplateId = template.TemplateId,
                 Name = template.Name,
+                NameVi = template.NameVi,
                 Description = template.Description,
+                DescriptionVi = template.DescriptionVi,
                 IsActive = template.IsActive,
                 Parameters = parms.Select(p => new PricingRuleTemplateParameterResponseDto
                 {
@@ -134,6 +139,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
                     TemplateId = p.TemplateId,
                     ParameterKey = p.ParameterKey,
                     DisplayName = p.DisplayName,
+                    DisplayNameVi = p.DisplayNameVi,
                     DefaultValue = p.DefaultValue,
                     MinValue = p.MinValue,
                     MaxValue = p.MaxValue,
@@ -170,8 +176,10 @@ public sealed class PricingPolicyService : IPricingPolicyService
             TemplateId = Guid.NewGuid(),
             CreatedByAdminId = adminId,
             Name = dto.Name.Trim(),
+            NameVi = string.IsNullOrWhiteSpace(dto.NameVi) ? null : dto.NameVi.Trim(),
             Code = string.IsNullOrWhiteSpace(dto.Code) ? null : dto.Code.Trim(),
             Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
+            DescriptionVi = string.IsNullOrWhiteSpace(dto.DescriptionVi) ? null : dto.DescriptionVi.Trim(),
             IsActive = dto.IsActive,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -187,6 +195,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
                 TemplateId = template.TemplateId,
                 ParameterKey = parameterDto.ParameterKey.Trim(),
                 DisplayName = parameterDto.DisplayName.Trim(),
+                DisplayNameVi = string.IsNullOrWhiteSpace(parameterDto.DisplayNameVi) ? null : parameterDto.DisplayNameVi.Trim(),
                 DefaultValue = parameterDto.DefaultValue,
                 MinValue = parameterDto.MinValue,
                 MaxValue = parameterDto.MaxValue,
@@ -210,8 +219,10 @@ public sealed class PricingPolicyService : IPricingPolicyService
             ?? throw new ArgumentException("Pricing template not found.");
 
         template.Name = dto.Name.Trim();
+        template.NameVi = string.IsNullOrWhiteSpace(dto.NameVi) ? null : dto.NameVi.Trim();
         template.Code = string.IsNullOrWhiteSpace(dto.Code) ? null : dto.Code.Trim();
         template.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
+        template.DescriptionVi = string.IsNullOrWhiteSpace(dto.DescriptionVi) ? null : dto.DescriptionVi.Trim();
         template.IsActive = dto.IsActive;
         template.UpdatedAt = DateTime.UtcNow;
         template.CreatedByAdminId = adminId;
@@ -231,6 +242,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
             if (existingByKey.TryGetValue(key, out var existingParameter))
             {
                 existingParameter.DisplayName = parameterDto.DisplayName.Trim();
+                existingParameter.DisplayNameVi = string.IsNullOrWhiteSpace(parameterDto.DisplayNameVi) ? null : parameterDto.DisplayNameVi.Trim();
                 existingParameter.DefaultValue = parameterDto.DefaultValue;
                 existingParameter.MinValue = parameterDto.MinValue;
                 existingParameter.MaxValue = parameterDto.MaxValue;
@@ -245,6 +257,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
                 TemplateId = template.TemplateId,
                 ParameterKey = key,
                 DisplayName = parameterDto.DisplayName.Trim(),
+                DisplayNameVi = string.IsNullOrWhiteSpace(parameterDto.DisplayNameVi) ? null : parameterDto.DisplayNameVi.Trim(),
                 DefaultValue = parameterDto.DefaultValue,
                 MinValue = parameterDto.MinValue,
                 MaxValue = parameterDto.MaxValue,
@@ -707,8 +720,10 @@ public sealed class PricingPolicyService : IPricingPolicyService
             TemplateId = template.TemplateId,
             CreatedByAdminId = template.CreatedByAdminId,
             Name = template.Name,
+            NameVi = template.NameVi,
             Code = template.Code,
             Description = template.Description,
+            DescriptionVi = template.DescriptionVi,
             IsActive = template.IsActive,
             CreatedAt = template.CreatedAt,
             UpdatedAt = template.UpdatedAt,
@@ -720,6 +735,7 @@ public sealed class PricingPolicyService : IPricingPolicyService
                     TemplateId = parameter.TemplateId,
                     ParameterKey = parameter.ParameterKey,
                     DisplayName = parameter.DisplayName,
+                    DisplayNameVi = parameter.DisplayNameVi,
                     DefaultValue = parameter.DefaultValue,
                     MinValue = parameter.MinValue,
                     MaxValue = parameter.MaxValue,

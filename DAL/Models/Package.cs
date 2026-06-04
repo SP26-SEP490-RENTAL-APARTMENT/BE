@@ -11,7 +11,11 @@ public partial class Package
 
     public string Name { get; set; } = null!;
 
+    public string? NameVi { get; set; }
+
     public string? Description { get; set; }
+
+    public string? DescriptionVi { get; set; }
 
     public decimal Price { get; set; }
 

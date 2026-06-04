@@ -11,9 +11,13 @@ public partial class PricingRuleTemplate
 
     public string Name { get; set; } = null!;
 
+    public string? NameVi { get; set; }
+
     public string? Code { get; set; }
 
     public string? Description { get; set; }
+
+    public string? DescriptionVi { get; set; }
 
     public bool IsActive { get; set; }
 

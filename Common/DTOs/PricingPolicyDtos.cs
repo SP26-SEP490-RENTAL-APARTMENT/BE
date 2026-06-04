@@ -9,6 +9,8 @@ public class PricingRuleTemplateParameterDto
 
     public string DisplayName { get; set; } = null!;
 
+    public string? DisplayNameVi { get; set; }
+
     public decimal DefaultValue { get; set; }
 
     public decimal? MinValue { get; set; }
@@ -22,9 +24,13 @@ public class CreatePricingRuleTemplateDto
 {
     public string Name { get; set; } = null!;
 
+    public string? NameVi { get; set; }
+
     public string? Code { get; set; }
 
     public string? Description { get; set; }
+
+    public string? DescriptionVi { get; set; }
 
     public bool IsActive { get; set; } = true;
 
@@ -39,9 +45,13 @@ public class PricingRuleTemplateResponseDto
 
     public string Name { get; set; } = null!;
 
+    public string? NameVi { get; set; }
+
     public string? Code { get; set; }
 
     public string? Description { get; set; }
+
+    public string? DescriptionVi { get; set; }
 
     public bool IsActive { get; set; }
 
@@ -61,6 +71,8 @@ public class PricingRuleTemplateParameterResponseDto
     public string ParameterKey { get; set; } = null!;
 
     public string DisplayName { get; set; } = null!;
+
+    public string? DisplayNameVi { get; set; }
 
     public decimal DefaultValue { get; set; }
 
@@ -117,7 +129,9 @@ public class TemplatePreviewDto
     public Guid ApplicationId { get; set; }
     public Guid TemplateId { get; set; }
     public string Name { get; set; } = null!;
+    public string? NameVi { get; set; }
     public string? Description { get; set; }
+    public string? DescriptionVi { get; set; }
     public bool IsActive { get; set; }
     public List<PricingRuleTemplateParameterResponseDto> Parameters { get; set; } = new();
     public DateOnly StartDate { get; set; }

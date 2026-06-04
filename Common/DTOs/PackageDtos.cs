@@ -13,7 +13,12 @@ namespace Common.DTOs
         [MaxLength(255)]
         public string Name { get; set; } = null!;
 
+        [MaxLength(255)]
+        public string? NameVi { get; set; }
+
         public string? Description { get; set; }
+
+        public string? DescriptionVi { get; set; }
 
         [Required]
         [Range(0, (double)decimal.MaxValue, ErrorMessage = "Price cannot be negative.")]
@@ -39,7 +44,9 @@ namespace Common.DTOs
         public Guid PackageId { get; set; }
         public Guid ApartmentId { get; set; }
         public string Name { get; set; } = null!;
+        public string? NameVi { get; set; }
         public string? Description { get; set; }
+        public string? DescriptionVi { get; set; }
         public decimal Price { get; set; }
         public string? Currency { get; set; }
         public bool? IsActive { get; set; }
@@ -54,7 +61,12 @@ namespace Common.DTOs
         [MaxLength(255)]
         public string ItemName { get; set; } = null!;
 
+        [MaxLength(255)]
+        public string? ItemNameVi { get; set; }
+
         public string? ItemDescription { get; set; }
+
+        public string? ItemDescriptionVi { get; set; }
 
         [Range(0, (double)decimal.MaxValue, ErrorMessage = "Quantity cannot be less than 0.")]
         public decimal? Quantity { get; set; }
@@ -69,7 +81,9 @@ namespace Common.DTOs
     {
         public Guid PackageItemId { get; set; }
         public string ItemName { get; set; } = null!;
+        public string? ItemNameVi { get; set; }
         public string? ItemDescription { get; set; }
+        public string? ItemDescriptionVi { get; set; }
         public decimal? Quantity { get; set; }
         public decimal? EstimatedValue { get; set; }
         public int? SortOrder { get; set; }
