@@ -63,6 +63,13 @@ namespace BLL.DependencyInjection
             services.AddScoped<PricingPolicyMigrationService>();
             services.AddScoped<IPayOsClientAdapter, PayOsHttpAdapter>();
             services.AddScoped<IPayOsService, PayOsService>();
+            services.AddScoped<IAppSettingsService, AppSettingsService>();
+            return services;
+        }
+        // Called from Program.cs after IHostEnvironment is available
+        public static IServiceCollection AddAppSettingsPath(this IServiceCollection services, string contentRootPath)
+        {
+            services.AddSingleton(new AppSettingsFilePath(Path.Combine(contentRootPath, "appsettings.json")));
             return services;
         }
     }

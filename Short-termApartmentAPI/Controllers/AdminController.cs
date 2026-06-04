@@ -15,19 +15,35 @@ public sealed class AdminController : ControllerBase
     private readonly IPricingPolicyService _pricingPolicyService;
     private readonly IBookingService _bookingService;
     private readonly PricingPolicyMigrationService _migrationService;
+    private readonly IAppSettingsService _appSettingsService;
 
     public AdminController(
         IPricingPolicyService pricingPolicyService,
         IBookingService bookingService,
-        PricingPolicyMigrationService migrationService)
+        PricingPolicyMigrationService migrationService,
+        IAppSettingsService appSettingsService)
     {
         _pricingPolicyService = pricingPolicyService;
         _bookingService = bookingService;
         _migrationService = migrationService;
+        _appSettingsService = appSettingsService;
     }
 
     [HttpGet("ping")]
     public IActionResult Ping() => Ok(new { message = "admin ok" });
+
+    [HttpGet("settings")]
+    public IActionResult GetSettings()
+    {
+        return Ok(_appSettingsService.GetSettings());
+    }
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> UpdateSettings([FromBody] AppSettingsDto dto)
+    {
+        await _appSettingsService.SaveSettingsAsync(dto);
+        return Ok(_appSettingsService.GetSettings());
+    }
 
     [HttpGet("pricing/templates")]
     public async Task<ActionResult<IEnumerable<PricingRuleTemplateResponseDto>>> GetPricingTemplates()
