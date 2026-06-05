@@ -2072,6 +2072,10 @@ public class BookingService : BaseService<Booking>, IBookingService
             dto.FullName,
             dto.DateOfBirth);
 
+        var tenantUser = await _userRepository.GetByIdAsync(booking.TenantId);
+        var tenant = await _tenantRepository.GetByIdAsync(booking.TenantId);
+        EnsureOccupantIsNotTenant(tenantUser, tenant, dto.PassportId, dto.NationalIdCardNumber);
+
         var nextOrder = existing.Count == 0
             ? 1
             : existing.Max(o => o.OccupantOrder) + 1;
@@ -2423,6 +2427,21 @@ public class BookingService : BaseService<Booking>, IBookingService
     private static int ResolveBookingOccupantCap(Booking booking)
     {
         return Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0) + (booking.NoOfInfants ?? 0));
+    }
+
+    private static void EnsureOccupantIsNotTenant(User? tenantUser, Tenant? tenant, string? passportId, string? nationalIdCardNumber)
+    {
+        var normalizedPassportId = NormalizeIdentityValue(passportId);
+        var normalizedNationalIdCardNumber = NormalizeIdentityValue(nationalIdCardNumber);
+
+        var tenantNationalId = NormalizeIdentityValue(tenantUser?.NationalIdCardNumber);
+        var tenantPassportId = NormalizeIdentityValue(tenant?.PassportId);
+
+        if (normalizedNationalIdCardNumber != null && normalizedNationalIdCardNumber == tenantNationalId)
+            throw new InvalidOperationException("The occupant's national ID number belongs to the tenant who made this booking. The tenant should not be added as a separate occupant.");
+
+        if (normalizedPassportId != null && normalizedPassportId == tenantPassportId)
+            throw new InvalidOperationException("The occupant's passport number belongs to the tenant who made this booking. The tenant should not be added as a separate occupant.");
     }
 
     private static void EnsureNoDuplicateOccupantIdentity(
@@ -3542,15 +3561,16 @@ public class BookingService : BaseService<Booking>, IBookingService
         await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
 
         // Release landlord funds immediately — no-show is irreversible and no checkout will ever occur.
-        // Full payment: refund 60% of TotalPrice to tenant, landlord keeps the remaining 40%.
-        // Partial payment: tenant only paid the deposit; landlord keeps it all, no refund issued.
+        // Full payment: refund 60% to tenant; of the retained 40%, platform keeps its 30% cut and landlord gets 70%.
+        // Partial payment: no refund; landlord gets 70% of what was actually paid, platform keeps 30%.
         var isFullPayment = GetBookingPaymentMode(booking) == BookingPaymentMode.full;
         decimal tenantRefundAmount = 0m;
         decimal creditAmount;
         if (isFullPayment)
         {
             tenantRefundAmount = Math.Round(booking.TotalPrice * NoShowFullPaymentTenantRefundRate, 2, MidpointRounding.AwayFromZero);
-            creditAmount = Math.Round(booking.TotalPrice - tenantRefundAmount, 2, MidpointRounding.AwayFromZero);
+            var retainedAmount = booking.TotalPrice - tenantRefundAmount;
+            creditAmount = Math.Round(retainedAmount * FullPaymentLandlordShareRate, 2, MidpointRounding.AwayFromZero);
             await IssueNoShowTenantRefundAsync(booking, apartment, tenantRefundAmount, dto.Notes, now);
         }
         else
@@ -5102,14 +5122,71 @@ public class BookingService : BaseService<Booking>, IBookingService
             {
                 if (booking.DepositPaid == true)
                 {
-                    await RefundBookingAsync(
-                        booking.BookingId,
-                        booking.TenantId,
-                        new RequestBookingRefundDto
+                    // Tenant forfeits deposit — no refund issued.
+                    // Landlord receives 85% of the deposit as compensation; platform retains 15%.
+                    const decimal landlordShareRate = 0.85m;
+
+                    var depositPayment = (await _paymentRepository.FindAsync(p =>
+                        p.RelatedEntityId == booking.BookingId &&
+                        p.RelatedEntityType == PaymentRelatedEntityType.booking.ToString() &&
+                        p.Status == PaymentStatus.success.ToString() &&
+                        p.PaymentType != PaymentTypes.refund.ToString()))
+                        .OrderByDescending(p => p.PaidAt)
+                        .FirstOrDefault();
+
+                    var depositAmount = depositPayment?.Amount ?? booking.DepositAmount;
+                    var landlordAmount = Math.Round(depositAmount * landlordShareRate, 2, MidpointRounding.AwayFromZero);
+                    var platformFee = depositAmount - landlordAmount;
+
+                    if (landlordAmount > 0m && apartment != null)
+                    {
+                        var penaltyPayment = new Payment
                         {
-                            Reason = "system_cancellation",
-                            Notes = "Booking cancelled due to payment timeout."
-                        });
+                            Amount = depositAmount,
+                            PaymentType = PaymentTypes.deposit.ToString(),
+                            PaymentPurpose = PaymentPurposes.booking_deposit.ToString(),
+                            RelatedEntityId = booking.BookingId,
+                            RelatedEntityType = PaymentRelatedEntityType.booking.ToString(),
+                            LandlordId = apartment.LandlordId,
+                            LandlordAmount = landlordAmount,
+                            PlatformFee = platformFee,
+                            SettlementStatus = "completed",
+                            Method = depositPayment?.Method ?? "cash",
+                            Status = PaymentStatus.success.ToString(),
+                            PaidAt = nowUtc
+                        };
+
+                        await _paymentRepository.AddAsync(penaltyPayment);
+                        await _paymentRepository.SaveChangesAsync();
+
+                        await _landlordWalletService.CreditPendingAsync(apartment.LandlordId, landlordAmount);
+                    }
+
+                    booking.Status = "cancelled";
+                    _bookingRepository.Update(booking);
+                    await _bookingRepository.SaveChangesAsync();
+                    await RefreshApartmentBookingStatusSnapshotAsync(booking.ApartmentId);
+
+                    if (apartment != null)
+                    {
+                        await CreateBookingNotificationAsync(
+                            booking.TenantId,
+                            NotificationType.booking_cancelled.ToString(),
+                            "Booking cancelled — deposit forfeited",
+                            $"Your booking for apartment '{apartment.Title}' was cancelled because the remaining balance was not paid by the due date. Your deposit has been forfeited.",
+                            booking.BookingId,
+                            titleVi: "Đặt phòng đã bị hủy — mất cọc",
+                            messageVi: $"Đặt phòng tại căn hộ '{apartment.Title}' đã bị hủy do không thanh toán số tiền còn lại trước hạn. Tiền đặt cọc của bạn đã bị mất.");
+
+                        await CreateBookingNotificationAsync(
+                            apartment.LandlordId,
+                            NotificationType.booking_cancelled.ToString(),
+                            "Booking cancelled — deposit compensation credited",
+                            $"A booking for apartment '{apartment.Title}' was cancelled due to tenant non-payment. {landlordAmount:0.00}₫ has been credited to your wallet.",
+                            booking.BookingId,
+                            titleVi: "Đặt phòng đã bị hủy — đền bù tiền cọc",
+                            messageVi: $"Một đặt phòng tại căn hộ '{apartment.Title}' đã bị hủy do khách không thanh toán. {landlordAmount:0.00}₫ đã được cộng vào ví của bạn.");
+                    }
                 }
                 else
                 {

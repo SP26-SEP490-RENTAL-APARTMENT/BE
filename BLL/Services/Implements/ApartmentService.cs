@@ -39,6 +39,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
     private readonly IUserRepository _userRepository;
     private readonly IRepository<Notification> _notificationRepository;
     private readonly IRepository<PropertyInspection> _propertyInspectionRepository;
+    private readonly IReviewRepository _reviewRepository;
     private readonly PricingPolicyMigrationService? _pricingPolicyMigrationService;
 
     public ApartmentService(
@@ -55,6 +56,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         IApartmentPriceCalendarRepository apartmentPriceCalendarRepository,
         IHolidayService holidayService,
         INearbyAttractionRepository nearbyAttractionRepository,
+        IReviewRepository reviewRepository,
         PricingPolicyMigrationService? pricingPolicyMigrationService = null)
         : base(repository)
     {
@@ -71,6 +73,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         _apartmentPriceCalendarRepository = apartmentPriceCalendarRepository;
         _holidayService = holidayService;
         _nearbyAttractionRepository = nearbyAttractionRepository;
+        _reviewRepository = reviewRepository;
         _pricingPolicyMigrationService = pricingPolicyMigrationService;
     }
 
@@ -160,7 +163,29 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
 
         await ApplyPriceChangeHistoryAsync(mappedItems);
         await ApplyWishlistMetadataAsync(mappedItems, tenantId);
+        await ApplyAverageRatingsAsync(mappedItems);
         return (mappedItems, totalCount);
+    }
+
+    private async Task ApplyAverageRatingsAsync(List<ApartmentResponseDto> apartments)
+    {
+        if (apartments.Count == 0) return;
+
+        var ids = apartments.Select(a => a.ApartmentId).ToHashSet();
+        var reviews = await _reviewRepository.FindAsync(r => r.ApartmentId != null && ids.Contains(r.ApartmentId.Value) && r.Rating != null);
+
+        var grouped = reviews
+            .GroupBy(r => r.ApartmentId!.Value)
+            .ToDictionary(g => g.Key, g => (Average: g.Average(r => (double)r.Rating!.Value), Count: g.Count()));
+
+        foreach (var apartment in apartments)
+        {
+            if (grouped.TryGetValue(apartment.ApartmentId, out var stats))
+            {
+                apartment.AverageRating = stats.Average;
+                apartment.TotalReviews = stats.Count;
+            }
+        }
     }
 
     private async Task ApplyPriceChangeHistoryAsync(List<ApartmentResponseDto> apartments)
@@ -491,6 +516,7 @@ public class ApartmentService : BaseService<Apartment>, IApartmentService
         await ApplyPriceChangeHistoryAsync(new List<ApartmentResponseDto> { apartment });
         await ApplyWishlistMetadataAsync(apartment, tenantId);
         await ApplyNearbyAttractionsAsync(apartment, includeExpandedNearbyAttractions);
+        await ApplyAverageRatingsAsync(new List<ApartmentResponseDto> { apartment });
         return apartment;
     }
 

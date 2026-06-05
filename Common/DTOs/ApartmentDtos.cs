@@ -173,6 +173,8 @@ public class ApartmentResponseDto
     public bool IsFavorite { get; set; }
     public Guid? CollectionId { get; set; }
     public string? InspectionStatus { get; set; }
+    public double? AverageRating { get; set; }
+    public int TotalReviews { get; set; }
     public List<ApartmentPriceChangeDto> PriceChanges { get; set; } = new List<ApartmentPriceChangeDto>();
     public List<string> Photos { get; set; } = new List<string>();
     public List<ApartmentMediaDto> Media { get; set; } = new List<ApartmentMediaDto>();
