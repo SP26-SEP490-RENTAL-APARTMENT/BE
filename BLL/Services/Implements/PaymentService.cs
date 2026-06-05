@@ -48,4 +48,12 @@ public sealed class PaymentService : BaseService<Payment>, IPaymentService
         var allowedColumns = new[] { "PaymentId", "RelatedEntityId", "Amount", "PaymentType", "PaymentPurpose", "RelatedEntityType", "LandlordId", "LandlordAmount", "PlatformFee", "SettlementStatus", "Method", "Status", "TransactionId", "PaidAt" };
         return _paymentRepository.GetByTenantAsync(tenantId, page, pageSize, sortBy, sortOrder, fromDate, toDate, filters, allowedColumns);
     }
+
+    public Task<IEnumerable<Payment>> GetOfflinePaymentsByBookingAsync(Guid bookingId)
+    {
+        return _paymentRepository.FindAsync(p =>
+            p.RelatedEntityId == bookingId &&
+            p.RelatedEntityType == "booking" &&
+            p.Method == "cash");
+    }
 }

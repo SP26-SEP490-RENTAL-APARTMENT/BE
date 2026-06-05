@@ -20,6 +20,7 @@ namespace Short_termApartmentAPI.Controllers
         private readonly IFptIdRecognitionService _idRecognitionService;
         private readonly IFptPassportRecognitionService _passportRecognitionService;
         private readonly IUserService _userService;
+        private readonly IIdentityVerificationService _identityVerificationService;
         private readonly IMapper _mapper;
         private readonly decimal _autoApproveConfidenceThreshold;
 
@@ -27,12 +28,14 @@ namespace Short_termApartmentAPI.Controllers
             IFptIdRecognitionService idRecognitionService,
             IFptPassportRecognitionService passportRecognitionService,
             IUserService userService,
+            IIdentityVerificationService identityVerificationService,
             IMapper mapper,
             IOptions<FptIdRecognitionOptions> options)
         {
             _idRecognitionService = idRecognitionService;
             _passportRecognitionService = passportRecognitionService;
             _userService = userService;
+            _identityVerificationService = identityVerificationService;
             _mapper = mapper;
             _autoApproveConfidenceThreshold = (decimal)options.Value.AutoApproveConfidenceThreshold;
         }
@@ -71,6 +74,11 @@ namespace Short_termApartmentAPI.Controllers
             if (!TryApplyRecognitionToUser(user, recognition, out var validationError))
             {
                 return BadRequest(new ApiResponse<string>(validationError));
+            }
+
+            if (await _identityVerificationService.IsNationalIdInUseByAnotherAccountAsync(recognition.IdNumber!, userId))
+            {
+                return Conflict(new ApiResponse<string>("National ID number is already in use by another account."));
             }
 
             user.IdentityVerified = recognition.OverallConfidence >= 0.75d;
@@ -205,6 +213,11 @@ namespace Short_termApartmentAPI.Controllers
             if (!TryApplyPassportRecognitionToUser(user, recognition, out var validationError))
             {
                 return BadRequest(new ApiResponse<string>(validationError));
+            }
+
+            if (await _identityVerificationService.IsPassportInUseByAnotherAccountAsync(recognition.PassportNumber!, userId))
+            {
+                return Conflict(new ApiResponse<string>("Passport number is already in use by another account."));
             }
 
             user.IdentityVerified = recognition.OverallConfidence >= 0.75d;

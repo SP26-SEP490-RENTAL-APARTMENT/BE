@@ -333,9 +333,9 @@ public class BookingService : BaseService<Booking>, IBookingService
         var now = Common.Utils.VietnamTime.Now;
         var isInsideGraceWindow = graceWindowExpiry.HasValue && now <= graceWindowExpiry.Value;
         var selectedPaymentMode = requestedPaymentMode.ToString();
-        var selectedPaymentModeAllowed = unpaidBookingCount == 0
-            || _bookingAdmissionPolicySettings.AllowedPaymentModesWhenDebtExists.Any(mode =>
-                string.Equals(mode, selectedPaymentMode, StringComparison.OrdinalIgnoreCase));
+        var selectedPaymentModeAllowed = unpaidBookingCount == 0;
+            // || _bookingAdmissionPolicySettings.AllowedPaymentModesWhenDebtExists.Any(mode =>
+            //     string.Equals(mode, selectedPaymentMode, StringComparison.OrdinalIgnoreCase));
 
         var exceedsUnpaidBookingLimit = unpaidBookingCount > _bookingAdmissionPolicySettings.MaxSimultaneousUnpaidConfirmedBookings;
         var hasOutstandingDebt = unpaidBookingCount > 0;

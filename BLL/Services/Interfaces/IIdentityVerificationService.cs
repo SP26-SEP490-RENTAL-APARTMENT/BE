@@ -59,5 +59,15 @@ namespace BLL.Services.Interfaces
             int pageSize,
             string? sortBy = null,
             string? sortOrder = null);
+
+        /// <summary>
+        /// Returns true if the national ID number is already associated with a different account.
+        /// </summary>
+        Task<bool> IsNationalIdInUseByAnotherAccountAsync(string nationalIdNumber, Guid currentUserId);
+
+        /// <summary>
+        /// Returns true if the passport number is already associated with a different account.
+        /// </summary>
+        Task<bool> IsPassportInUseByAnotherAccountAsync(string passportNumber, Guid currentUserId);
     }
 }

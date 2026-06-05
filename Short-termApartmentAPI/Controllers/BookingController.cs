@@ -617,6 +617,38 @@ namespace Short_termApartmentAPI.Controllers
             }
         }
 
+        [HttpGet("{id:guid}/offline-payments")]
+        [Authorize(Roles = "landlord,admin")]
+        public async Task<IActionResult> GetOfflinePayments(Guid id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdClaim, out var requesterId))
+                return Unauthorized(new ApiResponse<string>("Invalid user token."));
+
+            var booking = await _bookingService.GetByIdAsync(id);
+            if (booking == null)
+                return NotFound(new ApiResponse<string>("Booking not found."));
+
+            if (User.IsInRole("landlord") && booking.Apartment != null && booking.Apartment.LandlordId != requesterId)
+                return Forbid();
+
+            var payments = await _paymentService.GetOfflinePaymentsByBookingAsync(booking.BookingId);
+
+            var result = payments.Select(p => new
+            {
+                p.PaymentId,
+                p.Amount,
+                p.Status,
+                p.ProofUrl,
+                p.Notes,
+                p.ConfirmedAt,
+                p.ConfirmedBy,
+                p.PaidAt
+            });
+
+            return Ok(new ApiResponse<object>(result));
+        }
+
         [HttpPost("{id:guid}/record-balance-payment")]
         [Authorize(Roles = "landlord,staff,admin")]
         public async Task<IActionResult> RecordBalancePayment(Guid id, [FromBody] Short_termApartmentAPI.DTOs.RecordBalancePaymentFormDto dto)

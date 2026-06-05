@@ -28,4 +28,6 @@ public interface IPaymentService : IBaseService<Payment>
 		DateTime? fromDate = null,
 		DateTime? toDate = null,
 		Dictionary<string, string>? filters = null);
+
+	Task<IEnumerable<Payment>> GetOfflinePaymentsByBookingAsync(Guid bookingId);
 }

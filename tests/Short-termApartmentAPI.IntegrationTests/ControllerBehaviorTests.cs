@@ -1276,6 +1276,9 @@ internal sealed class PaymentServiceStub : BaseServiceStub<Payment>, IPaymentSer
 
     public Task<(IEnumerable<Payment> Items, int TotalCount)> GetTenantPaymentsAsync(Guid tenantId, int page, int pageSize, string? sortBy = null, string? sortOrder = null, DateTime? fromDate = null, DateTime? toDate = null, Dictionary<string, string>? filters = null)
         => Task.FromResult((TenantPayments.AsEnumerable(), TenantPayments.Count));
+
+    public Task<IEnumerable<Payment>> GetOfflinePaymentsByBookingAsync(Guid bookingId)
+        => Task.FromResult(Enumerable.Empty<Payment>());
 }
 
 internal sealed class BookingServiceStub : BaseServiceStub<Booking>, IBookingService

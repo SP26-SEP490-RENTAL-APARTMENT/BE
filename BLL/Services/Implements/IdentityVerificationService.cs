@@ -239,6 +239,10 @@ namespace BLL.Services.Implements
             var now = Common.Utils.VietnamTime.Now;
             var ocrResultsToPersist = new List<IdentityDocumentOcrResult>();
 
+            var existingUserDocumentIds = (await _userIdentityDocumentRepository.FindAsync(d => d.UserId == userId))
+                .Select(d => d.DocumentId)
+                .ToHashSet();
+
             foreach (var upload in uploads)
             {
                 var file = upload.File;
@@ -288,7 +292,7 @@ namespace BLL.Services.Implements
                                     throw new ArgumentException("Passport number is already in use by another account.");
                                 }
 
-                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber) && r.Document.UserId != userId);
+                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber) && !existingUserDocumentIds.Contains(r.DocumentId));
                                 if (existingOcrs.Any(r => string.Equals(NormalizePassportNumber(r.IdNumber), normalizedPassport, StringComparison.Ordinal)))
                                 {
                                     throw new ArgumentException("Passport number is already in use by another account.");
@@ -306,7 +310,7 @@ namespace BLL.Services.Implements
                                     throw new ArgumentException("National ID number is already in use by another account.");
                                 }
 
-                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber) && r.Document.UserId != userId);
+                                var existingOcrs = await _identityDocumentOcrResultRepository.FindAsync(r => !string.IsNullOrWhiteSpace(r.IdNumber) && !existingUserDocumentIds.Contains(r.DocumentId));
                                 if (existingOcrs.Any(r => string.Equals(NormalizeIdNumber(r.IdNumber), normalizedId, StringComparison.Ordinal)))
                                 {
                                     throw new ArgumentException("National ID number is already in use by another account.");
@@ -891,6 +895,26 @@ namespace BLL.Services.Implements
                 MatchFailureReason = result.MatchFailureReason,
                 ProcessedAt = result.ProcessedAt
             };
+        }
+
+        public async Task<bool> IsNationalIdInUseByAnotherAccountAsync(string nationalIdNumber, Guid currentUserId)
+        {
+            var normalized = NormalizeIdNumber(nationalIdNumber);
+            if (string.IsNullOrWhiteSpace(normalized))
+                return false;
+
+            var usersWithId = await _userRepository.FindAsync(u => !string.IsNullOrWhiteSpace(u.NationalIdCardNumber) && u.UserId != currentUserId);
+            return usersWithId.Any(u => string.Equals(NormalizeIdNumber(u.NationalIdCardNumber), normalized, StringComparison.Ordinal));
+        }
+
+        public async Task<bool> IsPassportInUseByAnotherAccountAsync(string passportNumber, Guid currentUserId)
+        {
+            var normalized = NormalizePassportNumber(passportNumber);
+            if (string.IsNullOrWhiteSpace(normalized))
+                return false;
+
+            var tenantsWithPassport = await _tenantRepository.FindAsync(t => !string.IsNullOrWhiteSpace(t.PassportId) && t.TenantId != currentUserId);
+            return tenantsWithPassport.Any(t => string.Equals(NormalizePassportNumber(t.PassportId), normalized, StringComparison.Ordinal));
         }
 
         private static string NormalizeIdNumber(string? value)

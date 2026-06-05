@@ -25,6 +25,10 @@ public partial class Payment
 
     public string SettlementStatus { get; set; } = "pending";
 
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
     public string Method { get; set; } = null!;
 
     public string? Status { get; set; }

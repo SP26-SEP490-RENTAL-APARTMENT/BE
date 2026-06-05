@@ -1459,6 +1459,14 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.SettlementStatus)
                 .HasMaxLength(20)
                 .HasColumnName("settlement_status");
+            entity.Property(e => e.CreatedAt)
+                .HasColumnType("timestamp")
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasColumnType("timestamp")
+                .HasDefaultValueSql("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
+                .HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<PropertyInspection>(entity =>
