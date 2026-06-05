@@ -23,8 +23,10 @@ public static class PricingRuleTemplateSeed
                 TemplateId = Guid.NewGuid(),
                 CreatedByAdminId = SeedConstants.SeedAdminUserId,
                 Name = name,
+                NameVi = "Chính sách giá mặc định",
                 Code = code,
                 Description = "Default multipliers for standard/weekend/holiday pricing. Landlords can enable and adjust bounded parameters.",
+                DescriptionVi = "Hệ số nhân mặc định cho giá tiêu chuẩn, cuối tuần và ngày lễ. Chủ nhà có thể bật và điều chỉnh trong phạm vi cho phép.",
                 IsActive = true,
                 CreatedAt = Common.Utils.VietnamTime.Now,
                 UpdatedAt = Common.Utils.VietnamTime.Now
@@ -43,8 +45,15 @@ public static class PricingRuleTemplateSeed
                     cancellationToken);
             }
         }
+        else
+        {
+            template.NameVi = "Chính sách giá mặc định";
+            template.DescriptionVi = "Hệ số nhân mặc định cho giá tiêu chuẩn, cuối tuần và ngày lễ. Chủ nhà có thể bật và điều chỉnh trong phạm vi cho phép.";
+            context.PricingRuleTemplates.Update(template);
+            await context.SaveChangesAsync(cancellationToken);
+        }
 
-        async Task UpsertParameterAsync(string key, string displayName, decimal defaultValue, decimal? minValue, decimal? maxValue)
+        async Task UpsertParameterAsync(string key, string displayName, string? displayNameVi, decimal defaultValue, decimal? minValue, decimal? maxValue)
         {
             var existing = await context.PricingRuleTemplateParameters.FirstOrDefaultAsync(
                 p => p.TemplateId == template.TemplateId && p.ParameterKey == key,
@@ -53,6 +62,7 @@ public static class PricingRuleTemplateSeed
             if (existing is not null)
             {
                 existing.DisplayName = displayName;
+                existing.DisplayNameVi = displayNameVi;
                 existing.DefaultValue = defaultValue;
                 existing.MinValue = minValue;
                 existing.MaxValue = maxValue;
@@ -68,6 +78,7 @@ public static class PricingRuleTemplateSeed
                 TemplateId = template.TemplateId,
                 ParameterKey = key,
                 DisplayName = displayName,
+                DisplayNameVi = displayNameVi,
                 DefaultValue = defaultValue,
                 MinValue = minValue,
                 MaxValue = maxValue,
@@ -87,7 +98,7 @@ public static class PricingRuleTemplateSeed
             }
         }
 
-        await UpsertParameterAsync("weekend_multiplier", "Weekend multiplier", 1.2m, 1.0m, 3.0m);
-        await UpsertParameterAsync("holiday_multiplier", "Holiday multiplier", 1.5m, 1.0m, 4.0m);
+        await UpsertParameterAsync("weekend_multiplier", "Weekend multiplier", "Hệ số cuối tuần", 1.2m, 1.0m, 3.0m);
+        await UpsertParameterAsync("holiday_multiplier", "Holiday multiplier", "Hệ số ngày lễ", 1.5m, 1.0m, 4.0m);
     }
 }

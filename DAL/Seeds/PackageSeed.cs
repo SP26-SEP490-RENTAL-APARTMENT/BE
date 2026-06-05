@@ -8,21 +8,24 @@ public static class PackageSeed
 {
     public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
     {
-        var packages = new List<(Guid ApartmentId, string Name, string Description, decimal Price)>
+        var packages = new List<(Guid ApartmentId, string Name, string? NameVi, string Description, string? DescriptionVi, decimal Price)>
         {
-            (SeedConstants.SeedApartmentId, "Basic Cleaning", "Daily basic cleaning service", 100000m),
-            (SeedConstants.SeedApartment2Id, "Airport Pickup", "One-way airport pickup", 200000m),
-            (SeedConstants.SeedApartment3Id, "Premium Experience", "Welcome basket and late checkout", 300000m)
+            (SeedConstants.SeedApartmentId, "Basic Cleaning", "Dọn dẹp cơ bản", "Daily basic cleaning service", "Dịch vụ dọn dẹp cơ bản hằng ngày", 100000m),
+            (SeedConstants.SeedApartment2Id, "Airport Pickup", "Đưa đón sân bay", "One-way airport pickup", "Dịch vụ đưa đón sân bay một chiều", 200000m),
+            (SeedConstants.SeedApartment3Id, "Premium Experience", "Trải nghiệm cao cấp", "Welcome basket and late checkout", "Giỏ quà chào mừng và trả phòng muộn", 300000m)
         };
 
-        foreach (var (apartmentId, name, description, price) in packages)
+        foreach (var (apartmentId, name, nameVi, description, descriptionVi, price) in packages)
         {
-            var exists = await context.Packages.AnyAsync(
+            var existing = await context.Packages.FirstOrDefaultAsync(
                 p => p.ApartmentId == apartmentId && p.Name == name,
                 cancellationToken);
 
-            if (exists)
+            if (existing is not null)
             {
+                existing.NameVi = nameVi;
+                existing.DescriptionVi = descriptionVi;
+                context.Packages.Update(existing);
                 continue;
             }
 
@@ -31,7 +34,9 @@ public static class PackageSeed
                 PackageId = Guid.NewGuid(),
                 ApartmentId = apartmentId,
                 Name = name,
+                NameVi = nameVi,
                 Description = description,
+                DescriptionVi = descriptionVi,
                 Price = price,
                 Currency = "VND",
                 IsActive = true,
