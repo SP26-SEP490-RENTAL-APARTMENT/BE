@@ -10,13 +10,16 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
 {
     private readonly IApartmentPriceCalendarRepository _apartmentPriceCalendarRepository;
     private readonly IAuthService _authService;
+    private readonly ICacheService _cacheService;
     private readonly AppDbContext _dbContext;
     public ApartmentPriceCalendarService(
+        ICacheService cacheService,
         IApartmentPriceCalendarRepository repository,
         IAuthService authService,
         AppDbContext dbContext) : base(repository)
     {
         _authService = authService;
+        _cacheService = cacheService;
         _apartmentPriceCalendarRepository = repository;
         _dbContext = dbContext;
     }
@@ -261,16 +264,16 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
     DateOnly start,
     DateOnly end)
     {
-        // // 1. Create a unique, predictable cache key based on inputs
-        // var cacheKey = $"{apartmentId}:{start:yyyyMMdd}:{end:yyyyMMdd}";
+        // 1. Create a unique, predictable cache key based on inputs
+        var cacheKey = $"{apartmentId}:{start:yyyyMMdd}:{end:yyyyMMdd}";
 
-        // // 2. Check the cache (using Redis or distributed cache)
-        // var cachedData = await _cacheService.GetAsync<List<DailyPriceResolutionDto>>(cacheKey);
-        // if (cachedData != null)
-        // {
-        //     Console.WriteLine("--- Cache Hit: Returning cached pricing data ---");
-        //     return cachedData;
-        // }
+        // 2. Check the cache (using Redis or distributed cache)
+        var cachedData = await _cacheService.GetAsync<List<DailyPriceResolutionDto>>(cacheKey);
+        if (cachedData != null)
+        {
+            Console.WriteLine("--- Cache Hit: Returning cached pricing data ---");
+            return cachedData;
+        }
 
         // 3. If cache miss, perform the expensive calculation
         Console.WriteLine("--- Cache Miss: Performing live price resolution ---");
@@ -279,7 +282,7 @@ public class ApartmentPriceCalendarService : BaseService<ApartmentPriceCalendar>
         var resolutions = await CalculateResolution(apartmentId, start, end); // Re-use the private calculation method
 
         // 4. Store the result in the cache (with an appropriate expiration time, e.g., 1 hour)
-        // await _cacheService.SetAsync(cacheKey, resolutions, TimeSpan.FromHours(1));
+        await _cacheService.SetAsync(cacheKey, resolutions, TimeSpan.FromHours(1));
 
         return resolutions;
     }

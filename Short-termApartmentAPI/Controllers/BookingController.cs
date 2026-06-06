@@ -270,9 +270,9 @@ namespace Short_termApartmentAPI.Controllers
             }
 
             // Require PayOS payout details
-            if (string.IsNullOrWhiteSpace(dto.PayOsAccountNumber) || string.IsNullOrWhiteSpace(dto.PayOsBankCode) || string.IsNullOrWhiteSpace(dto.PayOsReceiverName))
+            if (string.IsNullOrWhiteSpace(dto.PayOsAccountNumber) || string.IsNullOrWhiteSpace(dto.PayOsBankCode))
             {
-                return BadRequest(new ApiResponse<string>("PayOS payout details are required: PayOsReceiverName, PayOsAccountNumber, PayOsBankCode."));
+                return BadRequest(new ApiResponse<string>("PayOS payout details are required: PayOsAccountNumber, PayOsBankCode."));
             }
 
             var booking = await _bookingService.GetByIdAsync(id);
@@ -1958,6 +1958,11 @@ namespace Short_termApartmentAPI.Controllers
             if (booking == null || booking.TenantId != tenantId)
             {
                 return NotFound(new ApiResponse<string>("Booking not found."));
+            }
+
+            if (booking.BookingCheckTime?.ActualCheckIn != null)
+            {
+                return Conflict(new ApiResponse<string>("Occupied incident can only be reported before check-in."));
             }
 
             var supportTicket = new SupportTicket

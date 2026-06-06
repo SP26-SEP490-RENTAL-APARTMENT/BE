@@ -138,7 +138,7 @@ public class LandlordSubscriptionService : BaseService<LandlordSubscription>, IL
             ExtraData = landlordSubscription.SubscriptionId.ToString(),
             PaymentType = payment.PaymentType,
             PaymentPurpose = payment.PaymentPurpose,
-            RedirectUrl = "http://localhost:5173/landlord/my-subscriptions"
+            RedirectUrl = "https://rental-apartment-web.vercel.app/landlord/my-subscriptions"
         };
 
         var momoResult = await _momoService.CreateWalletPaymentAsync(momoRequest, cancellationToken);

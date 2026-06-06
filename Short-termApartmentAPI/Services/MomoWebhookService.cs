@@ -520,7 +520,7 @@ public class MomoWebhookService : IMomoWebhookService
 
     public async Task<IActionResult> ReconcileSubscriptionPaymentAsync(ReconcileLandlordSubscriptionPaymentRequestDto dto)
     {
-        const string successUrl = "http://localhost:5173/landlord/my-subscriptions";
+        const string successUrl = "https://rental-apartment-web.vercel.app/landlord/my-subscriptions";
 
         if (dto == null)
         {
@@ -670,7 +670,7 @@ public class MomoWebhookService : IMomoWebhookService
 
     public async Task<IActionResult> ReconcileBookingPaymentAsync(ReconcileBookingPaymentRequestDto dto)
     {
-        const string successUrl = "http://localhost:5173/payment/success";
+        const string successUrl = "https://rental-apartment-web.vercel.app/payment/success";
 
         if (dto == null)
         {

@@ -266,10 +266,10 @@ public class BookingService : BaseService<Booking>, IBookingService
                         : "strict_no_refund_under_72h";
                 break;
             default:
-                refundPercent = hoursUntilCheckIn >= 24 ? 1m : 0m;
+                refundPercent = hoursUntilCheckIn >= 24 ? 1m : 0.7m;
                 ruleApplied = hoursUntilCheckIn >= 24
                     ? "legacy_full_refund_24h_plus"
-                    : "legacy_no_refund_under_24h";
+                    : "legacy_partial_refund_under_24h";
                 break;
         }
 
@@ -1317,7 +1317,7 @@ public class BookingService : BaseService<Booking>, IBookingService
         var reference = $"RF{booking.BookingId:N}{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
 
         // Use DTO provided PayOS destination (controller enforces present)
-        var receiverName = dto.PayOsReceiverName!.Trim();
+        var receiverName = dto.PayOsReceiverName?.Trim() ?? string.Empty;
         var accountNumber = dto.PayOsAccountNumber!.Trim();
         var bankCode = dto.PayOsBankCode!.Trim();
 
@@ -2389,19 +2389,10 @@ public class BookingService : BaseService<Booking>, IBookingService
 
         var fallbackCount = Math.Max(1, (booking.NoOfAdults ?? 0) + (booking.NoOfChildren ?? 0) + (booking.NoOfInfants ?? 0));
         return Enumerable.Range(1, fallbackCount)
-            .Select(index => new ResidenceReportOccupantDto
+            .Select(index => index == 1 ? primary : new ResidenceReportOccupantDto
             {
                 Order = index,
-                IsPrimary = index == 1,
-                FullName = primary.FullName,
-                PassportId = primary.PassportId,
-                DateOfBirth = primary.DateOfBirth,
-                NationalIdCardNumber = primary.NationalIdCardNumber,
-                Nationality = primary.Nationality,
-                Sex = primary.Sex,
-                Phone = primary.Phone,
-                Email = primary.Email,
-                ProofPhotoUrl = primary.ProofPhotoUrl
+                IsPrimary = false
             })
             .ToList();
     }
