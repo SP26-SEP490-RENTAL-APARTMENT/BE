@@ -5,9 +5,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using PayOS;
 using PayOS.Exceptions;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 
 namespace Short_termApartmentAPI.Controllers;
 
@@ -15,6 +17,8 @@ namespace Short_termApartmentAPI.Controllers;
 [Route("api/payments/webhook")]
 public class PayOsController : ControllerBase
 {
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> DepositWebhookLocks = new();
+
     private readonly IPayOsService _payOsService;
     private readonly IRepository<DAL.Models.Payment> _paymentRepository;
     private readonly IRepository<DAL.Models.BookingCheckTime> _bookingCheckTimeRepository;
@@ -23,6 +27,7 @@ public class PayOsController : ControllerBase
     private readonly IRepository<DAL.Models.User> _userRepository;
     private readonly PayOS.PayOSClient? _paymentSdkClient;
     private readonly IBookingService _bookingService;
+    private readonly IPayOSPayoutService _payOSPayoutService;
     private readonly ILogger<PayOsController> _logger;
 
     public PayOsController(
@@ -34,6 +39,7 @@ public class PayOsController : ControllerBase
         IRepository<DAL.Models.User> userRepository,
         ILogger<PayOsController> logger,
         IBookingService bookingService,
+        IPayOSPayoutService payOSPayoutService,
         [FromKeyedServices("OrderClient")] PayOSClient? paymentSdkClient = null)
     {
         _payOsService = payOsService;
@@ -45,6 +51,7 @@ public class PayOsController : ControllerBase
         _logger = logger;
         _paymentSdkClient = paymentSdkClient;
         _bookingService = bookingService;
+        _payOSPayoutService = payOSPayoutService;
     }
 
     [HttpPost("payos")]
@@ -184,16 +191,126 @@ public class PayOsController : ControllerBase
             {
                 _logger.LogInformation("[PayOS Webhook] Found payment record. PaymentId: {PaymentId}, RelatedEntityId: {RelatedEntityId}", payment.PaymentId, payment.RelatedEntityId);
 
-                payment.Status = "success";
-                payment.SettlementStatus = "settled";
-                payment.PaidAt = Common.Utils.VietnamTime.Now;
-                payment.PayerAccountNumber = payerAccountNumber;
-                payment.PayerBankName = payerBankName;
-                payment.PayerBankBin = payerBankBin;
-                payment.ReceivingAccountNumber = receivingAccountNumber;
-                payment.ReceivingBankBin = receivingBankBin;
-                _paymentRepository.Update(payment);
-                await _paymentRepository.SaveChangesAsync();
+                // Serialize concurrent webhooks for deposit/upfront payments on the same booking so the
+                // "already paid" check and the status write are atomic within this process. Without this,
+                // two simultaneous webhooks both read alreadyPaid=false, both write status=success, and
+                // neither is caught by the duplicate guard below.
+                bool isDuplicateDeposit = false;
+                if (payment.RelatedEntityId.HasValue &&
+                    string.Equals(payment.RelatedEntityType, Common.Enums.PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    var paymentType = payment.PaymentType?.Trim().ToLowerInvariant();
+                    if (paymentType == Common.Enums.PaymentTypes.deposit.ToString() ||
+                        paymentType == Common.Enums.PaymentTypes.upfront.ToString())
+                    {
+                        var bookingLock = DepositWebhookLocks.GetOrAdd(payment.RelatedEntityId.Value, _ => new SemaphoreSlim(1, 1));
+                        await bookingLock.WaitAsync();
+                        try
+                        {
+                            var alreadyPaid = (await _paymentRepository.FindAsync(p =>
+                                p.PaymentId != payment.PaymentId &&
+                                p.RelatedEntityId == payment.RelatedEntityId &&
+                                p.RelatedEntityType == payment.RelatedEntityType &&
+                                (p.PaymentType == Common.Enums.PaymentTypes.deposit.ToString() ||
+                                 p.PaymentType == Common.Enums.PaymentTypes.upfront.ToString()) &&
+                                p.Status == Common.Enums.PaymentStatus.success.ToString())).Any();
+
+                            if (alreadyPaid)
+                            {
+                                isDuplicateDeposit = true;
+                                _logger.LogWarning(
+                                    "[PayOS Webhook] Duplicate deposit payment detected for booking {BookingId}. Voiding payment {PaymentId} and initiating automatic refund.",
+                                    payment.RelatedEntityId, payment.PaymentId);
+
+                                payment.Status = Common.Enums.PaymentStatus.refunded.ToString();
+                                payment.Notes = "Voided: a successful deposit payment already exists for this booking. Automatic refund initiated.";
+                                _paymentRepository.Update(payment);
+                                await _paymentRepository.SaveChangesAsync();
+                            }
+                            else
+                            {
+                                // Mark success inside the lock so a racing webhook sees this write
+                                // when it acquires the lock and runs its own alreadyPaid check.
+                                payment.Status = "success";
+                                payment.SettlementStatus = "settled";
+                                payment.PaidAt = Common.Utils.VietnamTime.Now;
+                                payment.PayerAccountNumber = payerAccountNumber;
+                                payment.PayerBankName = payerBankName;
+                                payment.PayerBankBin = payerBankBin;
+                                payment.ReceivingAccountNumber = receivingAccountNumber;
+                                payment.ReceivingBankBin = receivingBankBin;
+                                _paymentRepository.Update(payment);
+                                await _paymentRepository.SaveChangesAsync();
+                            }
+                        }
+                        finally
+                        {
+                            bookingLock.Release();
+                        }
+
+                        if (isDuplicateDeposit)
+                        {
+                            if (!string.IsNullOrWhiteSpace(payerAccountNumber) &&
+                                !string.IsNullOrWhiteSpace(payerBankBin) &&
+                                payment.Amount >= 2000)
+                            {
+                                try
+                                {
+                                    var refundReference = $"refund-dup-{payment.PaymentId:N}";
+                                    var refundAmount = (long)Math.Round(payment.Amount);
+                                    var receiverName = payerAccountName ?? "Tenant";
+                                    var result = await _payOSPayoutService.CreateBankPayoutAsync(
+                                        receiverName, payerAccountNumber, payerBankBin, refundAmount, refundReference);
+
+                                    _logger.LogInformation(
+                                        "[PayOS Webhook] Duplicate-payment refund payout created. PaymentId={PaymentId} PayoutId={PayoutId} ResultCode={ResultCode}",
+                                        payment.PaymentId, result.PayoutId, result.ResultCode);
+                                }
+                                catch (Exception refundEx)
+                                {
+                                    _logger.LogError(refundEx,
+                                        "[PayOS Webhook] Failed to create automatic refund payout for duplicate payment {PaymentId}. Manual refund required.",
+                                        payment.PaymentId);
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogWarning(
+                                    "[PayOS Webhook] Cannot auto-refund duplicate payment {PaymentId}: missing payer bank details or amount below minimum (AccountNumber={AccountNumber}, BankBin={BankBin}, Amount={Amount}).",
+                                    payment.PaymentId, payerAccountNumber, payerBankBin, payment.Amount);
+                            }
+
+                            return Ok(new { success = true });
+                        }
+                    }
+                    else
+                    {
+                        // Non-deposit booking payment — mark success outside any lock (no duplicate risk)
+                        payment.Status = "success";
+                        payment.SettlementStatus = "settled";
+                        payment.PaidAt = Common.Utils.VietnamTime.Now;
+                        payment.PayerAccountNumber = payerAccountNumber;
+                        payment.PayerBankName = payerBankName;
+                        payment.PayerBankBin = payerBankBin;
+                        payment.ReceivingAccountNumber = receivingAccountNumber;
+                        payment.ReceivingBankBin = receivingBankBin;
+                        _paymentRepository.Update(payment);
+                        await _paymentRepository.SaveChangesAsync();
+                    }
+                }
+                else
+                {
+                    payment.Status = "success";
+                    payment.SettlementStatus = "settled";
+                    payment.PaidAt = Common.Utils.VietnamTime.Now;
+                    payment.PayerAccountNumber = payerAccountNumber;
+                    payment.PayerBankName = payerBankName;
+                    payment.PayerBankBin = payerBankBin;
+                    payment.ReceivingAccountNumber = receivingAccountNumber;
+                    payment.ReceivingBankBin = receivingBankBin;
+                    _paymentRepository.Update(payment);
+                    await _paymentRepository.SaveChangesAsync();
+                }
 
                 if (payment.RelatedEntityId.HasValue &&
                     (string.Equals(payment.RelatedEntityType, PaymentRelatedEntityType.booking.ToString(), StringComparison.OrdinalIgnoreCase) ||
