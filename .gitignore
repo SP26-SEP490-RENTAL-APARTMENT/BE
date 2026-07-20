@@ -376,7 +376,8 @@ INTEGRATION_TESTS_REPORT.md
 TEST_REPORT_TEMPLATE.md
 MANUAL_TESTING_WORKFLOWS.md
 OCCUPIED_APARTMENT_FLOW_TESTING.md
-Apartment-Mobile/
-Apartment-FE/
 CLAUDE.md
 MD/
+AGENTS.md
+/Apartment-FE
+/rental-apartment-mobile
